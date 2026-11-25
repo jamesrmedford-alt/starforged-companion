@@ -57,7 +57,7 @@ vi.mock('../../src/moves/resolver.js', async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { stakesShown, withPriceSource, normaliseStakes, STAKES_SETTING } from '../../src/moves/stakes.js';
 import { missPaysPrice } from '../../src/moves/resolver.js';
@@ -116,7 +116,7 @@ beforeEach(async () => {
   await table.setClaudeKey('gm-1', 'sk-ant-test');
   pc = table.addActor({ id: 'pc-kira-ac02', name: 'Kira', ownership: { 'pl-1': 3 }, system: { edge: 2, momentum: { value: 2 } } });
   table.journal._set(makeTracksJournal());
-  scriptClaude(table, { fallback: (call) => (/move interpreter/.test(call?.system ?? '')
+  scriptClaude(table, { fallback: (call) => (isReaderCall(call)
     ? JSON.stringify(reading)
     : /NARRATOR ROLE|SIDECAR/.test(call?.system ?? '')
       ? 'Shots crack across the bay.\n```json\n{"newTruths":[],"stateChanges":[]}\n```'

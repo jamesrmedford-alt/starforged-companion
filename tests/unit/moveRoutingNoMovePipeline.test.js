@@ -37,13 +37,13 @@ vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
 }));
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, asLineReader } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const LINE      = 'Tell us the whole story';
 const NARRATION = 'Archer lets out a breath and starts at the beginning.';
-const isClassifier  = (call) => /pacing pre-classifier/.test(call?.system ?? '');
-const isInterpreter = (call) => /move interpreter/.test(call?.system ?? '');
+const isClassifier  = (call) => isReaderCall(call);
+const isInterpreter = (call) => isReaderCall(call);
 
 let table, claude, replies;
 
@@ -69,8 +69,8 @@ beforeEach(async () => {
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   claude = scriptClaude(table, {
     fallback: (call) => {
-      if (isClassifier(call))  return JSON.stringify(replies.classifier);
-      if (isInterpreter(call)) return JSON.stringify(replies.interpreter);
+      // The two readers' scripts, answered by the one line reader (issue #384, slice 2).
+      if (isReaderCall(call)) return asLineReader(replies)(call);
       if (/NARRATOR ROLE|SIDECAR/.test(call?.system ?? '')) return `${NARRATION}\n\`\`\`json\n{"newTruths":[],"stateChanges":[]}\n\`\`\``;
       return '{}';
     },
@@ -86,52 +86,6 @@ const pacedCards = () => table.cards(f => f.pacedNarrative);
 const moveCards  = () => table.cards(f => f.moveResolution);
 const notices    = () => table.cards(f => !!f.moveNotRolledNotice);
 const calls      = (match) => table.claude.calls.filter(match);
-
-describe('issue #354 P2-01 — the interpreter reads no move in a line the classifier called a MOVE', () => {
-  it('the line is narrated, the roll dialog never opens, and the classifier\'s move is offered on the card', async () => {
-    await say();
-
-    expect(control.confirmed, 'the Confirm Move dialog did not open').toEqual([]);
-    expect(moveCards(), 'nothing was rolled').toHaveLength(0);
-    const [card, ...more] = pacedCards();
-    expect(more).toHaveLength(0);
-    expect(card.flags[MODULE_ID]).toMatchObject({ playerText: LINE, suggestedMove: 'compel', actorId: 'pc-isaac' });
-    expect(card.flags[MODULE_ID].narrationText).toContain('starts at the beginning');
-    expect(String(table.world.message(card._id).content)).toMatch(/data-action="sf-paced-roll"[^>]*>Roll Compel</);
-    expect(table.world.campaignState().pendingMove, 'the move lock is free').toBe(false);
-    // One classifier call, one interpreter call — handed the classifier's reading and the speaker.
-    expect(calls(isClassifier)).toHaveLength(1);
-    const [read] = calls(isInterpreter);
-    expect(read.userText).toMatch(/PACING READ[^\n]*read this line as compel in a social scene/);
-    expect(read.userText).toContain('The character speaking and acting this turn is Isaac Sutton.');
-    expect(notices()).toHaveLength(0);
-  }, 60_000);
-
-  it('a low-confidence reading is narrated too, with the move offered', async () => {
-    replies.interpreter = { moveId: 'ask_the_oracle', statUsed: null, rationale: 'Low confidence; a narrative exchange.', confidence: 'low' };
-    await say();
-    expect(control.confirmed).toEqual([]);
-    expect(moveCards()).toHaveLength(0);
-    expect(pacedCards()[0].flags[MODULE_ID].suggestedMove).toBe('compel');
-  }, 60_000);
-
-  it('the offered move still rolls: its Roll button reaches the confirm dialog as Compel', async () => {
-    await say();
-    const [card] = pacedCards();
-    control.confirm = () => false;                    // the roll is not what this test is about
-    table.client('pl-1').click(card._id, '[data-action="sf-paced-roll"]');
-    await table.settle(); await table.drain();
-    expect(control.confirmed).toEqual([{ moveId: 'compel', forced: true }]);
-  }, 60_000);
-
-  it('control: a line the interpreter reads as a move opens the dialog, as before', async () => {
-    replies.interpreter = { moveId: 'compel', statUsed: 'iron', rationale: 'Demands the truth.', confidence: 'high' };
-    control.confirm = () => false;
-    await say('Tell us the whole story or we turn this ship around');
-    expect(control.confirmed).toEqual([{ moveId: 'compel', forced: false }]);
-    expect(pacedCards()).toHaveLength(0);
-  }, 60_000);
-});
 
 describe('issue #354 P2-01 — the confirm dialog\'s "No move — narrate"', () => {
   beforeEach(() => {

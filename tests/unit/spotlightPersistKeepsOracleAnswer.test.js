@@ -21,14 +21,11 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
-import { campaignStateWrite, deferred, scriptClaude } from '../helpers/faults.js';
+import { campaignStateWrite, deferred, scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const NARRATION_MODEL = 'claude-sonnet-5-5';
-const NARRATIVE = JSON.stringify({
-  decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
-  category: 'social', confidence: 0.9, reasoning: 'conversation, no move',
-});
+const NARRATIVE = readerReply({ category: 'social' });
 
 let table;
 let gates = [];
@@ -61,7 +58,7 @@ beforeEach(async () => {
   table.addActor({ id: 'pc-ren',  name: 'Ren',  ownership: { 'pl-2': 3 }, items: { contents: [] } });
   scriptClaude(table, {
     fallback: (call) => {
-      if (/pacing pre-classifier/.test(call?.system ?? '')) return NARRATIVE;
+      if (isReaderCall(call)) return NARRATIVE;
       if (call?.model === NARRATION_MODEL) return 'The dockmaster scratches his chin and waves Kira through.';
       return '{}';
     },

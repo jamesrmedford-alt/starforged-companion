@@ -115,9 +115,9 @@ const list = (text, fallback) => {
 const RAW_MODE  = process.env.READERS_MODE || "dry";
 const LIVE      = RAW_MODE === "live";
 const API_KEY   = LIVE ? process.env.ANTHROPIC_API_KEY || null : null;
-// The readers' own model first (src/pacing/classifier.js, src/moves/interpreter.js
-// MODEL — a unit test holds the first default to it), then the model to set it against.
-const ARM_SPECS = list(process.env.READERS_ARMS, ["claude-sonnet-5-5", "claude-haiku-5-5"]);
+// The line reader's own model (src/moves/reader.js MODEL — a unit test holds the default to it).
+// The two readers it replaced were retired at the switch: a `two:` arm is refused below.
+const ARM_SPECS = list(process.env.READERS_ARMS, ["one:claude-sonnet-5-5"]);
 const { arms: ARMS, problems: ARM_PROBLEMS } = armsOf(ARM_SPECS);
 const REPEATS   = Number(process.env.READERS_REPEATS || 1);
 const CAP_USD   = Number(process.env.READERS_CAP_USD || 2);
@@ -219,7 +219,6 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
   const progress = await import(`${MODULE_SRC}/ui/progressTracks.js`);
   const { applySceneFrame } = await import(`${MODULE_SRC}/factContinuity/ledgers.js`);
   const { getRecentSceneForReading } = await import(`${MODULE_SRC}/narration/narrator.js`);
-  const { buildSituationBlock } = await import(`${MODULE_SRC}/moves/situation.js`);
   const { readLineSituation, buildReaderSituationBlock } = await import(`${MODULE_SRC}/moves/readerSituation.js`);
   const stored = () => game.settings.get(MODULE_ID, "campaignState") ?? {};
   const state = context.state ?? {};
@@ -360,27 +359,24 @@ async function applyContextInPage({ MODULE_ID, MODULE_SRC, pcId, sessionId, key,
       type: t.type, label: t.label, ticks: t.ticks,
       ...(t.type === "combat" ? { position: t.positions?.[pcId] ?? t.combatState ?? null } : {}),
     })),
-    // The block both readers are told today, and the one reader's whole situation.
-    situation:   buildSituationBlock(pc, { campaignState: cs }),
+    // The block the reader is told: the whole situation.
     lineSituation: buildReaderSituationBlock(readLineSituation(pc, { campaignState: cs })),
   };
 }
 
 /**
- * Read one line, as the chat pipeline does — with today's two readers
- * (`two`: src/index.js onMessage's decidePacing, then readMove's
- * interpretMove in src/moves/movePipeline.js) or with the one reader (`one`:
- * readAndRoute, src/pacing/readAndRoute.js — what decidePacing calls at the
- * switch) — and nothing else of it: the line is not posted, no lock is
- * claimed, nothing is rolled or narrated.
+ * Read one line, as the chat pipeline does — decidePacing (src/pacing/
+ * router.js), which reads it with the line reader and routes the reading
+ * (readAndRoute, with the move contracts' gate) — and nothing else of it:
+ * the line is not posted, no lock is claimed, nothing is rolled or narrated.
+ * The two readers it replaced were retired at the switch (issue #384, slice
+ * 2); a kept run's readings of them are a baseline (READERS_BASELINE).
  */
 async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line, design, recentMoves = 0 }) {
   const router = await import(`${MODULE_SRC}/pacing/router.js`);
-  const { decidePacing, classifierReadingOf, resetRecentDensity, recordRecentDecision, readPacingConfig, getRecentMoveDensity } = router;
-  const { interpretMove } = await import(`${MODULE_SRC}/moves/interpreter.js`);
+  const { decidePacing, resetRecentDensity, recordRecentDecision, readPacingConfig, getRecentMoveDensity } = router;
   const { getRecentSceneForReading } = await import(`${MODULE_SRC}/narration/narrator.js`);
   const { getMischiefDial } = await import(`${MODULE_SRC}/ui/settingsPanel.js`);
-  const { getActiveCombatPosition } = await import(`${MODULE_SRC}/ui/progressTracks.js`);
   const pick = (from, keys) => Object.fromEntries(keys.filter(k => from?.[k] !== undefined).map(k => [k, from[k]]));
 
   // Each line is read on its own: no earlier line's decision counts toward
@@ -404,15 +400,12 @@ async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line, design, recen
   const sceneChars = () => getRecentSceneForReading(game.settings.get(MODULE_ID, "campaignState")?.currentSessionId ?? null).length;
 
   if (design === "one") {
-    const { readAndRoute } = await import(`${MODULE_SRC}/pacing/readAndRoute.js`);
     let decided = null;
     let lineError = null;
     const started = performance.now();
     try {
-      decided = await readAndRoute({
-        playerText: line, campaignState: before, character, apiKey, pacingConfig,
-        recentMoveDensity: getRecentMoveDensity(pacingConfig.densityWindow), mischiefLevel: getMischiefDial(),
-      });
+      // decidePacing, as a typed line is read: the window it is told, the gate, the route.
+      decided = await decidePacing({ playerText: line, campaignState: before, character, apiKey, mischiefLevel: getMischiefDial() });
     } catch (err) {
       lineError = String(err?.message ?? err);
     }
@@ -436,53 +429,8 @@ async function readLineInPage({ MODULE_ID, MODULE_SRC, pcId, line, design, recen
     };
   }
 
-  // The density the pacing reader is told, as it reads it.
-  const density = getRecentMoveDensity(pacingConfig.densityWindow);
-  let started = performance.now();
-  const pacing = await decidePacing({
-    playerText: line, campaignState: game.settings.get(MODULE_ID, "campaignState"), character, apiKey,
-  });
-  const pacingMs = Math.round(performance.now() - started);
-
-  let interpretation = null;
-  let interpretError = null;
-  let moveMs = null;
-  const classifier = classifierReadingOf(pacing);
-  if (pacing.runMove) {
-    const campaignState = game.settings.get(MODULE_ID, "campaignState");
-    started = performance.now();
-    try {
-      interpretation = await interpretMove(line, {
-        campaignState,
-        mischiefLevel:  getMischiefDial(),
-        apiKey,
-        // The roller's position, as readMove reads it (null with no fight open).
-        combatPosition: await getActiveCombatPosition(actor?.id ?? null),
-        roller:         actor,
-        recentScene:    getRecentSceneForReading(campaignState?.currentSessionId ?? null),
-        classifier,
-        allowNoMove:    true,
-      });
-    } catch (err) {
-      interpretError = String(err?.message ?? err);
-    }
-    moveMs = Math.round(performance.now() - started);
-  }
-
-  return {
-    design: "two",
-    pacing: pick(pacing, ["runMove", "decision", "suggestedMove", "nominatedMove", "category", "confidence", "reasoning", "classifierRead", "forced", "pacingDisabled"]),
-    classifier,
-    interpretation: interpretation
-      ? pick(interpretation, ["moveId", "moveName", "noMove", "statUsed", "confidence", "mischiefApplied", "keptInKind", "rationale", "fallback",
-        "moveTarget", "healSituation", "expeditionRank", "combatRank", "positionConstraintApplied"])
-      : null,
-    interpretError,
-    ms: { pacing: pacingMs, move: moveMs },
-    density,
-    // How much recent scene the readers were given: the runner checks it is the context's.
-    sceneChars: sceneChars(),
-  };
+  // The two readers were retired at the switch (issue #384, slice 2): main() refuses a `two:` arm.
+  throw new Error(`no design "${design}" to read with: the two readers were retired at the switch`);
 }
 
 // ── the run ──────────────────────────────────────────────────────────────────
@@ -501,6 +449,9 @@ async function main() {
   assert(cases.length, "no case to read");
   assert(!ARM_PROBLEMS.length, `READERS_ARMS can't run:\n  ${ARM_PROBLEMS.join("\n  ")}`);
   assert(ARMS.length, "READERS_ARMS names no arm");
+  const retired = ARMS.filter(a => a.design === "two").map(a => a.id);
+  assert(!retired.length, `READERS_ARMS names ${retired.join(", ")}: the two readers were retired at the switch (issue #384, slice 2) — `
+    + "read the one reader (one:<model>), and set it against a kept run's two readers with READERS_BASELINE");
   // A baseline is read before the run: a run that cannot be judged as asked is not paid for.
   const baseline = BASELINE ? baselineOf(readJson(path.resolve(BASELINE)), { cases, arms: BASELINE_ARMS, runArms: ARMS.map(a => a.id) }) : null;
   assert(!baseline?.problems.length, `READERS_BASELINE can't be used:\n  ${baseline?.problems.join("\n  ")}`);

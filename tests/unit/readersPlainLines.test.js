@@ -190,16 +190,16 @@ describe('the plain lines that ship', () => {
     expect(pilot.unknown).toEqual(['nobody']);
   });
 
-  it('the runner\'s default arms start with the readers\' own model — whichever the module asks for', () => {
+  it('the runner\'s default arm is the line reader on its own model — whichever the module asks for', () => {
     const root = path.resolve(__dirname, '../..');
     const modelOf = (file) => /const MODEL\s*=\s*"([^"]+)"/.exec(fs.readFileSync(path.join(root, file), 'utf8'))?.[1];
-    const own = modelOf('src/pacing/classifier.js');
-    expect(own, 'both readers run on one model').toBe(modelOf('src/moves/interpreter.js'));
+    // One reader since the switch (issue #384, slice 2).
+    const own = modelOf('src/moves/reader.js');
     expect(own).toBe(SONNET);
     const runner = fs.readFileSync(path.join(PLAYWRIGHT, 'readers.mjs'), 'utf8');
     const arms = JSON.parse(/list\(process\.env\.READERS_ARMS, (\[[^\]]+\])\)/.exec(runner)[1]);
-    expect(arms).toEqual([own, HAIKU]);
-    for (const arm of arms) expect(PRICES[arm], `${arm} is priced: a live run refuses a model nobody priced`).toBeTruthy();
+    expect(arms).toEqual([`one:${own}`]);
+    for (const arm of arms) expect(PRICES[arm.split(':').pop()], `${arm} is priced: a live run refuses a model nobody priced`).toBeTruthy();
     // The script's own log line names the same default.
     const script = fs.readFileSync(path.resolve(PLAYWRIGHT, '../scripts/cloud.sh'), 'utf8');
     expect(script).toContain(`\${READERS_ARMS:-${arms.join(',')}}`);

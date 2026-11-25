@@ -471,6 +471,8 @@ the GM's console only, and the line sat in chat with no answer. Neither
 notice is a narrator card, so neither reaches the ring, the summary or the
 chronicle.
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
 **The X-Card removes the narration it answers** (issue #321 U07 — full
 exclusion, a maintainer decision). In the same write as the pause,
 `suppressScene` (`src/context/safety.js`, on the canonical GM) calls
@@ -1125,6 +1127,8 @@ the summary to the canonical GM to store (`narrator.summary` →
 `applyRelayedSessionSummary`: this session's, covering more than the stored
 one, none of its narrations X-Carded since — SUMMARY-KEYLESS-GM); prompts read
 the cached text.
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 **What a typed line is read as** (decisions.md → "A player is never made to
 name a move"). Both readers run on Sonnet 5.5, thinking off (their own

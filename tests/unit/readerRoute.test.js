@@ -21,7 +21,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { routeReading, isDense, DENSE_SHARE, ROUTE_DECISION, CONFIDENCE_NUMBER } from '../../src/pacing/readAndRoute.js';
-import { PACING_DECISION } from '../../src/pacing/classifier.js';
+import { PACING_DECISION } from '../../src/pacing/dials.js';
 
 const dials = (d, override = null) => ({ dials: { combat: d, investigation: d, exploration: d, social: d, downtime: d }, sceneOverride: override });
 const read = (over = {}) => ({ mode: 'open', moveId: 'face_danger', asked: false, risk: 'plain', category: 'exploration', confidence: 'high', reason: 'r', ...over });

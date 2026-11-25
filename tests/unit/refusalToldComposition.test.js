@@ -55,13 +55,13 @@ vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
 }));
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, asLineReader } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MEDKIT    = "I sit in the galley and treat my wounds with the ship's medkit.";
 const NARRATION = 'Isaac turns the kit over in his hands and finds nothing that needs it.';
-const isClassifier  = (call) => /pacing pre-classifier/.test(call?.system ?? '');
-const isInterpreter = (call) => /move interpreter/.test(call?.system ?? '');
+const isClassifier  = (call) => isReaderCall(call);
+const isInterpreter = (call) => isReaderCall(call);
 const isNarration   = (call) => /NARRATOR ROLE|SIDECAR/.test(call?.system ?? '') && !isClassifier(call) && !isInterpreter(call);
 
 let table, replies;
@@ -90,8 +90,8 @@ beforeEach(async () => {
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   scriptClaude(table, {
     fallback: (call) => {
-      if (isClassifier(call))  return JSON.stringify(replies.classifier);
-      if (isInterpreter(call)) return JSON.stringify(replies.interpreter);
+      // The two readers' scripts, answered by the one line reader (issue #384, slice 2).
+      if (isReaderCall(call)) return asLineReader(replies)(call);
       if (/NARRATOR ROLE|SIDECAR/.test(call?.system ?? '')) return `${NARRATION}\n\`\`\`json\n{"newTruths":[],"stateChanges":[]}\n\`\`\``;
       return '{}';
     },

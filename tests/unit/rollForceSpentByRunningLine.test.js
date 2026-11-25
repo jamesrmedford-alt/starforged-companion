@@ -37,7 +37,7 @@ vi.mock('../../src/moves/resolver.js', async (orig) => {
 });
 
 import { simulateTable, USERS } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 let table;
@@ -45,7 +45,7 @@ const world = () => table.world.campaignState();
 const forced = () => world().pacing?.forceNextAsMove === true;
 // The pacing classifier's own call (its system prompt names it); the
 // post-narration detection passes use Haiku too, so the model is no key.
-const classifierCalls = () => table.claude.calls.filter(c => /pacing pre-classifier/i.test(c.system ?? ''));
+const classifierCalls = () => table.claude.calls.filter(c => isReaderCall(c));
 
 beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1] }); }, 30_000);
 afterAll(() => table?.teardown());

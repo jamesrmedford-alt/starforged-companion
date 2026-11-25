@@ -5,7 +5,7 @@
  * Two model calls read every typed line today, and neither is told what the
  * other is: the pacing reader gets the dials, the scene frame, the charted
  * places, the fight's bare "COMBAT STATUS: ACTIVE" and the SITUATION block
- * (src/pacing/classifier.js); the move reader gets the SITUATION block, the
+ * (the pacing classifier, retired at the switch); the move reader gets the SITUATION block, the
  * other characters' vows, the open tracks, the speaker's vehicles and
  * companions and a combat-position directive (src/moves/interpreter.js). The
  * line reader (src/moves/reader.js) is one call, told the whole of it, read
@@ -31,7 +31,7 @@
  * two readers before it replaces them (issue #384, slice 1), so situation.js's block stays exactly what they are
  * told; and situation.js is where the move contracts' own situation is being
  * built. At the switch (slice 2) the readers' block goes and this one is the
- * only one. The place and the charted places repeat classifier.js's reads
+ * only one. The place and the charted places repeat the retired pacing classifier's reads
  * (formatScene, formatChartedPlaces) for that one slice: they are deleted
  * there with the pacing reader.
  *
@@ -49,6 +49,7 @@ import { combatPositionFor, isTrackPosition } from "./combat.js";
 import { getCommandVehicle } from "../entities/ship.js";
 import { formatShipPositionLine } from "../factContinuity/shipPosition.js";
 import { getCurrentSiteKind } from "../entities/location.js";
+import { sceneForReading, formatSceneForReading } from "../narration/narratorPrompt.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -59,7 +60,7 @@ const TRACK_TICKS   = TRACK_BOXES * TICKS_PER_BOX;
 const METER_MAX     = 5;
 /** The most of any one list the block names. */
 const LIST_CAP = 8;
-/** The most charted places named (classifier.js CHARTED_PLACES_CAP). */
+/** The most charted places named (as the retired pacing classifier capped them). */
 const CHARTED_PLACES_CAP = 12;
 
 const clean = (text) => String(text ?? "").replace(/["\r\n]+/g, " ").replace(/\s+/g, " ").trim();
@@ -104,7 +105,7 @@ export function readLineSituation(actor, { campaignState = null } = {}) {
     sheet: isPc ? readSituation(actor, { campaignState }) : null,
     party: [], othersVows: [], vehicles: [], companions: [],
     fights: [], position: null, challenges: [], expeditions: [],
-    place: null, ship: null, frame: null, site: null, xCard: campaignState?.xCardActive === true,
+    place: null, ship: null, frame: null, scene: null, site: null, xCard: campaignState?.xCardActive === true,
     charted: { shown: [], more: 0 },
     unread: [],
   };
@@ -172,6 +173,10 @@ export function readLineSituation(actor, { campaignState = null } = {}) {
     if (where || present.length || now) situation.frame = { where, present, now };
   }
   situation.site = getCurrentSiteKind(campaignState ?? {});
+  // The place, the ship and the frame as one read, with the table's new names
+  // and what play let go — overhaul 2's renderer, the narrator's THE SCENE and
+  // the pacing reader's before the switch (narratorPrompt.js sceneForReading).
+  try { situation.scene = formatSceneForReading(sceneForReading(campaignState ?? {})) || null; } catch (err) { unread("the scene", err); }
   try { situation.charted = chartedPlaces(campaignState); } catch (err) { unread("the charted places", err); }
 
   return situation;
@@ -191,7 +196,7 @@ function positionAcross(fights, actorId) {
   return isTrackPosition(fights[0]?.combatState) ? fights[0].combatState : null;
 }
 
-/** The current location by its record's name (classifier.js formatScene's read). */
+/** The current location by its record's name (as the retired pacing classifier's formatScene read it). */
 function currentPlace(campaignState) {
   const id = campaignState?.currentLocationId;
   const type = campaignState?.currentLocationType;
@@ -204,7 +209,7 @@ function currentPlace(campaignState) {
 }
 
 /**
- * The charted, known places (classifier.js formatChartedPlaces's read): the
+ * The charted, known places (as the retired pacing classifier's formatChartedPlaces read them): the
  * tracked settlements, planets and locations, the active sector's first,
  * without the sites still unexplored.
  */
@@ -306,11 +311,17 @@ export function buildReaderSituationBlock(situation) {
     );
   }
 
-  const place = unknown.has("the current location") ? "unknown"
-    : s.place ? `${s.place.name} (${s.place.type})` : "none recorded";
   const site = s.site ? ` Inside the ${s.site.kind} ${s.site.name ? `"${s.site.name}"` : "(unnamed)"}.` : "";
-  lines.push(`- Place: ${place}.${site}${s.ship ? ` Ship: ${s.ship}.` : ""}`);
-  if (s.frame) {
+  if (s.scene) {
+    // Overhaul 2's one read of the place, the ship and the frame.
+    lines.push(s.scene);
+    if (site) lines.push(`-${site}`);
+  } else {
+    const place = unknown.has("the current location") ? "unknown"
+      : s.place ? `${s.place.name} (${s.place.type})` : "none recorded";
+    lines.push(`- Place: ${place}.${site}${s.ship ? ` Ship: ${s.ship}.` : ""}`);
+  }
+  if (s.frame && !s.scene) {
     const parts = [
       s.frame.where ? `where: ${s.frame.where}` : null,
       s.frame.present?.length ? `present: ${capped(s.frame.present, ", ")}` : null,

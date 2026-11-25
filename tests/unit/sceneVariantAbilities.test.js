@@ -41,7 +41,7 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
 import { scanForApplicableAbilities, extractStatReplacement, structuredMatches } from "../../src/moves/abilityScanner.js";
 import { extractRiders } from "../../src/moves/consequenceRiders.js";
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
-import { scriptClaude } from "../helpers/faults.js";
+import { scriptClaude, isReaderCall } from "../helpers/faults.js";
 import { StubElement } from "../helpers/cardDom.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 
@@ -99,8 +99,8 @@ describe("a scene-challenge variant is matched as the ordinary move it varies", 
 
 describe("a scene-challenge roll takes its asset's add (on a table)", () => {
   let table, pc;
-  const isClassifier  = (call) => /pacing pre-classifier/.test(call.system ?? "");
-  const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? "");
+  const isClassifier  = (call) => isReaderCall(call);
+  const isInterpreter = (call) => isReaderCall(call);
   const isNarration   = (call) => /SIDECAR|NARRATOR ROLE/.test(call.system ?? "");
   const lastMove      = () => table.cards(f => f.narratorCard && f.resolutionId).at(-1)?.flags[MODULE_ID];
   // Challenge 5 and 7, die 5: 5 + edge 2 = 7, a weak hit; with the Shuttle's +1, 8, a strong hit.

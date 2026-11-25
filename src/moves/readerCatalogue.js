@@ -78,7 +78,9 @@ export const READER_CATALOGUE = Object.freeze([
     entry("check_your_gear", "Check Your Gear", "When you check to see if you have a specific helpful item or resource, roll +supply"),
   ]),
   group("QUEST", [
-    entry("swear_an_iron_vow", "Swear an Iron Vow", "When you swear upon iron to complete a quest, write your vow and give it a rank. Then, roll +heart"),
+    entry("swear_an_iron_vow", "Swear an Iron Vow", "When you swear upon iron to complete a quest, write your vow and give it a rank. Then, roll +heart", {
+      ruling: "A vow sworn in a connection's service is this, never Develop Your Relationship's deed in its place (that follows from the vow).",
+    }),
     entry("reach_a_milestone", "Reach a Milestone", "When you make headway in your quest by doing any of the following...", {
       list: ["overcoming a critical obstacle", "gaining meaningful insight", "completing a perilous expedition",
         "acquiring a crucial item or resource", "earning vital support", "defeating a notable foe"],
@@ -98,11 +100,11 @@ export const READER_CATALOGUE = Object.freeze([
       list: ["swearing a vow to undertake a perilous quest in their service", "completing a quest to their benefit",
         "leveraging their help in desperate circumstances", "giving them something of worth", "sharing a profound moment",
         "standing with them against hardship", "overcoming a test of your relationship"],
-      ruling: "A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself — trust, friendship, to count on each other — is talk, no deed (rule 4). No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.",
+      ruling: "A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself while it is being built — trust, friendship, to count on each other — is talk, no deed (rule 4). A vow sworn in their service is Swear an Iron Vow, never this in its place. No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.",
     }),
     entry("test_your_relationship", "Test Your Relationship", "When your relationship with a connection is tested through conflict, betrayal, or circumstance, roll +heart"),
     entry("forge_a_bond", "Forge a Bond", "When your relationship with a connection is ready to evolve, roll the challenge dice and compare to your progress", {
-      ruling: "A full relationship track is ready for it; less does not forbid it, at worse odds. Never for a connection already bonded.",
+      ruling: "A full relationship track is ready for it; less does not forbid it, at worse odds. Never for a connection already bonded. Asking to make the tie lasting — for good, whatever comes — with the track ready is this, not talk (rule 4).",
     }),
   ]),
   group("EXPLORATION", [

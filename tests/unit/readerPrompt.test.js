@@ -114,7 +114,10 @@ describe('the system prompt: the same bytes for every call', () => {
     for (let n = 1; n <= 12; n += 1) expect(text, `rule ${n}`).toMatch(new RegExp(`^${n}\\. `, 'm'));
     // Asking for trust is named as talk; a deed for a connection needs nothing at risk; headway the scene bears out;
     // a line that names its move asks for it, everyday English included (issue #384, the first measure's mend).
-    expect(text).toContain('asking for the relationship itself: to be trusted, to be friends, to count on each other, to be someone\'s contact');
+    expect(text).toContain('asking for the relationship itself while it is still being built: to be trusted, to be friends, to count on each other, to be someone\'s contact');
+    // ...but a lasting tie asked for with the track full is Forge a Bond, and a vow sworn in their service is Swear an Iron Vow.
+    expect(text).toContain('when the SITUATION shows the relationship ready to forge (its track full) is forge_a_bond');
+    expect(text).toContain('A vow sworn, in anyone\'s service, is swear_an_iron_vow');
     expect(text).toContain('A move with no roll needs nothing at risk — its trigger is the deed.');
     expect(text).toContain('reach_a_milestone is for headway the RECENT SCENE bears out');
     expect(text).toContain('A claim the scene contradicts, or that nothing in the scene supports');

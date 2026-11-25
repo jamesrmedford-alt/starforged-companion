@@ -56,7 +56,7 @@ vi.mock("../../src/oracles/roller.js", async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
-import { scriptClaude } from "../helpers/faults.js";
+import { scriptClaude, isReaderCall } from "../helpers/faults.js";
 import { StubElement } from "../helpers/cardDom.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 
@@ -67,8 +67,8 @@ const HOVERBIKE = [
 ];
 const SHUTTLE = `<p>When you ${link("Face Danger")} or ${link("React Under Fire")} to navigate through hazardous skies, avoid obstacles, or evade an attack, add +1 and take +1 momentum on a hit.</p>`;
 
-const isClassifier  = (call) => /pacing pre-classifier/.test(call.system ?? "");
-const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? "");
+const isClassifier  = (call) => isReaderCall(call);
+const isInterpreter = (call) => isReaderCall(call);
 const isScanner     = (call) => /scanning a Starforged player character's asset abilities/.test(call.userText ?? "");
 const isNarration   = (call) => /SIDECAR|NARRATOR ROLE/.test(call.system ?? "");
 // The scanner's Haiku pass: every ability it is shown applies.

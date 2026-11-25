@@ -600,6 +600,8 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   GM-only; the first 2026-10 fix let any click post the move but only the
   card's owner could stamp it resolved, so it could fire repeatedly.)
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
 ## 3. Forge the bond
 
 Both readers of a typed line — the pacing classifier and the move interpreter
@@ -614,6 +616,8 @@ to forge a bond with me, to Forge a Bond" — her track full — as Make a
 Connection (the long haul's second live run, known-issues
 NAMED-MOVE-READ-AS-ANOTHER); the classifier was told the names alone until the
 block.
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 `forge_a_bond` is a progress move scored from the record's
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
@@ -733,6 +737,8 @@ The legacy count-only "ACTIVE CONNECTIONS" block
 (`buildConnectionsSummary`, "N active connection(s)" from `connectionIds`)
 is retired: it counted a lost connection as active beside the roster that
 lists it apart (issue #331 X29).
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 **The NPC's hidden agenda (issue #353 Phase 4).** Three creators file an
 `npcAgenda` plan right after `createConnection` (`secrets.planNpcAgenda`,

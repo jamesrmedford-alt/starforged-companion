@@ -21,16 +21,13 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
-import { scriptClaude, isReaderCall } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 // The narration model — and, since the readers run on Sonnet 5.5, the pacing
 // classifier's too: a narration call is one on this model that is no reader's.
 const NARRATION_MODEL = 'claude-sonnet-5-5';
-const NARRATIVE = JSON.stringify({
-  decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
-  category: 'social', confidence: 0.9, reasoning: 'chat, no move',
-});
+const NARRATIVE = readerReply({ category: 'social' });
 const LINE = 'I lean against the bulkhead and hum an old spacer tune.';
 
 let table;
@@ -49,7 +46,7 @@ beforeEach(async () => {
   table.addActor({ id: 'pc-ren', name: 'Ren', ownership: { 'pl-absent': 3 } });
   scriptClaude(table, {
     fallback: (call) => {
-      if (/pacing pre-classifier/.test(call.system)) return NARRATIVE;
+      if (isReaderCall(call)) return NARRATIVE;
       if (call.model === NARRATION_MODEL) return 'A tune drifts down the corridor.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
       return '{}';
     },

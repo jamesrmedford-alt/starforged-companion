@@ -46,14 +46,14 @@ vi.mock("../../src/oracles/roller.js", async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
-import { scriptClaude } from "../helpers/faults.js";
+import { scriptClaude, isReaderCall, readerReply } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 import { localizeMove } from "../../src/system/i18n.js";
 import { makeJournal } from "../helpers/fullStateFixture.js";
 import { journalsKeepPages } from "../helpers/sessionRecordSeed.js";
 
-const isClassifier  = (call) => /pacing pre-classifier/.test(call.system ?? "");
-const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? "");
+const isClassifier  = (call) => isReaderCall(call);
+const isInterpreter = (call) => isReaderCall(call);
 const isNarration   = (call) => /SIDECAR|NARRATOR ROLE/.test(call.system ?? "");
 const MOVE_DECISION = JSON.stringify({ decision: "MOVE", suggestedMove: null, category: "social", confidence: 0.9, reasoning: "test" });
 const reading = (moveId) => JSON.stringify({ moveId, statUsed: "iron", moveTarget: "The Negotiation", rationale: "test", confidence: "high" });
@@ -168,8 +168,7 @@ describe("a scene-challenge move has one display name — the confirm dialog's (
   }, 30_000);
 
   it("the paced card's Roll button names the move as the dialog does", async () => {
-    script.when(isClassifier, JSON.stringify({ decision: "NARRATIVE_WITH_MOVE_AVAILABLE",
-      suggestedMove: "secure_an_advantage", category: "social", confidence: 0.6, reasoning: "test" }));
+    script.when(isClassifier, readerReply({ move: "secure_an_advantage", risk: 'slight', category: 'social' }));
     await player().chat("I watch the envoy's hands while she talks.", { speaker: { actor: pc.id } });
     await table.settle(); await table.drain();
     const paced = table.cards(f => f.pacedNarrative).at(-1);

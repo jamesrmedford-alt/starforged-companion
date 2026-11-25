@@ -17,7 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildLedgerBlock, sceneForReading, formatSceneForReading } from '../../src/narration/narratorPrompt.js';
 import { withNameChange } from '../../src/factContinuity/nameChanges.js';
-import { buildClassifierContext } from '../../src/pacing/classifier.js';
+import { readLineSituation, buildReaderSituationBlock } from '../../src/moves/readerSituation.js';
 
 const A50 = {
   location:  'Bleakhold Station docking ring, in open space off the lock',
@@ -61,11 +61,8 @@ describe('overhaul 2 §6.1 — the frame\'s words, with the table\'s new names',
     expect(text).toContain('turns on: Who sent the Cinder Wren\'s pilot, and will Mira hear it?');
     expect(text).not.toContain('Ashen Wake');
 
-    const { userMessage } = buildClassifierContext({
-      playerText: 'I hail the pilot.', campaignState: state(), character: null,
-      recentMoveDensity: { count: 0, window: 5 }, pacingConfig: { dials: {} },
-    });
-    expect(userMessage).toContain(text);
+    // The line reader is told the same read (issue #384 — the pacing reader was, before the switch).
+    expect(buildReaderSituationBlock(readLineSituation(null, { campaignState: state() }))).toContain(text);
   });
 
   it('what play let go is the reader\'s too; a frame off reads none', () => {

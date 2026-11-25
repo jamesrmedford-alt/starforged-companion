@@ -51,18 +51,15 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude, isReaderCall } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { bondItemFor } from '../helpers/fullStateFixture.js';
 import { resolveMove } from '../../src/moves/resolver.js';
 
 // The measured line (the readers' test's develop-2; run 2's a60 without its move name).
 const COUNTER = "I offer to watch Tamsin's counter for an hour while she rests.";
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
-const OFFERED = JSON.stringify({
-  decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'develop_your_relationship', sceneChallenge: null,
-  category: 'social', confidence: 0.75, reasoning: 'A favour that costs her an hour, done for her connection.',
-});
+const isClassifier = (call) => isReaderCall(call);
+const OFFERED = readerReply({ move: 'develop_your_relationship', risk: 'slight', category: 'social' });
 const NARRATION = 'Tamsin looks at the stool, then at you, and says nothing for a moment.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
 let table;

@@ -108,12 +108,6 @@ describe("issue #345 AA62 — the Progress Tracks journal is found by its tracks
     expect(await store.getActiveCombatPosition(), "its position").toBe("in_control");
   });
 
-  it("after the rename the interpreter is still told the open tracks", () => {
-    journals[0].name = "Campaign Tracks";
-    expect(interpreter.buildContextSummary({}))
-      .toContain('Open progress tracks: combat "Corsair boarding party", expedition "Cross the Rift"');
-  });
-
   it("an open panel re-renders when the renamed journal's tracks change", async () => {
     const savedDocument = globalThis.document;
     globalThis.document = { createElement: (tag) => new StubElement(tag), activeElement: null };

@@ -191,7 +191,6 @@ import { applySpotlightDefaultOff } from "./narration/spotlightDefault.js";
 import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
-  classifierReadingOf,
   consumeForceMove,
   applyPaceCommand,
   markForceNextAsMove,
@@ -1201,11 +1200,12 @@ export function registerChatHook() {
           // could write.
           gateOverride: message.flags?.[MODULE_ID]?.gateOverride === true && message.author?.isGM === true } : null,
         swearToConnection,
-        // What the classifier made of the line, for the interpreter (issue
-        // #354 P2-02) — on a MOVE decision it named a move the router dropped.
-        // None when no classifier read it: pacing off, `!roll`, a failed call
-        // or an unreadable reply (issue #362 AC64).
-        classifier: classifierReadingOf(pacingResult),
+        // The line reader's reading, carried (issue #384, slice 2): a line
+        // it routed to a roll is not read again — the gate is asked once more
+        // under the lock. None when nothing read it: pacing off, `!roll`, or
+        // a failed reading — then readMove reads it (the reader's open mode,
+        // a failed reading's second try).
+        reading: pacingResult.reading?.interpretation && !pacingResult.reading.failed ? pacingResult.reading : null,
         // The line may be read as no move at all (issue #354 P2-01) — unless a
         // roll was asked for (`!roll`), or pacing is switched off (every line
         // is a move then, as it always was).

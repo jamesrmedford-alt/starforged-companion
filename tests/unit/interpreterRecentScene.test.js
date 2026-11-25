@@ -36,15 +36,6 @@ const body = () => apiPost.mock.calls[0][2];
 describe("interpretMove() — the recent scene", () => {
   beforeEach(() => { vi.clearAllMocks(); control.calls.length = 0; });
 
-  it("sends the recent scene just before the player's line, marked as context", async () => {
-    replyJson({ moveId: "set_a_course", statUsed: "supply", moveTarget: "the gap (Vuldar Archer's coordinates)" });
-    await interpretMove("We're on our way.", { ...OPTS, recentScene: SCENE });
-    const text = body().messages[0].content;
-    expect(text).toContain("RECENT SCENE");
-    expect(text).toContain("coordinates for the gap");
-    expect(text.indexOf("RECENT SCENE")).toBeLessThan(text.indexOf('Player narration: "We\'re on our way."'));
-  });
-
   it("tells the model to name a target the line only refers to as the recent scene names it", async () => {
     replyJson({ moveId: "set_a_course", statUsed: "supply" });
     await interpretMove("We're on our way.", { ...OPTS, recentScene: SCENE });

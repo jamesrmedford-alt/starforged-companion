@@ -62,12 +62,12 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { enrichForcedMoveStat } from '../../src/moves/statEnrichment.js';
 import { statedPrice } from '../../src/moves/stakes.js';
 
-const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? '');
+const isInterpreter = (call) => isReaderCall(call);
 const MISS_LINE = 'The courier\'s trail goes cold and the sentries spot you.';
 const STAKES = { hit: 'You find the courier\'s route.', miss: MISS_LINE, missSuffer: { move: 'endure_harm', amount: 1 } };
 const MISS = [0.55, 0.65, 0.1];   // challenge 6, 7; action die 1 — a miss (momentum 2 cannot burn it)
@@ -118,7 +118,7 @@ describe('issue #362 D11 — a forced move states the stakes its reading gives',
 
     const readings = table.claude.calls.filter(isInterpreter);
     expect(readings).toHaveLength(1);
-    expect(readings[0].userText).toContain('MOVE ALREADY CHOSEN: the player chose Gather Information');
+    expect(readings[0].userText).toContain('MODE — THE MOVE IS CHOSEN: gather_information (Gather Information)');
     expect(control.confirmed).toEqual([{ moveId: 'gather_information', statUsed: 'wits',
       stakes: { ...STAKES, priceStated: true } }]);
     // The miss pays what the dialog showed, not the table.

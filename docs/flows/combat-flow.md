@@ -467,6 +467,8 @@ fight that card began (the card's `frayTrackId`, stamped by
 none, and the card says so. It resolved the sole open fight, or the newest
 threshold card, at click time; a card naming neither still does.
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
 **Narrator awareness:** every prose narration carries [4j] OPEN PROGRESS
 TRACKS (`buildNarratorExtras` → `listOpenProgressTracks`,
 `src/ui/progressTracks.js`): each open fight's label, rank, filled boxes,
@@ -902,6 +904,8 @@ clock fill was (`targets.sceneChallenge`: `trackId`, `clockId`,
 Improve Result scores the same challenge, marks what its outcome adds and
 leaves the clock as the upgraded outcome would have (a miss's segment
 burned to a strong hit is taken back, never more than it filled).
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 The panel's edits — add, +, −, ✓, ✕ and the position toggle — are written by
 the canonical GM for every user (gmRelay `progressTrack.edit` →

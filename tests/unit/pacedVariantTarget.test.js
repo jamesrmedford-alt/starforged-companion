@@ -36,29 +36,17 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
   }) };
 });
 
-import { buildClassifierContext } from "../../src/pacing/classifier.js";
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
-import { scriptClaude } from "../helpers/faults.js";
+import { scriptClaude, isReaderCall, readerReply } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? "");
+const isClassifier = (call) => isReaderCall(call);
 const isNarration  = (call) => /SIDECAR|NARRATOR ROLE/.test(call.system ?? "");
-const nwma = (suggestedMove, sceneChallenge = null) => JSON.stringify({ decision: "NARRATIVE_WITH_MOVE_AVAILABLE",
-  suggestedMove, sceneChallenge, category: "exploration", confidence: 0.6, reasoning: "a risk the player may want to press" });
+const nwma = (suggestedMove, sceneChallenge = null) => readerReply({ move: suggestedMove, risk: 'slight', category: 'exploration', sceneChallenge: sceneChallenge });
 const hinted = (move) => `The hovercars scream past the pylons. *Cutting through the market now would be a ${move}.*`
   + '\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const STRONG = [0.0, 0.15, 0.9];   // challenge 1, 2; die 6 → a strong hit
 const LINE   = "I gun the engine and cut through the night market.";
-
-describe("the classifier is asked which open challenge a scene-challenge move is part of", () => {
-  it("its output names the challenge", () => {
-    const { systemPrompt } = buildClassifierContext({
-      playerText: LINE, campaignState: { connectionIds: [] }, character: null, recentMoveDensity: { count: 0, window: 5 },
-      pacingConfig: { dials: { combat: 9, investigation: 6, exploration: 6, social: 5, downtime: 1 }, sceneOverride: null },
-    });
-    expect(systemPrompt).toMatch(/"sceneChallenge":/);
-  });
-});
 
 describe("a paced Roll's scene-challenge move scores the challenge the classifier named", () => {
   let table, pc, journal, negotiation, chase, script;

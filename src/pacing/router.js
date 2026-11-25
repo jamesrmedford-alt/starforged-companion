@@ -27,19 +27,20 @@
  * Telemetry: every classifier decision is recorded via the telemetry helper
  * (src/pacing/telemetry.js) so dials can be tuned from real session data.
  *
- * Where the code holds the classifier to its rules (decidePacing, in order):
- * in an open fight an offer is a MOVE; a move the gate says cannot be made —
- * a social move against a fellow player character, a recovery move the
- * speaker's sheet has nothing for, a combat move with no fight — is narrated,
- * told why, with the move the refusal offers on its card (moves/contracts/
- * gate.js checkMove); at a dial of 0–2 an unsure MOVE is an offer.
+ * A typed line is read once, by the line reader (moves/reader.js readLine),
+ * told the whole situation, and its reading is routed by code
+ * (pacing/readAndRoute.js routeReading — the table's dials, the density
+ * window, a fight never hedging, the player's ask), with the move contracts'
+ * gate (moves/contracts/gate.js checkMove) as its row 2: a move that cannot
+ * be made is narrated, told why, with the move the refusal offers on its card
+ * (issue #384, slice 2 — decisions.md → "Overhauls 1 and 4").
  */
 
-import { classifyInput, effectiveDial, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
-import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
+import { PACING_DECISION, PACING_CATEGORIES } from "./dials.js";
+import { readAndRoute } from "./readAndRoute.js";
 import { readMoveSituation } from "../moves/situation.js";
 import { checkMove, refusalOf } from "../moves/contracts/gate.js";
-import { narratePacedInput, getRecentSceneForReading, tellPacedLineNotNarrated } from "../narration/narrator.js";
+import { narratePacedInput, tellPacedLineNotNarrated } from "../narration/narrator.js";
 import { claudeFailureReason } from "../narration/failureReason.js";
 import { logPacingDecision } from "./telemetry.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -160,21 +161,17 @@ function defaultDial(category) {
 }
 
 
-/** The dials at which "narrate unless asked" holds (the classifier's 0–2 band). */
-const LOW_DIAL_MAX = 2;
-/** Below this, a MOVE read at a low dial is an offer, not a roll. */
-const LOW_DIAL_MOVE_CONFIDENCE = 0.7;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ROUTER
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Decide how a paced player input should be handled — the classifier's
- * decision, without acting on it: the pacing master switch, a `!roll` force,
- * the classifier, the combat backstop, the move gate (a move that cannot be
- * made is narrated — `refused`), the low-dial hold, the recent-density window
- * and the telemetry. routePacedInput dispatches the narration for a NARRATIVE
+ * Decide how a paced player input should be handled, without acting on it:
+ * the pacing master switch, a `!roll` force, then the line read once and
+ * routed (readAndRoute — the line reader's reading; routeReading's rows, the
+ * move gate's among them: a move that cannot be made is narrated, `refused`),
+ * the recent-density window and the telemetry. routePacedInput dispatches the narration for a NARRATIVE
  * decision; a Batch Mode round's reading (src/moves/movePipeline.js
  * readAction) shows the decision in the player's Round window instead — so
  * it passes `ignoreForceMove`: a round's readings ignore `!roll` (the window
@@ -187,23 +184,27 @@ const LOW_DIAL_MOVE_CONFIDENCE = 0.7;
  *   speaker (their Actor id reads their own connections — issue #354 P2-04)
  * @param {string} args.apiKey
  * @param {boolean} [args.ignoreForceMove] — a round's reading: `pacing.forceNextAsMove` is not read
+ * @param {Array<{ name: string, text: string }>|null} [args.round] — a Batch Mode round's reading: the round's
+ *   other submitted actions (told to the reader), and no density window (D12)
+ * @param {string|null} [args.mischiefLevel] — the Mischief dial; read from the settings when not given
  * @returns {Promise<{
  *   runMove: boolean,
  *   decision: string,
  *   suggestedMove: string|null,
- *   nominatedMove?: string|null,
  *   suggestedTargetId?: string|null,
  *   category: string,
  *   confidence: number,
  *   reasoning: string,
  *   forced?: boolean,
  *   pacingDisabled?: boolean,
- *   classifierRead?: boolean,
+ *   reading?: Object|null,
+ *   fallback?: boolean,
  *   refused?: { moveId: string, code: string, hard: boolean, why: string, premise: Object|null, offer: string|null },
- * }>} `refused`: the move the classifier read the line as cannot be made (the gate's refusal)
+ * }>} `reading`: the line reader's (carried to readMove on a MOVE); `fallback`: the reading failed, and readMove
+ *   reads the line again; `refused`: the move the line was read as cannot be made (the gate's refusal)
  */
 export async function decidePacing({
-  playerText, campaignState, character, apiKey, ignoreForceMove = false,
+  playerText, campaignState, character, apiKey, ignoreForceMove = false, round = null, mischiefLevel = null,
 }) {
   const pacingConfig = readPacingConfig(campaignState);
 
@@ -222,75 +223,50 @@ export async function decidePacing({
   }
 
   const sceneTag = campaignState?.currentSessionId ?? "global";
+  // A round is its own pacing (D12): a round's reading is told no density,
+  // and adds none to the window.
+  const recentMoveDensity = round ? null : getRecentMoveDensity(pacingConfig.densityWindow);
+  const level = mischiefLevel ?? await readMischiefDial();
 
-  const recentMoveDensity = getRecentMoveDensity(pacingConfig.densityWindow);
-  const combatActive      = await detectCombatActive();
-  const openChallenges    = await detectOpenSceneChallenges();
-  const sceneChallenges   = openChallenges.map(t => String(t.label ?? ""));
+  // The move contracts' gate (overhaul 4, moves/contracts/gate.js), on the
+  // speaker's situation read once: routeReading's row 2. A move the sheet,
+  // the tracks or the table say cannot be made is neither rolled nor offered
+  // — a Heal at 5 health of 5 (HEAL-ROLLED-AT-FULL-HEALTH), a social move
+  // against a fellow player character (finding G; issue #354 P2-06), a Strike
+  // with no fight under way (D6) — and the line is narrated and told why: its
+  // narration is given the premise as NOT SO and its card one line
+  // (NOTHING-TO-RECOVER-UNTOLD); a move the refusal offers instead is the
+  // card's Roll. readMove and the roll check again. A `!roll` never comes here.
+  const moveSituation = await readSituationForGate(character, campaignState);
+  const gate = moveSituation
+    ? (moveId) => checkMove(moveId, moveSituation, { line: playerText ?? "" }, { stage: "offer" })
+    : null;
 
-  // What the line follows: "we're on our way" is travel only to a reader who
-  // saw the destination being discussed (alpha 23 playtest).
-  const recentScene = getRecentSceneForReading(campaignState?.currentSessionId ?? null);
-
-  const result = await classifyInput({
-    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive, sceneChallenges, recentScene,
+  // One call reads the line, told the whole situation; code routes the
+  // reading by the table's dials (issue #384, D1 — pacing/readAndRoute.js).
+  const result = await readAndRoute({
+    playerText, campaignState, character, apiKey, pacingConfig, recentMoveDensity, mischiefLevel: level, round, gate,
   });
 
-  // Backstop: during an active fight the classifier must not hedge. If it
-  // returned NARRATIVE_WITH_MOVE_AVAILABLE it already identified a move — in
-  // combat, that means roll it. Plain NARRATIVE (pure observation, no action)
-  // is left untouched. Mirrors the COMBAT IS ACTIVE rule in the classifier so
-  // the routing holds even when the model under-commits — a player can't end a
-  // fight by asserting an outcome against an adversary as narration.
-  if (combatActive && result.decision === PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE) {
-    result.decision  = PACING_DECISION.MOVE;
-    result.reasoning = `[combat-active backstop: NWMA→MOVE] ${result.reasoning ?? ""}`.trim();
-  }
-
-  // The move contracts' gate (overhaul 4, moves/contracts/gate.js): a move
-  // the speaker's sheet, the tracks or the table say cannot be made is
-  // neither rolled nor offered — a Heal at 5 health of 5 (HEAL-ROLLED-AT-FULL-
-  // HEALTH), a social move against a fellow player character (finding G;
-  // issue #354 P2-06), a Strike with no fight under way (D6). The line is
-  // narrated and told why: its narration is given the premise as NOT SO and
-  // its card one line (NOTHING-TO-RECOVER-UNTOLD); a move the refusal offers
-  // instead is the card's Roll. Not the fallback for a call that failed, which
-  // keeps the move pipeline running; readMove and the roll check again. A
-  // `!roll` never comes here.
   let refused = null;
-  if (result.fallback !== true && result.decision !== PACING_DECISION.NARRATIVE && result.suggestedMove) {
-    const verdict = await gateTheLine(result.suggestedMove, { playerText, character, campaignState });
-    if (verdict && !verdict.ok) {
-      refused = refusalOf(verdict);
-      result.reasoning     = `[cannot be made: ${verdict.code} — ${verdict.why}] ${result.reasoning ?? ""}`.trim();
-      result.decision      = verdict.offer ? PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE : PACING_DECISION.NARRATIVE;
-      result.suggestedMove = verdict.offer ?? null;
+  if (result.unmade?.verdict) {
+    refused = refusalOf(result.unmade.verdict);
+    if (refused?.offer) {
+      result.decision      = PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE;
+      result.suggestedMove = refused.offer;
+      result.suggestedTargetId = null;
     }
-  }
-
-  // The dial holds. At 0–2 the table has said "narrate unless the player
-  // asks for a roll or the stakes are plain", and a MOVE the classifier is
-  // not sure of is neither: with the social dial at 1, "I lean on the counter
-  // and ask Vance what the Ascendancy wants with him" was called a Compel at
-  // 0.6 in two live runs of three, because Vance is a connection (known-issues
-  // PACING-LOW-DIAL-QUESTION-TO-CONNECTION). Such a move is offered, not
-  // rolled: the narration answers, and its card carries the Roll. Not in a
-  // fight (the backstop above), and not the fallback for a call that failed,
-  // which keeps the move pipeline running.
-  if (!combatActive && result.decision === PACING_DECISION.MOVE && result.fallback !== true
-      && effectiveDial(result.category, pacingConfig) <= LOW_DIAL_MAX
-      && result.confidence < LOW_DIAL_MOVE_CONFIDENCE) {
-    result.decision  = PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE;
-    result.reasoning = `[low dial: an unsure move is offered, not rolled] ${result.reasoning ?? ""}`.trim();
   }
 
   // Record the decision for both the in-memory density window and the
   // persistent telemetry journal.
-  recordRecentDecision({
-    decision: result.decision,
-    sceneTag,
-    window:   pacingConfig.densityWindow,
-  });
+  if (!round) {
+    recordRecentDecision({
+      decision: result.decision,
+      sceneTag,
+      window:   pacingConfig.densityWindow,
+    });
+  }
 
   logPacingDecision({
     playerText,
@@ -309,17 +285,16 @@ export async function decidePacing({
       runMove: true,
       decision: result.decision,
       suggestedMove: null,
-      // The move the classifier named, for the interpreter to read the line
-      // with (issue #354 P2-02): it was dropped here, and the interpreter
-      // picked again from scratch — a different move on five of the playtest's
-      // seven rolled lines. Not an offer: `suggestedMove` stays null on MOVE.
-      nominatedMove: result.suggestedMove ?? null,
       category: result.category,
       confidence: result.confidence,
       reasoning: result.reasoning,
-      // The classifier read the line — not its fallback for a failed call or
-      // an unreadable reply (classifierReadingOf; issue #362 AC64).
-      classifierRead: result.fallback !== true,
+      // The reading, carried to readMove: a line routed to a roll is not
+      // read again (the gate is asked once more under the lock). A failed
+      // reading (`fallback`) is read again there — the second try (D13).
+      reading: result.reading ?? null,
+      // How the reading was routed (routeReading's row and why), for the telemetry and the readers' test.
+      route: result.route ?? null, moveId: result.moveId ?? null,
+      ...(result.fallback ? { fallback: true } : {}),
     };
   }
 
@@ -328,22 +303,19 @@ export async function decidePacing({
     ? result.suggestedMove
     : null;
 
-  // The challenge a scene-challenge nomination is part of — the one the
-  // classifier named, else the sole open one — by id, for the paced card's
-  // Roll to carry as its target: with two open it named none, and its scoring
-  // asked "which scene challenge?" (PACED-VARIANT-NO-TARGET).
-  const suggestedTargetId = SCENE_CHALLENGE_VARIANTS[suggestedMove]
-    ? (selectSceneChallengeTrack(openChallenges, result.sceneChallenge ?? null)?.id ?? null)
-    : null;
-
   return {
     runMove: false,
     decision: result.decision,
     suggestedMove,
-    suggestedTargetId,
+    // The challenge an offered scene-challenge move is part of, by id
+    // (PACED-VARIANT-NO-TARGET): readAndRoute's, from the reading.
+    suggestedTargetId: suggestedMove ? (result.suggestedTargetId ?? null) : null,
     category: result.category,
     confidence: result.confidence,
     reasoning: result.reasoning,
+    reading: result.reading ?? null,
+    route: result.route ?? null, moveId: result.moveId ?? null,
+    unmade: result.unmade ? { moveId: result.unmade.moveId, why: result.unmade.why } : null,
     // The move the line was read as, refused by the gate — told in the
     // narration and on its card (narrator.js narratePacedInput `refusal`).
     ...(refused ? { refused } : {}),
@@ -351,23 +323,31 @@ export async function decidePacing({
 }
 
 /**
- * What the classifier made of a line it called a MOVE, for the move
- * interpreter's PACING READ hint (issue #354 P2-02) — free-flow's and a Batch
- * Mode reading's (movePipeline.js readAction) — or null when no classifier
- * read the line: pacing switched off, a `!roll`, the classifier's call failed
- * or its reply could not be read, the router failed. Those decisions carry a
- * placeholder scene kind ("exploration") and a status string ("pacing
- * disabled", "fallback: …") where the reasoning goes; handed on, they told
- * the interpreter a line was in an exploration scene nobody read (issue #362
- * AC64). Pure.
+ * The speaker's situation for the move gate (moves/situation.js
+ * readMoveSituation), read live; null when it cannot be read — then nothing
+ * is refused (an unknown is never a refusal).
  *
- * @param {Object|null} pacing — decidePacing's or routePacedInput's decision
- * @returns {{ moveId: string|null, category: string|null, reasoning: string|null }|null}
+ * @param {{ actorId?: string|null }|null} character
+ * @param {Object|null} campaignState
+ * @returns {Promise<Object|null>}
  */
-export function classifierReadingOf(pacing) {
-  if (pacing?.decision !== PACING_DECISION.MOVE || pacing.classifierRead !== true) return null;
-  if (!pacing.nominatedMove && !pacing.category) return null;
-  return { moveId: pacing.nominatedMove ?? null, category: pacing.category ?? null, reasoning: pacing.reasoning ?? null };
+async function readSituationForGate(character, campaignState) {
+  try {
+    return await readMoveSituation(character?.actorId ?? null, { campaignState });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | pacing: the move gate could not be asked — nothing is decided from it:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/** The Mischief dial, for the open reading (D16); "serious" when it cannot be read. */
+async function readMischiefDial() {
+  try {
+    const { getMischiefDial } = await import("../ui/settingsPanel.js");
+    return getMischiefDial() ?? "serious";
+  } catch {
+    return "serious";
+  }
 }
 
 /**
@@ -438,70 +418,6 @@ export async function routePacedInput({
     confidence: pacing.confidence,
     reasoning: pacing.reasoning,
   };
-}
-
-/**
- * The gate's verdict on the move the classifier read a line as, for the
- * speaker — their situation read live (moves/situation.js readMoveSituation),
- * the line as the reading (NOT_AT_A_PC reads its addressee). Null when it
- * cannot be asked: then nothing is decided from it (an unknown is never a
- * refusal).
- *
- * @param {string} moveId
- * @param {{ playerText: string, character: { actorId?: string|null }|null, campaignState: Object|null }} ctx
- * @returns {Promise<Object|null>}
- */
-async function gateTheLine(moveId, { playerText, character, campaignState }) {
-  try {
-    const situation = await readMoveSituation(character?.actorId ?? null, { campaignState });
-    return checkMove(moveId, situation, { line: playerText ?? "" }, { stage: "offer" });
-  } catch (err) {
-    console.warn(`${MODULE_ID} | pacing: the move gate could not be asked — nothing is decided from it:`, err?.message ?? err);
-    return null;
-  }
-}
-
-/**
- * Detect whether a fight is currently underway — i.e. there is at least one
- * open (non-completed) combat progress track. When true, the classifier and
- * router force player actions through the move pipeline so combat outcomes are
- * earned with dice rather than asserted as narration (playtest finding:
- * "I was able to thwart the drama during combat by asserting outcomes").
- *
- * Lazy-imports progressTracks to avoid load-order coupling, and fails open to
- * `false` (no combat) so a storage hiccup never blocks normal narration.
- *
- * @returns {Promise<boolean>}
- */
-async function detectCombatActive() {
-  try {
-    const { listProgressTracks } = await import("../ui/progressTracks.js");
-    const tracks = await listProgressTracks();
-    return Array.isArray(tracks) && tracks.some(t => t.type === "combat" && !t.completed);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The open scene challenges, for the classifier as the fight is
- * (detectCombatActive) — by name — and for the paced card's Roll target — by
- * id: within one, Face Danger and Secure an Advantage are its own moves (issue
- * #338 D2), and a paced "Roll Face Danger" during a challenge forced the
- * ordinary move — the classifier knew of no challenge
- * (PACING-ROLL-NO-SCENE-CHALLENGE). Fails open to none.
- *
- * @returns {Promise<Array<{ id: string, label: string, type: string, completed: boolean }>>}
- */
-async function detectOpenSceneChallenges() {
-  try {
-    const { listProgressTracks } = await import("../ui/progressTracks.js");
-    const tracks = await listProgressTracks();
-    return (Array.isArray(tracks) ? tracks : [])
-      .filter(t => t.type === "scene_challenge" && !t.completed);
-  } catch {
-    return [];
-  }
 }
 
 /**

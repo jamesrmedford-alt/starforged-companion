@@ -31,7 +31,7 @@ vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
 }));
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude, isReaderCall } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const KEY = `${MODULE_ID}.campaignState`;
@@ -40,11 +40,8 @@ const KEY = `${MODULE_ID}.campaignState`;
 // model that is no reader's.
 const NARRATION_MODEL = 'claude-sonnet-5-5';
 const isNarration = (call) => call.model === NARRATION_MODEL && !isReaderCall(call);
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
-const NARRATIVE = JSON.stringify({
-  decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
-  category: 'social', confidence: 0.9, reasoning: 'Small talk — no stakes.',
-});
+const isClassifier = (call) => isReaderCall(call);
+const NARRATIVE = readerReply({ category: 'social' });
 const MOVE = JSON.stringify({
   decision: 'MOVE', suggestedMove: null, sceneChallenge: null,
   category: 'social', confidence: 0.9, reasoning: 'Pressing for an outcome.',

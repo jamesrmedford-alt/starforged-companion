@@ -47,7 +47,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const STARFORGED_MOVES = 'foundry-ironsworn.starforgedmoves';
@@ -56,7 +56,7 @@ const VENDOR_FACE_DANGER = path.resolve(__dirname,
 const HAVE_VENDOR = fs.existsSync(VENDOR_FACE_DANGER);
 const vendoredFaceDanger = HAVE_VENDOR ? JSON.parse(fs.readFileSync(VENDOR_FACE_DANGER, 'utf8')) : null;
 
-const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? '');
+const isInterpreter = (call) => isReaderCall(call);
 const SNEAK = 'I melt into the shadows and slip past the sentries.';
 
 let table;

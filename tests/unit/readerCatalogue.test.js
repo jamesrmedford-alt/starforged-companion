@@ -22,16 +22,11 @@ const ROOT = path.resolve(__dirname, '../..');
 const entryOf = (id) => READER_CATALOGUE.flatMap(g => g.moves).find(m => m.id === id);
 
 describe('the line reader\'s catalogue', () => {
-  it('names the moves the move reader lists today — none added, none dropped: every move but the session moves', () => {
+  it('names every move but the session moves — none added, none dropped (the move reader\'s list, retired at the switch)', () => {
     const session = Object.keys(MOVES).filter(id => MOVES[id].category === 'session');
     expect(session.length).toBeGreaterThan(0);
     expect(new Set(CATALOGUE_MOVE_IDS)).toEqual(new Set(Object.keys(MOVES).filter(id => !session.includes(id))));
     expect(CATALOGUE_MOVE_IDS.length, 'each move once').toBe(new Set(CATALOGUE_MOVE_IDS).size);
-    // The move reader's own reference, as its prompt lists it.
-    const interpreter = fs.readFileSync(path.join(ROOT, 'src/moves/interpreter.js'), 'utf8');
-    const reference = interpreter.slice(interpreter.indexOf('## MOVE REFERENCE'), interpreter.indexOf('## STAT GUIDE'));
-    const listed = [...reference.matchAll(/^- \*\*([a-z_]+)\*\*/gm)].map(m => m[1]);
-    expect(new Set(CATALOGUE_MOVE_IDS)).toEqual(new Set(listed));
   });
 
   it('quotes the game where its words decide: the seven deeds, the six kinds of headway, a new relationship or an existing one given focus', () => {
@@ -64,7 +59,10 @@ describe('the line reader\'s catalogue', () => {
 
   it('a ruling sits beside its trigger, in brackets — the decided ones, in the module\'s own words', () => {
     // A favour or a risk taken is one of the quoted deeds; a plea for the tie itself is talk (issue #384, the first measure).
-    expect(entryOf('develop_your_relationship').ruling).toBe('A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself — trust, friendship, to count on each other — is talk, no deed (rule 4). No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.');
+    expect(entryOf('develop_your_relationship').ruling).toBe('A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself while it is being built — trust, friendship, to count on each other — is talk, no deed (rule 4). A vow sworn in their service is Swear an Iron Vow, never this in its place. No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.');
+    // The second measure (readers-live-20261125-073803): swear-1 read as Develop, bond-1 as talk.
+    expect(entryOf('swear_an_iron_vow').ruling).toBe('A vow sworn in a connection\'s service is this, never Develop Your Relationship\'s deed in its place (that follows from the vow).');
+    expect(entryOf('forge_a_bond').ruling).toMatch(/Asking to make the tie lasting — for good, whatever comes — with the track ready is this, not talk \(rule 4\)\.$/);
     expect(entryOf('fulfill_your_vow').ruling).toBe('When the line claims what the vow swore — its goal reached — as the scene bears out: this, not a milestone (rule 6).');
     expect(entryOf('reach_a_milestone').ruling).toBe('It marks the vow\'s progress with no roll. The RECENT SCENE bears the headway out (rule 6).');
     expect(entryOf('forge_a_bond').ruling).toMatch(/^A full relationship track is ready for it; less does not forbid it, at worse odds\./);
@@ -73,7 +71,7 @@ describe('the line reader\'s catalogue', () => {
     expect(READER_CATALOGUE.find(g => g.title === 'LEGACY').note).toBe('Only when the line is plainly about it.');
     expect(READER_CATALOGUE.find(g => g.title === 'FATE').note).toBe('Only when the line is plainly about it.');
     const rendered = renderReaderCatalogue();
-    expect(rendered).toContain('Asking for the relationship itself — trust, friendship, to count on each other — is talk, no deed (rule 4). No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.]');
+    expect(rendered).toContain('A vow sworn in their service is Swear an Iron Vow, never this in its place. No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.]');
     expect(rendered).toContain('LEGACY [Only when the line is plainly about it.]');
   });
 

@@ -22,6 +22,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const sent = vi.hoisted(() => ({ bodies: [], reply: null }));
 vi.mock('../../src/net/fetchWithTimeout.js', () => ({
+  DEFAULT_TIMEOUT_MS: 60_000,
   fetchWithTimeout: vi.fn(async (_url, init) => {
     sent.bodies.push(JSON.parse(init.body));
     return { ok: true, status: 200, json: async () => sent.reply };
@@ -30,7 +31,6 @@ vi.mock('../../src/net/fetchWithTimeout.js', () => ({
 vi.mock('../../src/logging/apiTransactionLog.js', () => ({ logApiTransaction: vi.fn() }));
 
 import { apiPost } from '../../src/api-proxy.js';
-import { classifyInput } from '../../src/pacing/classifier.js';
 import { interpretMove } from '../../src/moves/interpreter.js';
 
 const URL = 'https://api.anthropic.com/v1/messages';
@@ -75,7 +75,7 @@ describe('apiPost sends each model its thinking-off form', () => {
   });
 });
 
-describe('the two readers of a typed line go out on Sonnet 5.5, in the form it accepts', () => {
+describe('the line reader goes out on Sonnet 5.5, in the form it accepts', () => {
   // What Sonnet 5.5 answers with a 400: `thinking: disabled`, any field beside
   // `between_tools` in `thinking`, an effort above `high` with thinking off, a
   // sampling parameter, a forced tool choice, an assistant prefill.
@@ -86,21 +86,8 @@ describe('the two readers of a typed line go out on Sonnet 5.5, in the form it a
     expect(body.messages.at(-1).role).toBe('user');
   };
 
-  it('the pacing classifier: Sonnet 5.5, `between_tools`, its own 330-token cap, the system prompt marked for caching', async () => {
-    sent.reply = { content: [{ type: 'text', text: JSON.stringify({ decision: 'NARRATIVE', suggestedMove: null, category: 'social', confidence: 0.9, reasoning: 'talk' }) }], stop_reason: 'end_turn' };
-    const decision = await classifyInput({
-      playerText: 'I ask Tamsin how the docks have been.', campaignState: {}, character: { name: 'Mira Kestrel' },
-      recentMoveDensity: { count: 0, window: 5 }, pacingConfig: { dials: { social: 5 } }, apiKey: 'sk-ant-test',
-    });
-    expect(decision).toMatchObject({ decision: 'NARRATIVE', category: 'social' });
-    expect(sent.bodies).toHaveLength(1);
-    acceptable(sent.bodies[0]);
-    expect(sent.bodies[0].max_tokens).toBe(330);
-    expect(sent.bodies[0].system[0].cache_control).toEqual({ type: 'ephemeral' });
-  });
-
-  it('the move interpreter: Sonnet 5.5, `between_tools`, its own 1300-token cap — whatever model a world stored', async () => {
-    sent.reply = { content: [{ type: 'text', text: JSON.stringify({ moveId: 'compel', statUsed: 'heart', rationale: 'pressing', confidence: 'high' }) }], stop_reason: 'end_turn' };
+  it('one call reads the line (issue #384): Sonnet 5.5, `between_tools`, its 1300-token cap, the rules cached an hour — whatever model a world stored', async () => {
+    sent.reply = { content: [{ type: 'text', text: JSON.stringify({ move: 'compel', category: 'social', confidence: 'high', reason: 'pressing', stat: 'heart' }) }], stop_reason: 'end_turn' };
     const reading = await interpretMove('I lean on the dockmaster to waive the fee.', {
       campaignState: { api: { model: 'claude-haiku-5-5', maxTokens: 1000, promptCachingEnabled: true } },
       mischiefLevel: 'lawful', apiKey: 'sk-ant-test',
@@ -109,7 +96,7 @@ describe('the two readers of a typed line go out on Sonnet 5.5, in the form it a
     expect(sent.bodies).toHaveLength(1);
     acceptable(sent.bodies[0]);
     expect(sent.bodies[0].max_tokens).toBe(1300);
-    expect(sent.bodies[0].system[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(sent.bodies[0].system[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 });
 

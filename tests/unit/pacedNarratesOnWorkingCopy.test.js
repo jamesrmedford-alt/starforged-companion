@@ -25,7 +25,7 @@
 /* global silenceConsoleErrors */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude, isReaderCall } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const KEY = `${MODULE_ID}.campaignState`;
@@ -40,10 +40,7 @@ const SIDECAR = {
   sceneFrame:   { location: 'the loading bay', present: ['the dockmaster'], situation: 'Haggling over berth fees' },
 };
 const NARRATION = 'The dockmaster scratches his chin and lets you pass.\n```json\n' + JSON.stringify(SIDECAR) + '\n```';
-const NARRATIVE = JSON.stringify({
-  decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
-  category: 'social', confidence: 0.9, reasoning: 'conversation, no move',
-});
+const NARRATIVE = readerReply({ category: 'social' });
 
 let table;
 
@@ -66,7 +63,7 @@ async function seed(extra = {}) {
   scriptClaude(table, {
     fallback: (call) => {
       if (isNarration(call)) return NARRATION;
-      if (/pacing pre-classifier/.test(call.system)) return NARRATIVE;
+      if (isReaderCall(call)) return NARRATIVE;
       return '{}';
     },
   });

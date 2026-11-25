@@ -4699,14 +4699,14 @@ function registerPacingTests(quench) {
 
       describe("effectiveDial / scene override math", function () {
         it("base dial returned without override", async function () {
-          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/classifier.js`);
+          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/dials.js`);
           const cfg = { dials: { combat: 9, social: 3 }, sceneOverride: null };
           assert.equal(effectiveDial("combat", cfg), 9);
           assert.equal(effectiveDial("social", cfg), 3);
         });
 
         it("clamps to [0, 10] with extreme modifiers", async function () {
-          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/classifier.js`);
+          const { effectiveDial } = await import(`/modules/${MODULE_ID}/src/pacing/dials.js`);
           const hot  = { dials: { combat: 9 }, sceneOverride: { modifier:  5, label: "hot"   } };
           const cold = { dials: { downtime: 1 }, sceneOverride: { modifier: -5, label: "quiet" } };
           assert.equal(effectiveDial("combat",   hot),  10);

@@ -36,17 +36,14 @@ vi.mock('../../src/ui/settingsPanel.js', async (importOriginal) => ({
 }));
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude, isReaderCall } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const VOW  = 'Find who is raiding the Cinder Expanse lanes';
 // The measured line (run 2's a71, without its rules word; the readers' test's progress-1).
 const LINE = 'I now have proof the raids are fed by dock clerks selling cargo routes.';
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
-const OFFERED = JSON.stringify({
-  decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'reach_a_milestone', sceneChallenge: null,
-  category: 'investigation', confidence: 0.8, reasoning: 'Proof found is a step toward her open vow.',
-});
+const isClassifier = (call) => isReaderCall(call);
+const OFFERED = readerReply({ move: 'reach_a_milestone', risk: 'slight', category: 'investigation' });
 // The narrator's reply closes on no hint of its own: the reader's move stands on the card.
 const NARRATION = 'Roe will not look at the ledger. The schedules are in his own hand.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
@@ -146,7 +143,7 @@ describe('a step toward a vow said in the fiction: offered on the card, made by 
 
   it('control: a line the reader narrates plainly carries no move, and marks nothing', async () => {
     scriptClaude(table, { fallback: (call) => (isReaderCall(call) ? '{}' : NARRATION) })
-      .when(isClassifier, JSON.stringify({ decision: 'NARRATIVE', suggestedMove: null, category: 'social', confidence: 0.9, reasoning: 'A reflective line.' }));
+      .when(isClassifier, readerReply({ category: 'social' }));
     await table.client('pl-1').chat('I turn my sister\'s compass over in my palm.', { speaker: { actor: 'pc-mira', alias: 'Mira Kestrel' } });
     await table.settle(); await table.drain();
 

@@ -29,14 +29,13 @@ const flat = (s) => s.replace(/\s+/g, ' ');
 const section = flat(README.split('## Cost and API usage')[1]?.split('### Narrator prompt size')[0] ?? '');
 
 describe('README-COST-FIGURES — the README\'s cost section matches the models the code uses', () => {
-  it('control: the defaults are Sonnet 5.5 for narration, and for the interpreter and classifier', () => {
+  it('control: the defaults are Sonnet 5.5 for narration, and for the line reader', () => {
     expect(source('src/ui/settingsPanel.js')).toMatch(/name:\s*'Narration Model',[\s\S]*?default:\s*'claude-sonnet-5-5'/);
-    expect(source('src/moves/interpreter.js')).toMatch(/const MODEL\s*=\s*"claude-sonnet-5-5"/);
-    expect(source('src/pacing/classifier.js')).toMatch(/const MODEL\s*=\s*"claude-sonnet-5-5"/);
+    expect(source('src/moves/reader.js')).toMatch(/const MODEL\s*=\s*"claude-sonnet-5-5"/);
   });
 
-  it('says which calls run on which model: the two readers on Sonnet 5.5, the other helpers on Haiku 5.5', () => {
-    expect(section).toMatch(/the pacing classifier \(is it a move\?\) and the move interpreter \(which move, which stat\) — run on \*\*Claude Sonnet 5\.5\*\* as well/);
+  it('says which calls run on which model: the line reader on Sonnet 5.5, the other helpers on Haiku 5.5', () => {
+    expect(section).toMatch(/the\s+line reader \(which move it sets about, if any, how much hangs on it, and its\s+stat and stakes\) — runs on \*\*Claude Sonnet 5\.5\*\* as well/);
     expect(section).toMatch(/The detection passes after each narration, relevance, `!lore` and the Private Channel run on \*\*Claude Haiku 5\.5\*\*/);
     // The settings panel names the readers' model where it describes them.
     const panel = source('src/ui/settingsPanel.js');

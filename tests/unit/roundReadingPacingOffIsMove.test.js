@@ -34,19 +34,32 @@ vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
 import { apiPost } from '../../src/api-proxy.js';
 import { resetRecentDensity } from '../../src/pacing/router.js';
 import { readAction, configureMovePipeline } from '../../src/moves/movePipeline.js';
+import { asLineReader } from '../helpers/faults.js';
 
 const MODULE_ID = 'starforged-companion';
 
-/** Answer each Claude call by what it is: the classifier, or the interpreter. A string reply is sent as is. */
+/**
+ * Answer each line-reader call as the two readers' scripts said (issue #384,
+ * slice 2): a line's open reading is the classifier's decision with the
+ * interpreter's move; a roll is the interpreter's reply. A string reply is
+ * sent as is (an unreadable one fails the reading).
+ */
 function scriptCalls({ classifier = null, interpreter = null } = {}) {
+  let opened = 0;
   apiPost.mockImplementation(async (_url, _headers, body) => {
-    const system = JSON.stringify(body.system ?? '');
-    const reply = /pacing pre-classifier/.test(system) ? classifier : interpreter;
+    const userText = String(body.messages?.[0]?.content ?? '');
+    const call = { system: body.system?.[0]?.text ?? '', userText };
+    const open = /^MODE — READ THE LINE/.test(userText);
+    // A classifier's string reply is the first open reading's; its second try is the interpreter's (D13).
+    const first = open && opened++ === 0;
+    const reply = first && typeof classifier === 'string' ? classifier
+      : asLineReader({ classifier: typeof classifier === 'string' || !first ? null : classifier, interpreter })(call);
     return { content: [{ type: 'text', text: typeof reply === 'string' ? reply : JSON.stringify(reply ?? {}) }] };
   });
 }
-const callsTo = (pattern) => apiPost.mock.calls.filter(c => pattern.test(JSON.stringify(c[2].system ?? '')));
-const interpreterCall = () => callsTo(/move interpreter/)[0]?.[2] ?? null;
+// The reader's calls in each mode: a line's open reading (the classifier's, once), a roll (the interpreter's).
+const callsTo = (pattern) => apiPost.mock.calls.filter(c => pattern.test(String(c[2].messages?.[0]?.content ?? '')));
+const interpreterCall = () => callsTo(/^MODE — A ROLL WAS ASKED FOR|^MODE — READ THE LINE/).at(-1)?.[2] ?? null;
 
 const host = Object.fromEntries([
   'postWhichFightCard', 'postWhichVowCard', 'postWhichLegacyCard', 'postTrackGoneCard',
@@ -81,8 +94,8 @@ describe('issue #362 AC68 — a round\'s reading with the pacing classifier swit
     scriptCalls({ interpreter: { moveId: null, rationale: 'A narrative exchange.' } });
     const reading = await read();
 
-    expect(callsTo(/pacing pre-classifier/), 'setup: pacing is off — the classifier was not called').toHaveLength(0);
-    expect(callsTo(/move interpreter/), 'setup: the line went to the interpreter').toHaveLength(1);
+    expect(callsTo(/^MODE — READ THE LINE/), 'setup: pacing is off — no open reading').toHaveLength(0);
+    expect(callsTo(/^MODE — A ROLL WAS ASKED FOR/), 'setup: the line was read for a roll').toHaveLength(1);
     expect(reading.kind).toBe('move');
     expect(interpreterCall().messages[0].content).toMatch(/A ROLL WAS ASKED FOR/);
   });
@@ -100,14 +113,16 @@ describe('issue #362 AC68 — a round\'s reading with the pacing classifier swit
       interpreter: { moveId: null, rationale: 'A narrative exchange.' },
     });
     const reading = await read();
-    expect(reading).toEqual({ kind: 'narrative', suggestedMove: 'compel', suggestedTargetId: null });
+    // One reader since the switch: no move read is no move offered.
+    expect(reading).toEqual({ kind: 'narrative', suggestedMove: null, suggestedTargetId: null });
     expect(interpreterCall().messages[0].content).not.toMatch(/A ROLL WAS ASKED FOR/);
   });
 
   it('control: with pacing on and the classifier failing, the line may still be no move — as in free-flow', async () => {
     scriptCalls({ classifier: 'not a decision', interpreter: { moveId: null, rationale: 'A narrative exchange.' } });
     const reading = await read();
-    expect(callsTo(/pacing pre-classifier/), 'setup: the classifier was asked').toHaveLength(1);
+    // Read, failed, and read once more under the lock (D13).
+    expect(callsTo(/^MODE — READ THE LINE/), 'setup: the line was read, and read again').toHaveLength(2);
     expect(reading).toMatchObject({ kind: 'narrative' });
   });
 

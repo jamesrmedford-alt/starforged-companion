@@ -99,7 +99,7 @@ describe('one line, read once, against the whole situation', () => {
     expect(asked.userText).toContain('- clash, react_under_fire, take_decisive_action, face_defeat — in the fight "Ashen Wake" (Mira Kestrel is in a bad spot)');
     expect(asked.userText).toContain(`- Open vows: "${VOW}" (dangerous, 0 of 10 boxes).`);
     expect(asked.userText).toContain('- Connections: "Tamsin Okoro" (dangerous, relationship 0 of 10 boxes).');
-    expect(asked.userText).toContain('- Place: Bleakhold Station (settlement).');
+    expect(asked.userText).toMatch(/- Place: Bleakhold Station\./);
 
     expect(decision).toMatchObject({ runMove: true, decision: 'MOVE', suggestedMove: null, moveId: 'clash', category: 'combat', confidence: 0.9, unmade: null });
     expect(decision.reading.interpretation).toMatchObject({ moveId: 'clash', statUsed: 'edge', positionConstraintApplied: true,

@@ -59,14 +59,6 @@ describe("the interpreter's numbers are the module's (INTERP-NUMBERS-TRUSTED)", 
     expect(interp).toMatchObject({ moveId: "fulfill_your_vow", statValue: 0, adds: 0, progressTicks: 0 });
   });
 
-  it("the prompt's response format no longer offers an adds field", async () => {
-    reply({ moveId: "face_danger", statUsed: "wits", rationale: "r" });
-    await interpretMove("I thread the debris field.", OPTS);
-    const system = JSON.stringify(apiPost.mock.calls.at(-1));
-    expect(system).toContain('\\"statValue\\": 0');
-    expect(system).not.toContain('\\"adds\\": 0');
-  });
-
   it("a progress move that resolves no track scores 0, not the number it carried", async () => {
     const interp = {
       moveId: "fulfill_your_vow", isProgressMove: true, moveTarget: "a vow nobody swore",

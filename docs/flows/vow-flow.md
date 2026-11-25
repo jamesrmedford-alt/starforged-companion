@@ -333,6 +333,8 @@ All real progress lands on **item ticks** (`system.current`) via
   - **in an open fight** an offer is a MOVE (the router's combat backstop),
     so the interpreter reads the line.
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
   A line that also attempts something with stakes is that action's move —
   whose hit carries ⚑ Mark Progress on Vow (next bullet); a line that says
   outright the vow is done is Fulfill Your Vow (§4).
@@ -469,6 +471,8 @@ linked to (`readVows`' `linkedConnectionName`, the flag
 Before the block the classifier was told no vow at all, and the interpreter
 the names alone; at a table of several the interpreter is still told the
 other characters' open vows by name, a shared vow once.
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 **The vow this scene serves** (issue #353 R3 — the vow as the spine). Of
 those three places only THE TABLE'S FOCUS THIS SESSION came with an

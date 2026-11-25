@@ -18,6 +18,8 @@ about any track; that field and the dead `consequences.progressTrackId`
 mark-progress route in `persistResolution` were deleted in the 2026-10
 audit.)
 
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
+
 ## 0. World seeding — sites exist before any travel
 
 Sector generation (`generateSectorSites`, `src/sectors/precursorSites.js`)
@@ -171,6 +173,8 @@ finish docks there and charts nothing.
   read as, ask without them. Not narrowed: the arrival by name (a place in
   the words around it, §3 — a finish's names lose their journey words as at
   the start) and the GM's `!at`.
+
+> **Since the switch (issue #384, slice 2):** one call reads a typed line — the line reader (`src/moves/reader.js`), told the speaker's sheet, the party, the fights with the speaker's position, the scene challenges, expeditions, the place and the frame (`src/moves/readerSituation.js`) and what can be made now (`src/moves/availability.js`, the move contracts after slice 4), and routed by code (`src/pacing/readAndRoute.js`). The pacing classifier and the move interpreter this paragraph names are retired; `interpretMove` is the reader's roll and chosen modes, and `constrainMoveToPosition` stays in `interpreter.js`.
 
 ## 1. Setting out
 

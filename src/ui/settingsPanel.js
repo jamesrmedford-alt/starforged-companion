@@ -550,7 +550,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.PACING_ENABLED, {
     name:    'Pacing Classifier Enabled',
-    hint:    'Master switch. When enabled, a pre-classifier (Claude Sonnet 5.5) decides whether undecorated chat input should trigger a move, be handled as narration, or be narrated with an inline move suggestion. When disabled, every input routes to the move interpreter as before.',
+    hint:    'Master switch. When enabled, the line reader (Claude Sonnet 5.5) reads undecorated chat input and the dials decide whether it triggers a move, is handled as narration, or is narrated with an inline move suggestion. When disabled, every input is read as a move.',
     scope:   'world',
     config:  false,
     type:    Boolean,

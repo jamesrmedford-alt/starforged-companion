@@ -24,12 +24,12 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const NARRATION_MODEL = 'claude-sonnet-5-5';
 const LINE = 'I lean on the bar and listen to the dockhands argue.';
-const NARRATIVE = JSON.stringify({ decision: 'NARRATIVE', suggestedMove: null, category: 'social', confidence: 0.9, reasoning: 'listening, no risk' });
+const NARRATIVE = readerReply({ category: 'social' });
 
 let table;
 
@@ -49,7 +49,7 @@ async function resetWith({ xCardActive }) {
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
   table.addActor({ id: 'pc-ren',  name: 'Ren',  ownership: { 'pl-2': 3 } });
   scriptClaude(table, { fallback: (call) => {
-    if (/pacing pre-classifier/.test(call.system ?? '')) return NARRATIVE;
+    if (isReaderCall(call)) return NARRATIVE;
     if (call.model === NARRATION_MODEL && /SIDECAR|NARRATOR ROLE/.test(call.system ?? '')) {
       return 'The dockhands bicker over a crate of stolen coolant.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
     }
@@ -57,7 +57,7 @@ async function resetWith({ xCardActive }) {
   } });
 }
 
-const classifierCalls = () => table.claude.calls.filter(c => /pacing pre-classifier/.test(c.system ?? ''));
+const classifierCalls = () => table.claude.calls.filter(c => isReaderCall(c));
 /** What the table was shown after the line: a card posted after it, or a notification on the author's screen. */
 function toldAfter(line) {
   const messages = table.world.messages();

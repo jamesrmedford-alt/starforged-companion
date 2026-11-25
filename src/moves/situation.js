@@ -2,9 +2,9 @@
  * STARFORGED COMPANION
  * src/moves/situation.js — the speaking character's situation, as both readers are told it
  *
- * Two model calls read every typed line: the pacing reader (is it a move? —
- * src/pacing/classifier.js) and the move reader (which move, which stat —
- * src/moves/interpreter.js). Neither was told the character's meters, and the
+ * Two model calls read every typed line until the line reader replaced
+ * them (issue #384, slice 2 — src/moves/reader.js): the pacing reader (is it
+ * a move?) and the move reader (which move, which stat). Neither was told the character's meters, and the
  * pacing reader was told nothing of the vows or of how far a relationship had
  * come (the move reader was told the vows' names and the connections'
  * tracks). So, in the long haul's live runs and the readers' plain-line test
@@ -58,13 +58,6 @@ const METER_MAX = 5;
 const TRACK_BOXES   = 10;
 const TICKS_PER_BOX = 4;
 const TRACK_TICKS   = TRACK_BOXES * TICKS_PER_BOX;
-/** The most vows, and the most connections, the block lists. */
-const LIST_CAP = 8;
-
-/** What both readers are told when the speaker has no character sheet. */
-const NO_SHEET_SITUATION =
-  "SITUATION — no character sheet is known for the speaker: meters, vows and connections are unknown.";
-
 const clean = (text) => String(text ?? "").replace(/["\r\n]+/g, " ").replace(/\s+/g, " ").trim();
 const whole = (value) => (value !== null && value !== "" && Number.isFinite(Number(value)) ? Math.round(Number(value)) : null);
 const ticksOf = (value) => Math.max(0, Math.min(TRACK_TICKS, whole(value) ?? 0));
@@ -168,61 +161,6 @@ export function connectionStanding(c) {
   if (c?.bonded === true || c?.completed === true) return "bonded";
   const ticks = ticksOf(Number.isFinite(Number(c?.ticks)) ? c.ticks : Number(c?.progress ?? 0) * TICKS_PER_BOX);
   return `relationship ${progress(ticks)}${ticks >= TRACK_TICKS ? " — full, no bond forged yet" : ""}`;
-}
-
-/** "Health 5 of 5 (full, not wounded)" — a meter beside the impact its recovery move clears. */
-function meter(label, value, marked, impact, max = METER_MAX) {
-  if (value === null) return `${label} unknown`;
-  const notes = [
-    value >= max ? "full" : null,
-    marked === null ? null : marked ? impact : `not ${impact}`,
-  ].filter(Boolean);
-  return `${label} ${value} of ${max}${notes.length ? ` (${notes.join(", ")})` : ""}`;
-}
-
-function capped(items) {
-  if (items.length <= LIST_CAP) return items.join("; ");
-  return `${items.slice(0, LIST_CAP).join("; ")}; +${items.length - LIST_CAP} more`;
-}
-
-/**
- * The situation as the block both readers' prompts carry. Pure: the same
- * data gives the same text.
- *
- * @param {ReturnType<typeof readSituation>} situation
- * @returns {string}
- */
-function renderSituation(situation) {
-  if (!situation) return NO_SHEET_SITUATION;
-  const { meters, impacts, vehicle } = situation;
-  const vows = situation.vows.map(v =>
-    `"${v.name}" (${[v.rank, progress(v.ticks)].filter(Boolean).join(", ")}${v.swornTo ? `; sworn to ${v.swornTo}` : ""})`);
-  const connections = situation.connections.map(c => `"${c.name}" (${[c.rank, connectionStanding(c)].filter(Boolean).join(", ")})`);
-  return [
-    `SITUATION — ${situation.name}'s sheet as it stands:`,
-    `- Meters: ${[
-      meter("Health", meters.health, impacts.wounded, "wounded"),
-      meter("Spirit", meters.spirit, impacts.shaken, "shaken"),
-      meter("Supply", meters.supply, impacts.unprepared, "unprepared"),
-    ].join("; ")}.`,
-    vehicle
-      ? `- Command vehicle: ${vehicle.name ? `"${vehicle.name}", ` : ""}${meter("integrity", vehicle.integrity, vehicle.battered, "battered", vehicle.max)}.`
-      : "- Command vehicle: none recorded.",
-    `- Open vows: ${vows.length ? capped(vows) : "none"}.`,
-    `- Connections: ${connections.length ? capped(connections) : "none"}.`,
-  ].join("\n");
-}
-
-/**
- * The block for a speaker, read and rendered: what the pacing reader's
- * CHARACTER section and the move reader's context both carry.
- *
- * @param {Actor|null} actor — the speaker's character
- * @param {{ campaignState?: Object|null }} [opts]
- * @returns {string}
- */
-export function buildSituationBlock(actor, opts = {}) {
-  return renderSituation(readSituation(actor, opts));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

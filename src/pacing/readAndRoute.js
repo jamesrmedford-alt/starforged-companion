@@ -23,14 +23,14 @@
  * them for its master switch and `!roll` first), and so are the telemetry
  * and the density record.
  *
- * UNWIRED: overhaul 1 slice 2 (the switch) — decidePacing calls readAndRoute
- * once the readers' plain-line test has measured it beside today's two
- * readers (test/ci/playwright/readers.mjs, its only caller until then);
- * known-issues SINGLE-READER-UNWIRED.
+ * decidePacing calls readAndRoute for every typed line (issue #384, slice 2,
+ * the switch), with the move contracts' gate (overhaul 4, moves/contracts/
+ * gate.js checkMove) as routeReading's row 2; the readers' plain-line test
+ * calls it as decidePacing does (test/ci/playwright/readers.mjs).
  */
 
 import { MOVES } from "../schemas.js";
-import { effectiveDial, PACING_DECISION } from "./classifier.js";
+import { effectiveDial, PACING_DECISION } from "./dials.js";
 import { selectSceneChallengeTrack, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 import { readLineSituation } from "../moves/readerSituation.js";
 import { availableMoves, checkMove } from "../moves/availability.js";
@@ -125,7 +125,8 @@ export function routeReading(reading, ctx = {}) {
       remapped = { from: moveId, why: gate.why };
       moveId = gate.instead;
     } else {
-      return result("narrate", `not now: ${gate.why}`, { unmade: { moveId, why: gate.why } });
+      // The contracts' verdict rides with it: its premise is told to the narration, its offer is the card's Roll.
+      return result("narrate", `not now: ${gate.why}`, { unmade: { moveId, why: gate.why, ...(gate.verdict ? { verdict: gate.verdict } : {}) } });
     }
   }
   const made = (route, why, extra = {}) => result(route, why, { moveId, remapped, offeredMove: route === "offer" ? moveId : null, ...extra });
@@ -179,6 +180,9 @@ export function routeReading(reading, ctx = {}) {
  *   getRecentMoveDensity's; null in a Batch Mode round (D12: a round is its own pacing)
  * @param {string} [args.mischiefLevel] — the Mischief dial
  * @param {Array<{ name: string, text: string }>|null} [args.round] — a round's other submitted actions
+ * @param {((moveId: string) => Object|null)|null} [args.gate] — the move contracts' verdict for a move
+ *   (contracts/gate.js checkMove, on the speaker's situation read once — decidePacing's): routeReading's
+ *   row 2. Without one the stand-in's (moves/availability.js checkMove) is asked.
  * @returns {Promise<{ runMove: boolean, decision: string, suggestedMove: string|null, suggestedTargetId: string|null,
  *   category: string, confidence: number, reasoning: string, moveId: string|null,
  *   reading: import("../moves/reader.js").Reading, route: Object|null,
@@ -186,6 +190,7 @@ export function routeReading(reading, ctx = {}) {
  */
 export async function readAndRoute({
   playerText, campaignState, character = null, apiKey, pacingConfig, recentMoveDensity = null, mischiefLevel = "serious", round = null,
+  gate = null,
 }) {
   let actor = null;
   try { actor = character?.actorId ? (globalThis.game?.actors?.get?.(character.actorId) ?? null) : null; } catch { actor = null; }
@@ -210,7 +215,7 @@ export async function readAndRoute({
     pacingConfig,
     density: recentMoveDensity,
     fightOpen: situation.fights.length > 0,
-    check: (moveId) => checkMove(moveId, situation, { mode: READING_MODES.OPEN }),
+    check: typeof gate === "function" ? gateCheck(gate) : (moveId) => checkMove(moveId, situation, { mode: READING_MODES.OPEN }),
     toFellowPc: (moveId) => lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, { campaignState }),
   });
   if (route.remapped && route.moveId) reading = readAs(reading, route.moveId, route.remapped.why);
@@ -237,6 +242,31 @@ export async function readAndRoute({
     reading,
     route,
     unmade: route.unmade,
+  };
+}
+
+/**
+ * The move contracts' verdict (contracts/gate.js checkMove) as routeReading's
+ * check: a reroute (`ok` with `instead` — the position's own move, a
+ * variant's ordinary one) is a remap; a refusal carries its verdict for the
+ * narration and the card; an unknown is never a refusal.
+ *
+ * @param {(moveId: string) => Object|null} gate
+ * @returns {(moveId: string) => { ok: boolean, why: string, instead: string|null, verdict?: Object }}
+ */
+function gateCheck(gate) {
+  return (moveId) => {
+    let verdict = null;
+    try { verdict = gate(moveId); } catch (err) {
+      console.warn(`${MODULE_ID} | line reader: the move gate could not be asked — nothing is refused:`, err?.message ?? err);
+    }
+    if (!verdict) return { ok: true, why: "", instead: null };
+    if (verdict.ok) {
+      return verdict.instead && verdict.instead !== moveId && MOVES[verdict.instead]
+        ? { ok: false, why: verdict.note || `made as ${moveDisplayName(verdict.instead)}`, instead: verdict.instead }
+        : { ok: true, why: "", instead: null };
+    }
+    return { ok: false, why: verdict.why || "it cannot be made now", instead: null, verdict };
   };
 }
 

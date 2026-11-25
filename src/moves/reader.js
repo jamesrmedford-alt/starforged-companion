@@ -47,9 +47,10 @@
  * rate limit, five seconds later, none after any other failure (D13); a
  * reply cut short or unreadable is a failed reading, never a throw.
  *
- * UNWIRED: overhaul 1 slice 2 (the switch) — until then its only consumer is
- * readAndRoute (src/pacing/readAndRoute.js), which the readers' plain-line
- * test calls (test/ci/playwright/readers.mjs); known-issues SINGLE-READER-UNWIRED.
+ * Its consumers since the switch (slice 2): readAndRoute (src/pacing/
+ * readAndRoute.js), which decidePacing calls for every typed line — the open
+ * reading — and interpretMove (src/moves/interpreter.js) for the roll and
+ * chosen modes and a failed open reading's second try.
  */
 
 import { MOVES, STATS, toMoveId } from "../schemas.js";
@@ -59,7 +60,7 @@ import { constrainMoveToPosition, keepMischiefInKind } from "./interpreter.js";
 import { normaliseStakes, withPriceSource } from "./stakes.js";
 import { missPaysPrice } from "./resolver.js";
 import { moveDisplayName } from "../system/i18n.js";
-import { PACING_CATEGORIES } from "../pacing/classifier.js";
+import { PACING_CATEGORIES } from "../pacing/dials.js";
 import { renderReaderCatalogue } from "./readerCatalogue.js";
 import { readLineSituation, buildReaderSituationBlock } from "./readerSituation.js";
 import { availableMoves } from "./availability.js";
@@ -134,8 +135,8 @@ const RULES = `## HOW TO READ A LINE
 1. Intent over words. Read what the character does in the fiction, not the verbs used. The player's words are what the character attempts; what happens is the dice's and the narrator's.
 2. The line in its place. Read it against the SITUATION and the RECENT SCENE: who is there, what has happened, what a short line refers to ("let's go" after a destination was set; "do it" after someone asked for something). What you read is the PLAYER LINE; the rest is context.
 3. Only what can be made now. POSSIBLE NOW says what the situation allows, and for whom; NOT NOW names what cannot be made, and why. Read the line as a move that can be made — the same intent's move where NOT NOW names one ("clash instead") — or as no move. Within an open scene challenge, a Face Danger or Secure an Advantage made as part of it is its scene-challenge move: name the challenge.
-4. Talk is narration, to anyone, a connection included: asking, answering, agreeing, refusing, choosing between options offered, saying a name, telling what happened — and asking for the relationship itself: to be trusted, to be friends, to count on each other, to be someone's contact. A plea for a tie is none of develop_your_relationship's deeds, however warmly it is put. Talk is a move only when it does what a trigger names: it presses someone to do or give what they are reluctant to (compel), puts a relationship to the test by conflict or betrayal (test_your_relationship), offers or does one of develop_your_relationship's deeds (rule 5), or seeks company or peace for its own sake while the SITUATION shows something to recover (hearten). A threat, implied menace included, is compel or face_danger.
-5. Nothing at risk is no rolled move: answering a hail, opening a channel, walking to a station, picking something up. Working a ship's systems is a move only when the fiction puts something at risk. A move with no roll needs nothing at risk — its trigger is the deed. Something done for one of the speaker's connections — a gift of worth, a favour that costs the giver time or standing, a risk taken for them, bringing them what they lack — is one of develop_your_relationship's deeds (THE MOVES), and offering to do it is doing it (rule 1). Small talk, news traded, a plain question and a courtesy that costs nothing are not.
+4. Talk is narration, to anyone, a connection included: asking, answering, agreeing, refusing, choosing between options offered, saying a name, telling what happened — and asking for the relationship itself while it is still being built: to be trusted, to be friends, to count on each other, to be someone's contact. A plea for a tie is none of develop_your_relationship's deeds, however warmly it is put. Asking to make the tie lasting — "for good", "whatever comes", as kin — when the SITUATION shows the relationship ready to forge (its track full) is forge_a_bond. Talk is a move only when it does what a trigger names: it presses someone to do or give what they are reluctant to (compel), puts a relationship to the test by conflict or betrayal (test_your_relationship), offers or does one of develop_your_relationship's deeds (rule 5), or seeks company or peace for its own sake while the SITUATION shows something to recover (hearten). A threat, implied menace included, is compel or face_danger.
+5. Nothing at risk is no rolled move: answering a hail, opening a channel, walking to a station, picking something up. Working a ship's systems is a move only when the fiction puts something at risk. A move with no roll needs nothing at risk — its trigger is the deed. Something done for one of the speaker's connections — a gift of worth, a favour that costs the giver time or standing, a risk taken for them, bringing them what they lack — is one of develop_your_relationship's deeds (THE MOVES), and offering to do it is doing it (rule 1). A vow sworn, in anyone's service, is swear_an_iron_vow: Develop's "swearing a vow … in their service" follows from that vow and is never read in its place. Small talk, news traded, a plain question and a courtesy that costs nothing are not.
 6. Headway is in the story. reach_a_milestone is for headway the RECENT SCENE bears out — an obstacle overcome, an insight gained, a foe beaten, support earned, as the scene shows it — that the line claims or builds on, in its own words, however broadly it sums it up. A claim the scene contradicts, or that nothing in the scene supports — a plan, a hope, a question, a passing remark — is no move: the story has not made it. A line that attempts something with stakes is that attempt's move (the milestone is what it may earn). When what the line claims is what the vow swore — its goal reached, its quest at an end, as the scene bears out — it is fulfill_your_vow, not a milestone, whether or not the player says it is done.
 7. In a fight (an open fight in the SITUATION) any action the character takes is a move — the fight puts it at risk — and a result the player states against a foe ("I gun them down") is the attempt, never the outcome. Only observation, inner thought and a question to the narrator are no move. Use the fight's moves for the speaker's position; an action against a danger that is no foe is face_danger.
 8. Travel. A known route to one of the charted places is set_a_course; a journey anywhere else — coordinates someone gave, an unnamed or rumoured place, beyond the charts — is undertake_an_expedition, even when the player says "set a course". A time skip across a journey not yet made ("wake me when we get there") is that journey (category exploration, never downtime). Examining a notable place during an expedition is explore_a_waypoint.
@@ -515,7 +516,8 @@ export function parseReading(rawText, { mode = READING_MODES.OPEN, chosen = null
       if (mode === READING_MODES.ROLL) return failedReading(mode, "a roll was asked for, and the reply named no move");
       return { ...base, moveId: null, risk: null, plainMove: null, sceneChallenge: null, interpretation: null };
     }
-    moveId = toMoveId(raw);
+    // An id it does not know with a name it does is read by the name (issue #326 W38).
+    moveId = toMoveId(raw) ?? toMoveId(parsed.moveName);
     if (!moveId) return failedReading(mode, `the reply named no move the module knows (${String(raw).slice(0, 60)})`);
   }
 

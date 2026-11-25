@@ -134,7 +134,7 @@ describe("issue #347 AB16 — a World Journal AA63's defect split keeps the jour
 
 describe("issue #347 AB16 — a Progress Tracks journal AA62's defect split keeps the one the sessions since wrote", () => {
   let store;
-  let interpreter;
+  let reader;
   let saved2;
   let trackJournals;
 
@@ -153,7 +153,7 @@ describe("issue #347 AB16 — a Progress Tracks journal AA62's defect split keep
 
   beforeAll(async () => {
     store = await import("../../src/ui/progressTracks.js");
-    interpreter = await import("../../src/moves/interpreter.js");
+    reader = await import("../../src/moves/readerSituation.js");
   });
 
   beforeEach(() => {
@@ -176,10 +176,11 @@ describe("issue #347 AB16 — a Progress Tracks journal AA62's defect split keep
     globalThis.JournalEntry = saved2.create;
   });
 
-  it("the panel, the narrator and the interpreter read the default-named journal's tracks", async () => {
+  it("the panel, the narrator and the line reader read the default-named journal's tracks", async () => {
     expect((await store.listProgressTracks()).map(t => t.id)).toEqual(["fight-new"]);
     expect(store.listOpenProgressTracks().map(t => t.id)).toEqual(["fight-new"]);
-    expect(interpreter.buildContextSummary({})).toContain('Open progress tracks: combat "Drift raiders"');
+    // The line reader's situation reads the open tracks the same way (issue #384 — the interpreter did, before the switch).
+    expect(reader.readLineSituation(null, { campaignState: {} }).fights.map(f => f.label)).toEqual(["Drift raiders"]);
   });
 
   it("a new track joins the default-named journal", async () => {

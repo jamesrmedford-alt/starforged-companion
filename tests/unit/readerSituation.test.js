@@ -16,7 +16,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { readLineSituation, buildReaderSituationBlock } from '../../src/moves/readerSituation.js';
-import { buildSituationBlock } from '../../src/moves/situation.js';
+import { sceneForReading, formatSceneForReading } from '../../src/narration/narratorPrompt.js';
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -62,14 +62,15 @@ beforeEach(() => {
 });
 afterEach(() => { game.journal = savedJournal; });
 
-describe('the speaker\'s sheet: the words both readers are told it in today', () => {
-  it('the sheet\'s lines are situation.js\'s own', () => {
+describe('the speaker\'s sheet, in the reader\'s words', () => {
+  it('the meters with their impacts, the command vehicle, the vows and the connections', () => {
     const pc = installPc('pc-mira', 'Mira Kestrel', {
       system: { health: { value: 3 }, debility: { wounded: true } },
       items: [progressItem('vow', 'v1', VOW, { ticks: 8 }), progressItem('bond', 'b1', 'Tamsin Okoro', { ticks: 16 })],
     });
     const block = buildReaderSituationBlock(readLineSituation(pc, { campaignState: {} }));
-    expect(block.startsWith(buildSituationBlock(pc, { campaignState: {} }))).toBe(true);
+    expect(block.startsWith("SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 3 of 5 (wounded); Spirit 5 of 5 (full, not shaken); Supply 5 of 5 (full, not unprepared).")).toBe(true);
+    expect(block).toContain('- Connections: "Tamsin Okoro" (dangerous, relationship 4 of 10 boxes).');
     expect(block).toContain('- Support vehicles: none. Companions: none.');
   });
 
@@ -150,8 +151,11 @@ describe('the place', () => {
     // The active sector's first; an unexplored site is not charted.
     expect(s.charted).toEqual({ shown: ['Bleakhold Station', 'Ash', 'Hollow Spire'], more: 0 });
     const block = buildReaderSituationBlock(s);
-    expect(block).toContain('- Place: Bleakhold Station (settlement). Ship: Kobayashi IV docked at Bleakhold Station.');
-    expect(block).toContain('- Scene — where: The galley; present: Mira Kestrel; now: the hatch is sealed.');
+    // The place, the ship and the frame as overhaul 2's one read tells them (narratorPrompt.js sceneForReading).
+    const scene = formatSceneForReading(sceneForReading(campaignState));
+    expect(scene).toMatch(/^- Place: Bleakhold Station\./);
+    expect(scene).toContain('where: The galley; present: Mira Kestrel; now: the hatch is sealed');
+    expect(block).toContain(scene);
     expect(block).toContain('- Charted places: Bleakhold Station, Ash, Hollow Spire.');
   });
 
@@ -163,7 +167,7 @@ describe('the place', () => {
     const s = readLineSituation(pc, { campaignState: { currentLocationId: 'loc-saint', currentLocationType: 'location', xCardActive: true, settlementIds: ids } });
     expect(s.site).toEqual({ kind: 'derelict', name: 'The Hollow Saint', status: 'explored' });
     const block = buildReaderSituationBlock(s);
-    expect(block).toContain('- Place: The Hollow Saint (location). Inside the derelict "The Hollow Saint".');
+    expect(block).toContain('- Inside the derelict "The Hollow Saint".');
     expect(block).toContain(', Haven 11, +2 more.');
     expect(block.endsWith('- The X-Card is active: the scene is paused.')).toBe(true);
   });

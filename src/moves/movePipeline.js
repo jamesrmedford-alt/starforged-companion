@@ -84,7 +84,7 @@ import { getCurrentSiteKind } from "../entities/location.js";
 import { ClarificationDialog, applyClarificationSelection } from "../world/clarificationDialog.js";
 import { swearSharedVowForAll } from "../session/swearVow.js";
 import { consumeNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
-import { decidePacing, classifierReadingOf } from "../pacing/router.js";
+import { decidePacing } from "../pacing/router.js";
 import { READING_KIND } from "../batch/round.js";
 import { recordEvent } from "../record/record.js";
 
@@ -298,8 +298,9 @@ async function travelDestinationUnread(moveId) {
  * @param {{ moveId: string, moveTarget?: string|null, moveTargetId?: string|null }|null} [args.forced]
  * @param {string|null} [args.swearToConnection] — a forced Swear an Iron Vow's connection
  * @param {boolean} [args.gatherChoices] — a round's reading: go on past a target choice
- * @param {{ moveId?: string|null, category?: string|null, reasoning?: string|null }|null} [args.classifier] —
- *   the pacing classifier's reading of the line, for the interpreter (issue #354 P2-02)
+ * @param {import("./reader.js").Reading|null} [args.reading] — the line reader's
+ *   reading, carried from decidePacing (issue #384, slice 2): its
+ *   interpretation is the line's, and the line is not read again
  * @param {boolean} [args.allowNoMove] — whether the line may be read as no move
  *   (issue #354 P2-01): false when a roll was asked for (`!roll`, a round's
  *   "Roll a move instead"). A forced move is never read as none.
@@ -318,7 +319,7 @@ async function travelDestinationUnread(moveId) {
 export async function readMove({
   narration, speakerActorId, campaignState, apiKey, dial,
   forced = null, swearToConnection = null, gatherChoices = false,
-  classifier = null, allowNoMove = true,
+  reading = null, allowNoMove = true,
 }) {
   const forcedMoveId       = forced?.moveId ?? null;
   const forcedMoveTarget   = forced?.moveTarget ?? null;
@@ -334,9 +335,11 @@ export async function readMove({
   // combat, or when it cannot be told which fight applies.
   const combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
 
+  // The line reader's reading, carried: its interpretation, no second call.
+  const carried = !forcedMoveId && reading?.interpretation && !reading.failed ? reading : null;
   const interpretation = forcedMoveId
     ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget, forcedMoveTargetId)
-    : await interpretMove(narration, {
+    : carried ? { ...carried.interpretation } : await interpretMove(narration, {
         campaignState,
         mischiefLevel: dial,
         apiKey,
@@ -345,9 +348,8 @@ export async function readMove({
         roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null,
         // What the line follows — its destination, its target (alpha 23 playtest).
         recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
-        // What the classifier made of it, and whether it may be no move at all
-        // (issue #354 P2-01, P2-02).
-        classifier, allowNoMove,
+        // Whether it may be no move at all (issue #354 P2-01).
+        allowNoMove,
       });
 
   // The move contracts' gate (overhaul 4, contracts/gate.js), on the roller's
@@ -376,23 +378,24 @@ export async function readMove({
   if (!forcedMoveId && allowNoMove !== false) {
     // A reading that failed (the interpreter's fallback) is not an unsure one:
     // it goes to the confirm dialog, which says so.
-    const unsure = !interpretation.noMove && interpretation.confidence === "low" && !interpretation.fallback && !combatPosition;
+    // A carried reading was routed already (routeReading's rows: an unsure
+    // roll is offered there), so only a reading made here is held as unsure.
+    const unsure = !carried && !interpretation.noMove && interpretation.confidence === "low" && !interpretation.fallback && !combatPosition;
     const { speakerActor, rollerActor } = rollerFor(speakerActorId);
     const verdict = (!interpretation.noMove && !interpretation.fallback && interpretation.moveId)
       ? checkMove(interpretation.moveId, situation, gateReadingOf(interpretation, narration), { stage: "read" }) : null;
     const refused = refusalOf(verdict);
 
     if (interpretation.noMove || unsure || refused) {
-      const candidate = refused ? refused.offer : (classifier?.moveId ?? (unsure ? interpretation.moveId : null) ?? null);
-      // After the interpreter's "no move" the classifier's move is offered
-      // with no reader behind it: the rows the sheet alone cannot settle (an
-      // item to resupply, a device to repair) refuse it too (`readAsNoMove`).
+      const candidate = refused ? refused.offer : (unsure ? interpretation.moveId : null);
+      // An offer with no reading behind it — the rows the sheet alone cannot
+      // settle (an item to resupply, a device to repair) refuse it too
+      // (`readAsNoMove`).
       const offerVerdict = typeof candidate === "string" && MOVES[candidate]
         ? checkMove(candidate, situation, { line: narration ?? "", readAsNoMove: interpretation.noMove === true }, { stage: "offer" })
         : null;
-      // What is told: the reading's own refusal, else the classifier's move
-      // refused as the line's offer.
-      const told = refused ?? (candidate && candidate === classifier?.moveId ? refusalOf(offerVerdict) : null);
+      // What is told: the reading's own refusal.
+      const told = refused ?? null;
       return {
         interpretation, combatPosition, targetChoice: null, speakerActor, rollerActor,
         noMove: {
@@ -716,19 +719,19 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     ? readAs.forced
     : (readAs?.moveId ? { moveId: readAs.moveId, moveTargetId: readAs.moveTargetId ?? null } : null);
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
-  // The classifier's reading of a MOVE line, for the interpreter (issue #354 P2-02).
-  let classifier = null;
+  // The line reader's reading of a line it routed to a roll, carried to readMove (issue #384, slice 2).
+  let reading = null;
   let pacing = null;
   if (!readAs?.move) {
     pacing = await decidePacing({
       playerText: text, campaignState, character: speakerName ? { name: speakerName, actorId: speakerActorId ?? null } : null,
-      apiKey, ignoreForceMove: true,
+      // A round is its own pacing (D12): no density window for its reading.
+      apiKey, ignoreForceMove: true, round: [],
     });
-    // None when no classifier read the line: pacing off, a failed call or an
-    // unreadable reply (issue #362 AC64).
-    if (pacing.runMove) classifier = classifierReadingOf(pacing);
+    // None when nothing read it: pacing off, or a failed reading (readMove reads it then).
+    if (pacing.runMove && pacing.reading?.interpretation && !pacing.reading.failed) reading = pacing.reading;
     if (!pacing.runMove) {
-      // The offer is the classifier's alone — no narration exists yet to
+      // The offer is the reader's alone — no narration exists yet to
       // reconcile it with — and never a social move against a fellow PC
       // (finding G, suppressPcDirectedSocialMove).
       const suggestedMove = suppressPcDirectedSocialMove(pacing.suggestedMove ?? null, text, speakerName);
@@ -748,7 +751,7 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
       ...(forced.fromWaypoint === true ? { fromWaypoint: true } : {}) } : null,
     swearToConnection: forced?.swearToConnection ?? null,
     gatherChoices: true,
-    classifier,
+    reading,
     // "Roll a move instead" asked for a roll: the line is read as a move. So
     // is every line with pacing switched off, as free-flow reads it (index.js;
     // decisions.md "Issue #354" P2-01) — a round's reading could still come

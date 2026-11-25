@@ -23,15 +23,15 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude, claudeFault } from '../helpers/faults.js';
+import { scriptClaude, claudeFault, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const NARRATION_MODEL = 'claude-sonnet-5-5';
 const LINE = 'I lean on the bar and listen to the dockhands argue.';
-const NARRATIVE = JSON.stringify({ decision: 'NARRATIVE', suggestedMove: null, category: 'social', confidence: 0.9, reasoning: 'listening, no risk' });
+const NARRATIVE = readerReply({ category: 'social' });
 const PROSE = 'The dockhands bicker over a crate of stolen coolant.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
+const isClassifier = (call) => isReaderCall(call);
 const isNarration  = (call) => call.model === NARRATION_MODEL && !isClassifier(call);
 
 let table;

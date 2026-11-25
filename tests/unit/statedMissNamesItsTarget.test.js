@@ -62,7 +62,7 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
-import { scriptClaude } from "../helpers/faults.js";
+import { scriptClaude, isReaderCall } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 import { stakesShown, sufferRouteLabel, statedTargetLands } from "../../src/moves/stakes.js";
 import { obligationsFor } from "../../src/moves/contracts/obligations.js";
@@ -73,7 +73,7 @@ const lineFor = (kind, resolution) => { const o = obligationsFor({ mode: "move",
 const formatStakesBlock = (stakes, outcome, extra = {}) => lineFor("stakes", { stakes, outcome, ...extra });
 import { nameStatedSufferTarget } from "../../src/moves/statEnrichment.js";
 
-const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? "");
+const isInterpreter = (call) => isReaderCall(call);
 const MISS = [0.55, 0.65, 0.1];   // challenge 6, 7; action die 1 — a miss (momentum 2 cannot burn it)
 const MISS_LINE = "The bike's frame cracks against the far lip of the gap.";
 const NARRATION = 'The moment turns.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';

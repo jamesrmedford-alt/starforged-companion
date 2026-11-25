@@ -31,7 +31,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { withLiveDocuments } from '../helpers/liveDocuments.js';
-import { scriptClaude, holdWrites } from '../helpers/faults.js';
+import { scriptClaude, holdWrites, isReaderCall, readerReply } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { JOURNAL_NAMES } from '../../src/world/worldJournal.js';
 import { readRecord } from '../../src/record/read.js';
@@ -44,9 +44,9 @@ const LINE = "I check my sister Ilse's brass star-compass before we undock.";
 const PROSE = 'The needle trembles, then settles toward the dark lane.';
 const FACT = 'carries a brass star-compass that belonged to her sister Ilse';
 
-const isClassifier = (call) => /pacing pre-classifier/.test(call.system ?? '');
+const isClassifier = (call) => isReaderCall(call);
 const isNarration  = (call) => /SIDECAR|NARRATOR ROLE/.test(call.system ?? '');
-const NARRATIVE = JSON.stringify({ decision: 'NARRATIVE', suggestedMove: null, category: 'exploration', confidence: 0.9, reasoning: 'test' });
+const NARRATIVE = readerReply({ category: 'exploration' });
 // The narration's truths are tagged from the player's line, which bears them out
 // (overhaul 2 §5.2): they bind, so the record's read establishes them.
 const told = (prose, truths) => `${prose}\n\`\`\`json\n${JSON.stringify({ newTruths: truths.map(t => ({ ...t, from: 'line' })), stateChanges: [] })}\n\`\`\``;

@@ -663,7 +663,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
  * read (nameChanges.js writeNewNames, the record's rule — the fourth live
  * run's a50 copied "Ashen Wake pilot" a step after the cutter was renamed).
  * Read by the ACTIVE SCENE block's THE SCENE and by the reader
- * (formatSceneForReading → pacing/classifier.js). It writes nothing and turns
+ * (formatSceneForReading). It writes nothing and turns
  * nothing. Never throws.
  *
  * @param {Object} campaignState
