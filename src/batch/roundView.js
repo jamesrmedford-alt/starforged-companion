@@ -18,6 +18,7 @@
  */
 
 import { ROUND_PHASE, ENTRY_STATUS, ENTRY_ERROR, READING_KIND, roundIsOpen, isResolving, entryFor, isOwedEntry, isSheetRollEntry, undecidedUpgrades } from "./round.js";
+import { refusalNote } from "../moves/contracts/obligations.js";
 
 /** The labels an entry's status shows its own player. */
 const OWN_STATUS_LABELS = Object.freeze({
@@ -185,6 +186,8 @@ function readingView(reading, { moveLabel, statLabel }) {
       kind: READING_KIND.NARRATIVE,
       suggestedMove: reading.suggestedMove ?? null,
       suggestedMoveName: reading.suggestedMove ? moveLabel(reading.suggestedMove) : null,
+      // The move the line was read as could not be made, and why (the move gate's refusal — overhaul 4).
+      cannotMake: reading.refused?.moveId ? refusalNote(reading.refused) : null,
     };
   }
   return {

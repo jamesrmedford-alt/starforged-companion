@@ -213,6 +213,15 @@ describe('the model moves by those rules', () => {
     expect(sable.ticks, 'a fulfilled vow marks nothing on a forged bond').toBe(24);
     expect(M.expected(model).rollOffers).toEqual([{ connection: sable.ref, to: 'pc-kira' }]);
 
+    // Sable is Ash's connection: Kira's Develop Your Relationship with her is
+    // refused — a connection's moves are made with the roller's own (the move
+    // gate's THEIR_CONNECTION, overhaul 4) — nothing paid, the offer still open.
+    expect(M.takeBondRoll(model, vow, 6, [7, 7])).toEqual({ outcome: null, raised: false, refused: true });
+    expect(sable).toMatchObject({ rank: 'dangerous', ticks: 24 });
+    expect(M.expected(model).rollOffers, 'refused: still offered').toEqual([{ connection: sable.ref, to: 'pc-kira' }]);
+
+    // Once Kira holds Sable's bond too, the roll is hers to take.
+    sable.holders.push('pc-kira');
     expect(M.takeBondRoll(model, vow, 6, [7, 7])).toEqual({ outcome: 'strong_hit', raised: true });   // 8 beats 7 and 7, a match
     expect(sable).toMatchObject({ rank: 'formidable', ticks: 24 });
     expect(model.legacy.bonds).toBe(4);

@@ -32,6 +32,7 @@ vi.mock('../../src/ui/settingsPanel.js', async (original) => ({
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude, failWrites } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { bondItemFor } from '../helpers/fullStateFixture.js';
 
 let table, vowA, vowB;
 
@@ -98,7 +99,9 @@ beforeEach(async () => {
   await table.setClaudeKey('gm-1', 'sk-ant-test');
   vowA = makeVow('vow-a', 'Find Chen', 'vid-a');
   vowB = makeVow('vow-b', 'Repay the Syndicate', 'vid-b');
-  table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, hasPlayerOwner: true, items: { contents: [vowA, vowB] } });
+  // Sable is Kira's connection: the bond Item on her sheet (overhaul 4).
+  table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, hasPlayerOwner: true, items: { contents: [vowA, vowB,
+    bondItemFor({ _id: 'conn-sable', name: 'Sable', relationshipTicks: 0, bonded: false })] } });
   table.addActor({ id: 'npc-sable', name: 'Sable', type: 'character', flags: { [MODULE_ID]: {
     entityType: 'connection', connection: {
       _id: 'conn-sable', name: 'Sable', rank: 'dangerous', relationshipTicks: 0, bonded: false, active: true, history: [],

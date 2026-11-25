@@ -419,6 +419,8 @@ const NOT_APPLIED = {
   "way-out":      "you found another way — no fight was begun",
   "expedition-gone": "its expedition is gone",
   "expedition-over": "its expedition is over",
+  // No expedition under way: a waypoint's progress begins none (overhaul 4, D6).
+  "no-expedition": "no expedition is under way",
   "ambiguous":    "more than one is open — mark it in the Progress Tracks panel",
   "refused":      "the world did not save it",
   "no-table":     "no such table",

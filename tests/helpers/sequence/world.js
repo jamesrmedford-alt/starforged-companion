@@ -363,11 +363,12 @@ export class SequenceWorld {
   }
 
   /** The roll a fulfilled vow left `pc`, taken on its offer card: their player presses the connection it names. */
-  async takeBondRoll(ref, { pc, actionDie, challenge, doubled = false }) {
+  async takeBondRoll(ref, { pc, actionDie, challenge, doubled = false, refused = false }) {
     const hostId = this.hostId(ref);
     const offer = this.card((f, m) => isBondRollOffer(m) && !f.resolved && f.actorId === pc && (f.choices ?? []).some(c => c.hostId === hostId));
     if (!offer) throw new Error(`sequence: no open Develop Your Relationship offer for ${pc} with connection ${ref}`);
-    this.dice.push(...actionDice(actionDie, challenge));
+    // A roll the move gate refuses (not the roller's connection) throws no dice.
+    if (!refused) this.dice.push(...actionDice(actionDie, challenge));
     await this.press(playerOf(pc), offer._id, `[data-action="sf-connection-pick"][data-host-id="${hostId}"]`, { also: doubled ? GM : null });
   }
 

@@ -51,7 +51,8 @@ function makeTracksJournal(tracks = []) {
 
 let table;
 const moveCards  = () => table.cards(f => f.moveResolution);
-const goneCards  = () => table.cards(f => f.trackGoneCard);
+// The move gate's not-rolled notice (overhaul 4; it was the track-gone card).
+const goneCards  = () => table.cards(f => f.moveNotRolledNotice === 'cannot');
 const priceCards = () => table.cards().filter(m => /Pay the Price/i.test(m.content ?? '') && !m.flags?.[MODULE_ID]?.moveResolution);
 
 beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1] }); }, 30_000);

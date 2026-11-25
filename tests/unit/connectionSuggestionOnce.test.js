@@ -37,6 +37,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { bondItemFor } from '../helpers/fullStateFixture.js';
 
 let table, sable;
 
@@ -51,7 +52,10 @@ beforeEach(async () => {
     connectionIds: ['conn-sable'],
   } } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
-  table.addActor({ id: 'pc-bex', name: 'Bex', ownership: { 'pl-1': 3 } });
+  // Sable is Bex's connection: the bond Item on her sheet (overhaul 4).
+  table.addActor({ id: 'pc-bex', name: 'Bex', ownership: { 'pl-1': 3 }, items: { contents: [
+    bondItemFor({ _id: 'rec-sable', name: 'Sable', relationshipTicks: 0, bonded: false }),
+  ] } });
   sable = table.addActor({
     id: 'conn-sable', name: 'Sable', type: 'character',
     flags: { [MODULE_ID]: { entityType: 'connection', connection: {

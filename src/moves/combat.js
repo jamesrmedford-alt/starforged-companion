@@ -88,19 +88,22 @@ export function selectRollerFight(allTracks, actorId) {
 }
 
 /**
- * Resolve-or-create the combat track, then mark progress `markCount` times.
+ * Resolve the combat track — or, beginning a fight, create it — then mark
+ * progress `markCount` times.
  *
- * A move's marks create a track only when no fight is open (issue #321 U16):
- * with two or more open and none selected — an unnamed Strike or Clash (the
- * interpreter is not asked for their target), or a name matching none — the
- * selector's null means "ambiguous", not "none", and creating made a phantom
- * "Combat" fight that took the marks and the position. A fight named by id
- * (a "Which fight?" pick) is that open fight or nothing — over, it is not
- * re-created. Nothing is marked then: `track` is null and `reason` says why
- * ("ambiguous" | "gone"); the pipeline asks which fight before rolling.
- * Entering the fray (`beginsFight`, the threshold card) begins a fight: a foe
- * no open fight matches by name is a new one, however many are open — one
- * open fight is not taken for it (ENTER-FRAY-SOLE-FIGHT).
+ * Only Enter the Fray's commit begins a fight (`beginsFight`, the threshold
+ * card's ⚔ Begin the fight — "Combat is offered, not forced"): a foe no open
+ * fight matches by name is a new one, however many are open — one open fight
+ * is not taken for it (ENTER-FRAY-SOLE-FIGHT). A move's marks never make one
+ * (overhaul 4, D6): a Strike, Clash or Gain Ground with no fight open made a
+ * combat track whose rank, vow and objective were never asked — the move
+ * gate refuses such a move before its dice (contracts/predicates.js
+ * OPEN_FIGHT), and here nothing is marked: `reason` "none". With two or more
+ * open and none selected the selector's null means "ambiguous", not "none"
+ * (issue #321 U16 — a phantom "Combat" fight took the marks and the
+ * position). A fight named by id (a "Which fight?" pick) is that open fight or
+ * nothing — over, it is not re-created (`reason` "gone"). The pipeline asks
+ * which fight before rolling.
  *
  * @param {{ moveTarget?: string|null, moveTargetId?: string|null, combatRank?: string|null,
  *   markCount?: number, beginsFight?: boolean }} opts
@@ -120,8 +123,9 @@ export async function applyCombatProgress(
   if (!track && moveTargetId) {
     return { track: null, created: false, marksApplied: 0, reason: "gone" };
   }
-  if (!track && !beginsFight && allTracks.some(t => t.type === 'combat' && !t.completed)) {
-    return { track: null, created: false, marksApplied: 0, reason: "ambiguous" };
+  if (!track && !beginsFight) {
+    const reason = allTracks.some(t => t.type === 'combat' && !t.completed) ? "ambiguous" : "none";
+    return { track: null, created: false, marksApplied: 0, reason };
   }
 
   if (!track) {

@@ -206,7 +206,8 @@ describe('two same-named tracks: the panel\'s Roll acts on the row clicked (issu
     await panelRoll(second.id);
 
     expect(sessionLog()).toEqual([]);
-    expect(table.cards(f => f.trackGoneCard)).toHaveLength(1);
+    // Told by the move gate's not-rolled notice (overhaul 4).
+    expect(table.cards(f => f.moveNotRolledNotice === 'cannot')).toHaveLength(1);
     expect(table.cards(f => f.moveResolution)).toHaveLength(0);
     expect(track(first.id).completed).toBe(false);
     expect(world().pendingMove).toBe(false);

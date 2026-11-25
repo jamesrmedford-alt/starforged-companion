@@ -446,7 +446,9 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true,
+        // `fromWaypoint`: made from the waypoint's own alternative — what the
+        // move gate asks of a discovery or a chaos (FROM_A_WAYPOINT).
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true, fromWaypoint: true,
           // Not rolled, the ordinary reward's cards this press retires below come back too.
           ...sourceCardFlag(messageId, "waypointRewardClaimed", null,
             { value: "alternative", reopenRetired: { resolutionId: f.resolutionId ?? null, kind: move.retired } }) } },
@@ -1175,6 +1177,42 @@ export function applyNotRolledNarrate(payload = {}, ctx = {}) {
       ? { alias: String(f.lineSpeaker.alias), ...(typeof f.lineAuthorId === "string" && f.lineAuthorId ? { authorId: f.lineAuthorId } : {}) }
       : null),
     build: (f) => ({ content: f.restoreLine, flags: { narrateOnly: true } }),
+  });
+}
+
+/**
+ * gmRelay handler for "notRolled.rollAnyway" — a "Not rolled" notice's "Roll
+ * anyway (GM)" (overhaul 4, D2): a forced move the move gate refused soft —
+ * the sheet says it would change nothing (a Heal with nothing to heal) — is
+ * rolled all the same at a GM's word. The move is posted again once, flagged
+ * `gateOverride` (index.js trusts it on a GM's post alone), as the PC it was
+ * for; the move card says it was rolled at the GM's word. A GM's press only —
+ * a hard refusal is never overridden and offers no such button. Claim
+ * `rolledAnyway`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyNotRolledRollAnyway(payload = {}, ctx = {}) {
+  if (!ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | roll anyway: user ${ctx?.requesterId ?? "?"} is not a GM — refused.`);
+    refusePress(ctx, "not-owner");
+    return Promise.resolve({ posted: false, reason: "not-gm" });
+  }
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "roll anyway", claim: "rolledAnyway",
+    isCard: (f) => f.moveNotRolledNotice === "cannot" && typeof f.rollAnyway?.moveId === "string" && !!f.rollAnyway.moveId,
+    roller: (f) => (typeof f.rollAnyway?.actorId === "string" && f.rollAnyway.actorId ? f.rollAnyway.actorId : null),
+    build: (f) => ({
+      content: f.rollAnyway.content || `${f.rollAnyway.moveId}`,
+      flags: {
+        forcedMoveId: f.rollAnyway.moveId, gateOverride: true, bypassPacing: true,
+        ...(typeof f.rollAnyway.moveTarget === "string" && f.rollAnyway.moveTarget ? { forcedMoveTarget: f.rollAnyway.moveTarget } : {}),
+        ...(typeof f.rollAnyway.moveTargetId === "string" && f.rollAnyway.moveTargetId ? { forcedMoveTargetId: f.rollAnyway.moveTargetId } : {}),
+        ...(f.rollAnyway.fromWaypoint === true ? { fromWaypoint: true } : {}),
+      },
+    }),
   });
 }
 

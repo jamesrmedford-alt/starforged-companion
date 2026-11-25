@@ -60,6 +60,7 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
+import { progressTracksJournal } from '../helpers/fullStateFixture.js';
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema, MOVES } from "../../src/schemas.js";
 import {
@@ -117,6 +118,8 @@ beforeEach(async () => {
       lastSessionTimestamp: new Date().toISOString(), currentSceneId: "wpm-scene", sceneTruths: [], clocks: [], legacyTracks: {} },
   } } });
   await table.setClaudeKey("gm-1", "sk-ant-test");
+  // a waypoint is explored on an expedition (the move gate's EXPEDITION_OR_SITE) — overhaul 4.
+  table.journal._set(progressTracksJournal([{ id: 'ex-1', label: 'To the Drift', type: 'expedition', rank: 'dangerous', ticks: 8, completed: false }]));
   // Momentum 2 beats neither 7: no Burn is offered, so the result is not held.
   pc = table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 },
     system: { wits: 2, momentum: { value: 2 }, supply: { value: 3 }, health: { value: 5 } } });

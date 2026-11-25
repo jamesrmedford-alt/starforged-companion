@@ -35,8 +35,10 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => ({
 import { registerChatHook } from '../../src/index.js';
 import { resolveMove } from '../../src/moves/resolver.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
+import { bondItemFor } from '../helpers/fullStateFixture.js';
 
 const MODULE_ID = 'starforged-companion';
+const KIRA = { _id: 'c-kira', name: 'Kira', rank: 'dangerous', bonded: true, active: true, relationshipTicks: 40 };
 const KEY = `${MODULE_ID}.campaignState`;
 
 beforeEach(() => {
@@ -47,12 +49,12 @@ beforeEach(() => {
     get: (id) => (id === 'gm-1' ? { id: 'gm-1', isGM: true, active: true } : null),
   });
   global.game.user = global.game.users[0];
-  game.actors._set('pc-a', makeTestActor({ id: 'pc-a', name: 'Ash' }));
+  // Kira is Ash's connection: her NPC card, and the bond Item on Ash's sheet
+  // keyed to it (overhaul 4 — an NPC card alone is a person).
+  game.actors._set('pc-a', makeTestActor({ id: 'pc-a', name: 'Ash', items: { contents: [bondItemFor(KIRA)] } }));
   game.actors._set('npc-kira', makeTestActor({
     id: 'npc-kira', name: 'Kira', hasPlayerOwner: false,
-    flags: { [MODULE_ID]: { entityType: 'connection', connection: {
-      _id: 'c-kira', name: 'Kira', rank: 'dangerous', bonded: true, active: true, relationshipTicks: 40,
-    } } },
+    flags: { [MODULE_ID]: { entityType: 'connection', connection: { ...KIRA } } },
   }));
   game.settings._store.set(KEY, {
     ...CampaignStateSchema, sessionActive: true, pendingMove: false, connectionIds: ['npc-kira'],
@@ -96,7 +98,9 @@ describe('Take a Break\'s +1 and the bonded Develop Your Relationship roll (issu
 
   it('control: an un-bonded development (no roll) leaves the +1 pending', async () => {
     const kira = game.actors.get('npc-kira');
-    kira.flags[MODULE_ID].connection.bonded = false;
+    const unbonded = { ...KIRA, bonded: false, relationshipTicks: 8 };
+    kira.flags[MODULE_ID].connection = unbonded;
+    game.actors._set('pc-a', makeTestActor({ id: 'pc-a', name: 'Ash', items: { contents: [bondItemFor(unbonded)] } }));
     control.interpret = { moveId: 'develop_your_relationship', moveName: 'Develop Your Relationship', statUsed: null, adds: 0, moveTarget: 'Kira', rationale: 't' };
     const interp = await play('I stand with Kira through the blockade.');
     expect(interp.rollKind ?? null).not.toBe('action');

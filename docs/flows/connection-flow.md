@@ -400,6 +400,22 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 
 ## 2. Develop (relationship progress)
 
+- **A connection's moves are made with the roller's connection** (overhaul 4,
+  "moves as contracts"): Develop Your Relationship, Test Your Relationship
+  and Forge a Bond need a live bond Item on the roller's own sheet for the
+  one the move names (`moves/contracts/predicates.js THEIR_CONNECTION` — by
+  the picker's host id, the record id the Item is keyed to
+  (`flags[MODULE].connectionId`) or the Item's id, else by name, else the
+  sole one). An NPC card alone is a person, not a connection
+  (FOLDER-002): a Develop with someone the roller has no bond Item for is
+  refused, Make a Connection offered — the typed line narrated and told why,
+  a pressed one's not-rolled notice. A full relationship track refuses a
+  Develop soft, Forge a Bond offered (`ROOM_ON_RELATIONSHIP`); a bonded one
+  is never forged again (`NOT_BONDED`); and a social move spoken to a fellow
+  player character is roleplay, not a roll (`NOT_AT_A_PC`). Make a Connection
+  with someone already the roller's is refused soft, Develop offered
+  (`NOT_YET_THEIR_CONNECTION`).
+
 - **Something done for a connection, said in the fiction, is at least
   *offered* Develop Your Relationship** (known-issues
   FAVOUR-TO-A-CONNECTION-READ-AS-TALK). A gift of value, a risk taken for
@@ -543,16 +559,17 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   the id first (issue #301 B01 — the flags used to be missing, so forge
   scored 0 or the sole bonded connection's track, and develop marked the
   sole bonded connection). A forge picked for a connection severed, deleted
-  or bonded since the picker was posted is not rolled, and a "not rolled"
-  card says so, as for a gone fight or vow (rollMove's track-gone guard; for
-  a forge the id rung resolves no bonded connection — issue #345 AA50: it
+  or bonded since the picker was posted is not rolled, and the not-rolled
+  notice says so, as for a gone fight or vow — the move gate at the roll
+  (overhaul 4): severed or deleted, `THEIR_CONNECTION` ("Sable is not Kira's
+  connection"); bonded, `NOT_BONDED` ("Sable is already bonded — there is no
+  bond to forge", Develop Your Relationship offered) — issue #345 AA50: it
   was rolled at 0, or its card said "Legacy reward marked" over a forge that
-  marked nothing). So is a typed forge that names a bonded connection: the
-  name rungs take `unbonded` too, `enrichProgressTicks` marks the result
-  `alreadyBonded`, and the card — and a Batch Mode round's refusal, from
-  rollMove's `refusedReason` — say it is already bonded
+  marked nothing. So is a typed forge that names a bonded connection, and a
+  Batch Mode round's refusal carries the same words
   (FORGE-NAMED-BONDED-SCORED: it was scored on the bond's own track, then
-  the forge skipped it). A click with
+  the forge skipped it; `enrichProgressTicks` still scores such a forge
+  nothing, should the gate not have read the sheet). A click with
   no GM connected, a refusal, or a card still unresolved after
   `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
   GM-only; the first 2026-10 fix let any click post the move but only the

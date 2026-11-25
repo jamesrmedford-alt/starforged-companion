@@ -338,12 +338,24 @@ finish docks there and charts nothing.
   target names, else the sole open one — and carried on the choice card as
   `expeditionTrackId` (`movePipeline` `waypointExpedition`): that one, or
   nothing once it is over or gone, never the sole open one at click time
-  (DELAYED-CHOICE-IDENTITY); a card that names none resolve-or-creates at
-  click time: with no open expedition it begins a default dangerous one and
-  marks it, WAYPOINT-PROGRESS-NOOP fix; several open → visible warn). The
+  (DELAYED-CHOICE-IDENTITY); a card that names none reads the open ones at
+  click time: the sole one is marked; with none open nothing is marked and
+  none begun (`reason: "no-expedition"`, said on the card — overhaul 4, D6:
+  it began a default dangerous "Expedition" whose name and rank nothing asked,
+  WAYPOINT-PROGRESS-NOOP's fix); several open → visible warn). The move
+  itself is made from an expedition, or at a site (a vault, a derelict): the
+  move gate refuses an Explore a Waypoint with neither (`EXPEDITION_OR_SITE`,
+  Undertake an Expedition offered — "When you divert from an expedition…"),
+  and at a site with no expedition under way its strong hit's choice offers
+  no expedition progress, only the +2 momentum (`movePipeline.js`
+  `withoutExpeditionProgressWithNoExpedition` — still a pick, which a match's
+  Make a Discovery can be taken instead of). Make a Discovery and Confront
+  Chaos are made from a waypoint's match — the card's 🔭 / 🌀 alternative,
+  whose forced move carries `fromWaypoint` (`FROM_A_WAYPOINT`, soft: typed
+  alone, the line is narrated and told why; a GM may roll it anyway). The
   mark posts no card of its own: the expedition's card's 🗺 Finish is redrawn
   with the track's new count (§1, EXPEDITION-FINISH-COUNT-STALE) — a track
-  with no card (begun by this mark, or in the panel) has the panel's Roll.
+  with no card (made in the panel) has the panel's Roll.
   Weak hit +1 momentum; miss routes Pay the Price
   (`routePayThePrice` — the card, its suffer route, the tension clocks; it
   said so in text only until issue #321 U17, WAYPOINT-MISS-NO-PTP) — except
@@ -492,7 +504,9 @@ progress card's Finish button — which since the EXPEDITION-FINISH-TARGET fix
 forwards the card's own `trackLabel` as the target, and since issue #306 R06
 its `trackId` too, so the right expedition finishes even with several open,
 same-named ones included. A track deleted or finished before the roll resolves
-rolls nothing (a "not rolled" card). Strong hit → `finishExpedition` completes the
+rolls nothing — the move gate's `OPEN_TRACK("expedition")` by id, the
+not-rolled notice; with no expedition open at all it is refused the same way,
+Undertake an Expedition offered. Strong hit → `finishExpedition` completes the
 track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
 **discoveries** legacy; the finish card reports both. The legacy ticks, the
 arrival's current location and the site reveal ride on the pipeline's working
@@ -597,6 +611,10 @@ summary lives in the `known-issues.md` table and the code.
    (WAYPOINT-PROGRESS-NOOP): the suffer executor marks progress only when
    exactly one open expedition exists and never creates one — pick "mark
    progress" with zero (or several) open expeditions and nothing happens.
+   *Fixed, then retired (overhaul 4, D6):* the fix began a default
+   expedition; now the gate makes the move only on an expedition or at a
+   site, the strong hit at a site offers no progress pick, and a pick with
+   none open says so (`no-expedition`) and begins nothing.
 4. **The Finish-the-Expedition card button loses the destination**
    (EXPEDITION-FINISH-TARGET): it posts no `forcedMoveTarget`, so with more
    than one open expedition the selector returns null → tick enrichment warns

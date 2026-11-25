@@ -105,6 +105,7 @@ import {
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack, UNNAMED_EXPEDITION_LABEL } from "./moves/expedition.js";
 import { courseReroutedText } from "./moves/travel.js";
+import { refusalNote } from "./moves/contracts/obligations.js";
 import { siteNamedExactly } from "./sectors/precursorSites.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
@@ -1191,7 +1192,14 @@ export function registerChatHook() {
       // names none is asked about instead of rolled.
       const read = await readMove({
         narration, speakerActorId, campaignState, apiKey, dial,
-        forced: forcedMoveId ? { moveId: forcedMoveId, moveTarget: forcedMoveTarget, moveTargetId: forcedMoveTargetId } : null,
+        // A waypoint card's 🔭 / 🌀 is where a discovery or a chaos is made
+        // from (the move gate's FROM_A_WAYPOINT).
+        forced: forcedMoveId ? { moveId: forcedMoveId, moveTarget: forcedMoveTarget, moveTargetId: forcedMoveTargetId,
+          fromWaypoint: message.flags?.[MODULE_ID]?.fromWaypoint === true,
+          // A GM's "Roll anyway" on a soft refusal's notice: the GM's word over
+          // the sheet's (D2). Only a GM's post is trusted — a flag any client
+          // could write.
+          gateOverride: message.flags?.[MODULE_ID]?.gateOverride === true && message.author?.isGM === true } : null,
         swearToConnection,
         // What the classifier made of the line, for the interpreter (issue
         // #354 P2-02) — on a MOVE decision it named a move the router dropped.
@@ -1209,10 +1217,21 @@ export function registerChatHook() {
       if (read.noMove) {
         await narrateLineWithoutMove(narration, speakerActorId, {
           offeredMove: read.noMove.offeredMove,
-          why: read.noMove.lowConfidence ? "the move reading was unsure — narrated, the move offered" : "the interpreter read no move in it",
+          why: read.noMove.refused
+            ? `cannot be made: ${read.noMove.refused.code} — ${read.noMove.refused.why}`
+            : read.noMove.lowConfidence ? "the move reading was unsure — narrated, the move offered" : "the interpreter read no move in it",
           rationale: read.noMove.rationale,
           pacing: pacingResult,
+          refusal: read.noMove.refused ?? null,
         });
+        return;
+      }
+      // A forced move, or a roll that was asked for, the move gate refuses
+      // outright — nothing for it to act on (a Strike with no fight, a forge on
+      // someone bonded): not rolled, no dialog; whoever pressed or typed it is
+      // told why, and a card's press is handed back (overhaul 4).
+      if (read.refused) {
+        await moveNotRolled(message, "cannot", read.interpretation?.moveId ?? read.refused.moveId, { speakerActorId, refusal: read.refused });
         return;
       }
       if (read.targetChoice) {
@@ -1255,7 +1274,13 @@ export function registerChatHook() {
         onDiceRolled: () => { diceRolled = true; },
         holdForUpgrade: game.user?.isGM === true && holdForUpgradeEnabled(),
       });
-      if (rolled.refused) return;
+      // The gate at the dice refused it — the sheet changed since it was read
+      // (a track ended, a patient healed, a connection bonded): not rolled,
+      // and told why (overhaul 4; it was the track-gone card, issue #306 R06).
+      if (rolled.refused) {
+        await moveNotRolled(message, "cannot", interpretation?.moveId ?? null, { speakerActorId, refusal: rolled.refusal ?? null });
+        return;
+      }
       const { resolution, relevance } = rolled;
 
       // Step 10: narrate the consequence directly via Claude — no GM dependency.
@@ -1823,22 +1848,32 @@ async function postSessionGateNotice(message, { held = false, over = false } = {
  * inciting ⚔ (swearVow.js rearmSwearOnGateRefusal), as the session gate's
  * notice does.
  *
+ * A move the gate says cannot be made (`reason` "cannot" — overhaul 4) says
+ * why in one line — the same words its narration would be told — and a soft
+ * refusal of a forced move offers a GM "Roll anyway" (cardActions
+ * applyNotRolledRollAnyway): the sheet's word that the move would change
+ * nothing, against the GM's (D2).
+ *
  * @param {ChatMessage} message — the line, or the card's forced move
  * @param {Object} opts
- * @param {"cancelled"|"failed"|"busy"|"refused"} opts.reason — "refused": the
- *   world did not save its start (the move lock's claim)
+ * @param {"cancelled"|"failed"|"busy"|"refused"|"cannot"} opts.reason — "refused": the
+ *   world did not save its start (the move lock's claim); "cannot": the move gate refused it
  * @param {string|null} [opts.moveId] — the move it was read as, when known
  * @param {boolean} [opts.handedBack] — the card that posted it is pressable again
+ * @param {Object|null} [opts.refusal] — "cannot": the gate's refusal (contracts/gate.js refusalOf)
  * @returns {Promise<void>}
  */
-async function postMoveNotRolledNotice(message, { reason, moveId = null, handedBack = false, speakerActorId = null }) {
+async function postMoveNotRolledNotice(message, { reason, moveId = null, handedBack = false, speakerActorId = null, refusal = null }) {
   const f        = message?.flags?.[MODULE_ID] ?? {};
   const forced   = typeof f.forcedMoveId === "string" && !!f.forcedMoveId;
   const owed     = f.owedMove === true;
   const authorId = messageAuthorId(message);
   const name     = moveId ?? (forced ? f.forcedMoveId : null);
   const label    = name ? `<strong>${escapeChatHtml(moveDisplayName(name))}</strong>` : "the move";
-  const why = reason === "cancelled"
+  const cannot   = reason === "cannot" && refusal?.moveId ? refusal : null;
+  const why = cannot
+    ? `${escapeChatHtml(refusalNote(cannot))} Nothing was rolled.${cannot.offer ? ` ${escapeChatHtml(moveDisplayName(cannot.offer))} can be made instead.` : ""}`
+    : reason === "cancelled"
     ? `${forced ? label : `The reading of this line as ${label}`} was cancelled, so nothing was rolled.`
     : reason === "busy"
       ? "Another move was being resolved, so this was not rolled."
@@ -1862,8 +1897,17 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
   const narrateButton = offerNarrate && lineText
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-narrate-no-move">Narrate it — no move</button></div>`
     : "";
+  // A soft refusal of a forced move: the sheet says it would change nothing,
+  // and a GM may roll it anyway (D2) — the move posted again at the GM's word.
+  const rollAnyway = cannot && !cannot.hard && forced
+    ? { moveId: f.forcedMoveId, moveTarget: f.forcedMoveTarget ?? null, moveTargetId: f.forcedMoveTargetId ?? null,
+      content: String(message?.content ?? ""), actorId: speakerActorId ?? null, fromWaypoint: f.fromWaypoint === true }
+    : null;
+  const rollAnywayButton = rollAnyway
+    ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-roll-anyway" title="The GM's word over the sheet's: roll the move all the same.">Roll anyway (GM)</button></div>`
+    : "";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Not rolled</strong><p>${why} ${next}</p>${narrateButton}</div>`,
+    content: `<div class="sf-ptp-card"><strong>Not rolled</strong><p>${why} ${next}</p>${narrateButton}${rollAnywayButton}</div>`,
     whisper: [...new Set([authorId, ...(forced ? speakerOwnerIds(message) : []), ...gmUserIds()].filter(Boolean))],
     flags: { [MODULE_ID]: {
       moveNotRolledNotice: reason,
@@ -1873,6 +1917,10 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
       // speaker, and its author, who may press it.
       ...(narrateButton ? { narrateOffered: true, lineActorId: speakerActorId ?? null, lineAuthorId: authorId ?? null,
         lineSpeaker: message?.speaker ?? null } : {}),
+      // The move that could not be made, and why (the playtest runner's
+      // `refused-not-rolled` check reads it), and a GM's Roll anyway.
+      ...(cannot ? { cannotMake: { moveId: cannot.moveId, code: cannot.code ?? null, why: cannot.why ?? "", hard: cannot.hard === true } } : {}),
+      ...(rollAnyway ? { rollAnyway } : {}),
     } },
   });
 }
@@ -1883,16 +1931,17 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
  * suffer card owing a resist roll) and the table is told. Never throws.
  *
  * @param {ChatMessage} message
- * @param {"cancelled"|"failed"|"busy"|"refused"} reason
+ * @param {"cancelled"|"failed"|"busy"|"refused"|"cannot"} reason
  * @param {string|null} moveId
+ * @param {{ speakerActorId?: string|null, refusal?: Object|null }} [opts] — "cannot": the move gate's refusal
  * @returns {Promise<void>}
  */
-async function moveNotRolled(message, reason, moveId, { speakerActorId = null } = {}) {
+async function moveNotRolled(message, reason, moveId, { speakerActorId = null, refusal = null } = {}) {
   const handedBack = await releaseSourceCard(message).catch(err => {
     console.warn(`${MODULE_ID} | handing the card back failed:`, err?.message ?? err);
     return false;
   });
-  await postMoveNotRolledNotice(message, { reason, moveId, handedBack, speakerActorId }).catch(err =>
+  await postMoveNotRolledNotice(message, { reason, moveId, handedBack, speakerActorId, refusal }).catch(err =>
     console.warn(`${MODULE_ID} | the not-rolled notice failed:`, err?.message ?? err));
 }
 
@@ -1906,12 +1955,16 @@ async function moveNotRolled(message, reason, moveId, { speakerActorId = null } 
  * there is one, is offered on its card as a NARRATIVE_WITH_MOVE_AVAILABLE
  * move is. The Pacing Telemetry journal records why. Never throws.
  *
+ * A line read as a move that cannot be made (`refusal`, the move gate's —
+ * overhaul 4) is narrated told so: its premise is not so, and its card says
+ * why in one line (narrator.js narratePacedInput).
+ *
  * @param {string} narration — the player's line
  * @param {string|null} speakerActorId
- * @param {{ offeredMove?: string|null, why: string, rationale?: string, pacing?: Object|null }} opts
+ * @param {{ offeredMove?: string|null, why: string, rationale?: string, pacing?: Object|null, refusal?: Object|null }} opts
  * @returns {Promise<void>}
  */
-async function narrateLineWithoutMove(narration, speakerActorId, { offeredMove = null, why, rationale = "", pacing = null } = {}) {
+async function narrateLineWithoutMove(narration, speakerActorId, { offeredMove = null, why, rationale = "", pacing = null, refusal = null } = {}) {
   const stored   = game.settings.get(MODULE_ID, "campaignState");
   const decision = offeredMove ? "NARRATIVE_WITH_MOVE_AVAILABLE" : "NARRATIVE";
   console.debug(`${MODULE_ID} | the line is narrated without a roll: ${why}.`);
@@ -1930,7 +1983,7 @@ async function narrateLineWithoutMove(narration, speakerActorId, { offeredMove =
   }).catch(err => console.warn(`${MODULE_ID} | pacing telemetry write failed:`, err?.message ?? err));
   try {
     const working = foundry.utils.deepClone(stored);
-    await narratePacedInput(narration, working, { suggestedMove: offeredMove, speakerActorId });
+    await narratePacedInput(narration, working, { suggestedMove: offeredMove, speakerActorId, ...(refusal ? { refusal } : {}) });
   } catch (err) {
     console.error(`${MODULE_ID} | the line's narration could not be started:`, err);
     await tellPacedLineNotNarrated(stored, err);
@@ -2839,10 +2892,14 @@ async function applyOutcomeEffects({
           },
         );
         if (result && !result.track) {
-          // Several fights open and none named, or the named one is over:
-          // nothing marked, and no phantom fight (issue #321 U16).
-          console.warn(`${MODULE_ID} | combat progress: ${result.reason === "gone" ? "the move's fight is over" : "more than one fight is open and none was named"} — ×${marks} not marked.`);
-          notApplied.push(`combat progress ×${marks} — ${result.reason === "gone" ? "its fight is over" : "which fight?"}`);
+          // Several fights open and none named, the named one over, or none
+          // open at all: nothing marked, and no phantom fight (issue #321
+          // U16; a move's marks never begin a fight — overhaul 4, D6).
+          const why = result.reason === "gone" ? ["the move's fight is over", "its fight is over"]
+            : result.reason === "none" ? ["no fight is under way", "no fight is under way"]
+            : ["more than one fight is open and none was named", "which fight?"];
+          console.warn(`${MODULE_ID} | combat progress: ${why[0]} — ×${marks} not marked.`);
+          notApplied.push(`combat progress ×${marks} — ${why[1]}`);
         }
         if (result?.track) {
           combatProgressTrack = result.track;
@@ -5398,23 +5455,20 @@ async function postExpeditionProgressCard({ track, created, actorId = null }) {
 }
 
 /**
- * A roll started from a track the table has since deleted or finished: say
- * nothing was rolled (issue #306 R06). Posted instead of the move — never
- * against a same-named sibling, never at a score of 0.
+ * A Fulfill / Forsake Your Vow whose named vow is already closed: say nothing
+ * was rolled (issue #325 W29 — movePipeline.postTargetChoiceCard's
+ * "vow-gone"). Posted instead of the move — never against another vow, never
+ * at a score of 0. A track named by id and gone since is the move gate's
+ * refusal at the roll now (the not-rolled notice — overhaul 4), and so is a
+ * forge on a connection severed or bonded since (issue #345 AA50,
+ * FORGE-NAMED-BONDED-SCORED): their reasons went with the guard.
  *
  * @param {{ moveName?: string, moveTarget?: string|null }} interpretation
  */
-async function postTrackGoneCard(interpretation, { alreadyBonded = false } = {}) {
-  const label = escapeChatHtml(interpretation?.moveTarget ?? "That track");
+async function postTrackGoneCard(interpretation) {
+  const label = escapeChatHtml(interpretation?.moveTarget ?? "That vow");
   const move  = escapeChatHtml(interpretation?.moveName ?? "The roll");
-  // A forge's track is a connection: severed, removed or bonded since its
-  // picker was posted (issue #345 AA50) — or one a typed forge named that is
-  // already bonded (FORGE-NAMED-BONDED-SCORED).
-  const why = alreadyBonded
-    ? "is already bonded: there is no bond to forge — Develop Your Relationship instead."
-    : interpretation?.moveId === "forge_a_bond"
-      ? "is no longer a connection to forge a bond with: they were severed, removed or bonded before the roll."
-      : "is no longer open: it was deleted or finished before the roll.";
+  const why = "is no longer open: it was fulfilled, forsaken or deleted before the roll.";
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>${move} — not rolled</strong>`
       + `<p><strong>${label}</strong> ${why} Nothing was rolled.</p></div>`,
@@ -7319,6 +7373,7 @@ const PAYOFF_REASONS = {
   "fight-over":      "its fight is over",
   "expedition-gone": "its expedition is gone",
   "expedition-over": "its expedition is over",
+  "no-expedition":   "no expedition is under way",
   "ambiguous":       "more than one is open — mark it in the Progress Tracks panel",
   "battered":        "the vehicle is battered: a Repair must clear that before its integrity can rise",
   "no-condition":    "the vehicle has no Battered condition to mark",
@@ -9953,6 +10008,9 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${resolution.courseRerouted
         ? `<div class="sf-move-effect sf-move-reroute">🧭 ${escapeChatHtml(courseReroutedText(resolution.courseRerouted))}</div>`
         : ""}
+      ${typeof resolution.gateNote === "string" && resolution.gateNote
+        ? `<div class="sf-move-effect sf-move-gate-note">⚖ ${escapeChatHtml(resolution.gateNote.replace(/^\w/, c => c.toUpperCase()))}.</div>`
+        : ""}
       ${renderBurnButtonHtml(burnState)}
       ${renderImproveButtonHtml(improveState)}
       ${awaiting ? renderKeepResultHtml(resolution) : ""}
@@ -11302,6 +11360,27 @@ onChatMessageRender((message, root) => {
     return;
   }
   wireRollerFollowup(message, root, "sf-narrate-no-move", "notRolled.narrate", "narrated");
+});
+
+/**
+ * Wire a "Not rolled" notice's "Roll anyway (GM)" (overhaul 4, D2): a forced
+ * move the move gate refused soft is rolled at a GM's word. Shown to GMs only
+ * — the notice is whispered to the presser too — and a click relays to the
+ * canonical GM ("notRolled.rollAnyway" → cardActions.applyNotRolledRollAnyway),
+ * which claims the notice (`rolledAnyway`) and posts the move again once.
+ */
+onChatMessageRender((message, root) => {
+  const f = message.flags?.[MODULE_ID];
+  if (f?.moveNotRolledNotice !== "cannot" || !f?.rollAnyway) return;
+  const btn = root?.querySelector?.('[data-action="sf-roll-anyway"]');
+  if (!btn) return;
+  if (!game.user?.isGM) { btn.remove(); return; }
+  if (liveCardFlags(message)?.rolledAnyway) {
+    btn.disabled = true;
+    btn.textContent = "Rolled";
+    return;
+  }
+  wireRollerFollowup(message, root, "sf-roll-anyway", "notRolled.rollAnyway", "rolledAnyway");
 });
 
 /**

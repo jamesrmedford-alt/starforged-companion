@@ -55,6 +55,7 @@ vi.mock('../../src/oracles/roller.js', async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
+import { progressTracksJournal } from '../helpers/fullStateFixture.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
@@ -96,6 +97,8 @@ beforeEach(async () => {
       currentSceneId: 'ac01-scene', sceneTruths: [], clocks: [] },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-test');
+  // a Clash is made in a fight, in a bad spot (the move gate's OPEN_FIGHT, POSITION) — overhaul 4.
+  table.journal._set(progressTracksJournal([{ id: 'fight-1', label: 'Raiders', type: 'combat', rank: 'dangerous', ticks: 8, completed: false, combatState: 'bad_spot', positions: { 'pc-kira': 'bad_spot' } }]));
   pc = table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, system: { momentum: { value: 2 } } });
   scriptClaude(table, { fallback: () => 'The moment turns.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });
 });

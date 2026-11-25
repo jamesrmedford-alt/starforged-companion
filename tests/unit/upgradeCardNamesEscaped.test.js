@@ -161,9 +161,12 @@ describe("issue #362 AC83 — the improved card and the move card's consequence 
     expect(content(card._id)).not.toContain("<i>mk2</i>");
   }, 30_000);
 
-  it("a Forsake Your Vow with no vow to forsake names the PC as text in the move card's consequence", async () => {
-    const card = await roll("forsake_your_vow", "I walk away from the oath.");
-    expect(content(card._id)).toContain("No open vow of Kira &lt;b&gt;Vex&lt;/b&gt;");
-    expect(content(card._id)).not.toContain("<b>Vex</b>");
+  it("a Forsake Your Vow with no vow to forsake names the PC as text in the line's card (the move gate's refusal, overhaul 4)", async () => {
+    // Not rolled now: the gate refuses it before any dice (OPEN_VOW of the
+    // roller's), and the paced card the line is narrated on says why.
+    expect(await roll("forsake_your_vow", "I walk away from the oath."), "not rolled").toBeUndefined();
+    const told = table.cards(f => f.pacedNarrative && f.cannotMake).at(-1);
+    expect(content(told._id)).toContain("No Forsake Your Vow — Kira &lt;b&gt;Vex&lt;/b&gt; has no open vow.");
+    expect(content(told._id)).not.toContain("<b>Vex</b>");
   }, 30_000);
 });

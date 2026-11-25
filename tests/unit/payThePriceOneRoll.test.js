@@ -88,6 +88,24 @@ beforeEach(async () => {
   table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 } });
 });
 
+/**
+ * A track under way, through the real store on the GM's client: Face Defeat
+ * is made in a fight, Explore a Waypoint on an expedition (the move gate's
+ * OPEN_FIGHT / EXPEDITION_OR_SITE — overhaul 4).
+ */
+async function openTrack(label, type) {
+  const flags = {};
+  table.journal._set({
+    id: 'ptp-tracks', name: 'Starforged Progress Tracks',
+    getFlag: (mod, key) => flags[`${mod}.${key}`],
+    setFlag: async (mod, key, value) => { flags[`${mod}.${key}`] = structuredClone(value); },
+  });
+  const gm = table.client('gm-1');
+  const store = await gm.import('../../src/ui/progressTracks.js');
+  await gm.run(() => store.addProgressTrack({ label, type, rank: 'dangerous' }));
+  await table.settle();
+}
+
 /** The player's narration through the GM's pipeline; the price seeded into the move narration and the card's. */
 async function playMove(interpretation, text) {
   control.interpretation = { adds: 0, rationale: 'test', mischiefApplied: false, ...interpretation };
@@ -117,6 +135,7 @@ describe('one result, one Pay the Price (issue #321 U03)', () => {
   });
 
   it('Face Defeat: the narration depicts the card\'s price, rolled once', async () => {
+    await openTrack('The boarders', 'combat');
     const { seeded, shown } = await playMove(
       { moveId: 'face_defeat', moveName: 'Face Defeat', statUsed: null },
       'I abandon the fight and fall back.',
@@ -149,6 +168,7 @@ describe('a routed price is narrated once, under the move that paid it (issue #3
   });
 
   it('Face Defeat\'s own price is recorded under Face Defeat, and narrated once', async () => {
+    await openTrack('The boarders', 'combat');
     await playMove(
       { moveId: 'face_defeat', moveName: 'Face Defeat', statUsed: null },
       'I abandon the fight and fall back.',
@@ -165,6 +185,7 @@ describe('a routed price is narrated once, under the move that paid it (issue #3
 // the Price" and routed nothing — no card, no suffer route, no clock tick.
 describe('an Explore a Waypoint miss pays the price (issue #321 U17)', () => {
   const WAYPOINT = { moveId: 'explore_a_waypoint', moveName: 'Explore A Waypoint', statUsed: 'wits' };
+  beforeEach(() => openTrack('To the Drift', 'expedition'));
 
   it('a miss without a match posts the Pay the Price card — once, the price the narration depicts', async () => {
     control.dice = [0.85, 0.95, 0.0];                  // challenge 9, 10; action 1 + wits 2 — a miss, no match

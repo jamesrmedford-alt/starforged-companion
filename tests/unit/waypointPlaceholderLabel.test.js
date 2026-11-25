@@ -3,11 +3,12 @@
  * tests/unit/waypointPlaceholderLabel.test.js
  *
  * WAYPOINT-PLACEHOLDER-LITERAL: Explore a Waypoint's "mark expedition
- * progress" pick, with no expedition open, begins one under the label every
- * unnamed expedition has — expedition.js UNNAMED_EXPEDITION_LABEL, which the
- * arrival and the finish read as "no destination named" — not a copy of its
- * value. The constant is mocked to a different value here, so a literal copy
- * fails.
+ * progress" pick, with no expedition open, began one under the label every
+ * unnamed expedition has (expedition.js UNNAMED_EXPEDITION_LABEL). Overhaul 4
+ * (D6) retired that path with the unnamed expedition it made: a waypoint is
+ * explored on an expedition or at a site (the move gate's EXPEDITION_OR_SITE),
+ * and the pick with none open begins nothing — under any label. The constant
+ * is still mocked to a different value, so a placeholder of either name fails.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -48,12 +49,11 @@ beforeEach(() => {
   globalThis.ChatMessage = { create: vi.fn(async (d) => d) };
 });
 
-describe("WAYPOINT-PLACEHOLDER-LITERAL — the placeholder expedition's label", () => {
-  it("is UNNAMED_EXPEDITION_LABEL, not a literal copy of it", async () => {
+describe("WAYPOINT-PLACEHOLDER-LITERAL — retired with its path (overhaul 4, D6)", () => {
+  it("the pick with no expedition open begins none, under either name, and marks nothing", async () => {
     const r = await runSufferResolution([{ kind: "expedition-progress", count: 1 }], { id: "pc1" });
-    expect(trackState.created).toHaveLength(1);
-    expect(trackState.created[0].label).toBe("Unnamed Journey");
-    expect(trackState.marked).toEqual([trackState.created[0].id]);
-    expect(r[0]).toMatchObject({ kind: "expedition-progress", created: true });
+    expect(trackState.created).toEqual([]);
+    expect(trackState.marked).toEqual([]);
+    expect(r[0]).toMatchObject({ kind: "expedition-progress", skipped: true, reason: "no-expedition" });
   });
 });

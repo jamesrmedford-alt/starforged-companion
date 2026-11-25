@@ -598,7 +598,11 @@ which checks the pick is one of the card's choices and that the requester
 owns the roller's PC (or is a GM), claims the card (`resolved`) and posts the
 forced fulfil with the copy as `forcedMoveTargetId`, spoken as the roller; a
 failed post releases the claim. A picked vow fulfilled or deleted before the
-roll resolves gets the "not rolled" card (`postTrackGoneCard`).
+roll resolves is refused by the move gate at the roll (`OPEN_VOW` by id —
+"\"Rescue Dani\" is fulfilled", "… was deleted before the roll"), the
+not-rolled notice (overhaul 4; the track-gone guard it replaces). A typed
+Fulfill naming a vow already closed by name is still the "vow-gone" card
+(`postTrackGoneCard`) — a name resolved, not a precondition.
 
 **Pipeline path** (typed, victory-card button, suggestion button, or a
 "Which vow?" pick):

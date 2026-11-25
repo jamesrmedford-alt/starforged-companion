@@ -197,6 +197,8 @@ describe.skipIf(!HAVE_VENDOR)('issue #345 AA11 — an aid typed during a fight t
     await table.setClaudeKey('gm-1', 'sk-ant-test');
     actor = table.addActor({ id: 'pc-kira-aa11', name: 'Kira', ownership: { 'pl-1': 3 },
       system: { heart: 2 }, items: { contents: [vendoredAsset('Ace', 1, 'asset-ace')] } });
+    // Ren, the ally Kira aids — another player character (an aid needs one: the move gate's AN_ALLY, overhaul 4).
+    table.addActor({ id: 'pc-ren-aa11', name: 'Ren', ownership: {} });
     journal = progressJournal();
     table.journal._set(journal);
     const store = await gm().import('../../src/ui/progressTracks.js');

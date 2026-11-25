@@ -28,16 +28,18 @@
  * (src/pacing/telemetry.js) so dials can be tuned from real session data.
  *
  * Where the code holds the classifier to its rules (decidePacing, in order):
- * in an open fight an offer is a MOVE; a social move against a fellow player
- * character is narrated; a recovery move the speaker's sheet has nothing for
- * is narrated with no offer (moves/situation.js nothingToRecover); at a dial
- * of 0–2 an unsure MOVE is an offer.
+ * in an open fight an offer is a MOVE; a move the gate says cannot be made —
+ * a social move against a fellow player character, a recovery move the
+ * speaker's sheet has nothing for, a combat move with no fight — is narrated,
+ * told why, with the move the refusal offers on its card (moves/contracts/
+ * gate.js checkMove); at a dial of 0–2 an unsure MOVE is an offer.
  */
 
 import { classifyInput, effectiveDial, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
 import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
-import { readSituation, isRecoveryMove, nothingToRecover, nothingToRecoverReason } from "../moves/situation.js";
-import { narratePacedInput, getRecentSceneForReading, tellPacedLineNotNarrated, lineIsToAFellowPlayerCharacter } from "../narration/narrator.js";
+import { readMoveSituation } from "../moves/situation.js";
+import { checkMove, refusalOf } from "../moves/contracts/gate.js";
+import { narratePacedInput, getRecentSceneForReading, tellPacedLineNotNarrated } from "../narration/narrator.js";
 import { claudeFailureReason } from "../narration/failureReason.js";
 import { logPacingDecision } from "./telemetry.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -170,9 +172,9 @@ const LOW_DIAL_MOVE_CONFIDENCE = 0.7;
 /**
  * Decide how a paced player input should be handled — the classifier's
  * decision, without acting on it: the pacing master switch, a `!roll` force,
- * the classifier, the combat backstop, the fellow-PC rule, the recovery move
- * with nothing to recover, the low-dial hold, the recent-density window and
- * the telemetry. routePacedInput dispatches the narration for a NARRATIVE
+ * the classifier, the combat backstop, the move gate (a move that cannot be
+ * made is narrated — `refused`), the low-dial hold, the recent-density window
+ * and the telemetry. routePacedInput dispatches the narration for a NARRATIVE
  * decision; a Batch Mode round's reading (src/moves/movePipeline.js
  * readAction) shows the decision in the player's Round window instead — so
  * it passes `ignoreForceMove`: a round's readings ignore `!roll` (the window
@@ -197,7 +199,8 @@ const LOW_DIAL_MOVE_CONFIDENCE = 0.7;
  *   forced?: boolean,
  *   pacingDisabled?: boolean,
  *   classifierRead?: boolean,
- * }>}
+ *   refused?: { moveId: string, code: string, hard: boolean, why: string, premise: Object|null, offer: string|null },
+ * }>} `refused`: the move the classifier read the line as cannot be made (the gate's refusal)
  */
 export async function decidePacing({
   playerText, campaignState, character, apiKey, ignoreForceMove = false,
@@ -244,34 +247,25 @@ export async function decidePacing({
     result.reasoning = `[combat-active backstop: NWMA→MOVE] ${result.reasoning ?? ""}`.trim();
   }
 
-  // A social move against a fellow player character is roleplay, not a roll
-  // (finding G, narrator.js suppressPcDirectedSocialMove) — on a MOVE decision
-  // too (issue #354 P2-06). The rule ran only where a move was offered: on
-  // MOVE the nomination was dropped, so "Karthik, please answer the hail",
-  // read as Compel against Karthik, went on to the roll dialog. The line is
-  // narrated, with no move offered.
-  if (result.decision === PACING_DECISION.MOVE
-      && lineIsToAFellowPlayerCharacter(result.suggestedMove, playerText, character?.name ?? null, { campaignState })) {
-    result.decision      = PACING_DECISION.NARRATIVE;
-    result.suggestedMove = null;
-    result.reasoning     = `[spoken to a fellow player character: roleplay, not a roll] ${result.reasoning ?? ""}`.trim();
-  }
-
-  // Nothing to recover. A recovery move the speaker's sheet has nothing for
-  // is neither rolled nor offered: in the long haul's live runs a Heal at 5
-  // health of 5 was offered, pressed and rolled — "0 health (now 5)" for 2
-  // supply — twice (known-issues HEAL-ROLLED-AT-FULL-HEALTH). The classifier
-  // is told the meters and the rule; this holds it where the sheet alone
-  // settles the question — Hearten, and Heal with nobody else to treat
-  // (situation.js nothingToRecover, `sheetAlone`). Not in a fight (the
-  // backstop above), and not the fallback for a call that failed. A `!roll`
-  // never comes here, so a player who means it can still roll it.
-  if (!combatActive && result.fallback !== true && result.decision !== PACING_DECISION.NARRATIVE
-      && isRecoveryMove(result.suggestedMove)
-      && nothingToRecover(result.suggestedMove, speakerSituation(character, campaignState), { sheetAlone: true })) {
-    result.reasoning     = `[nothing to recover: ${nothingToRecoverReason(result.suggestedMove)} — narrated, ${result.suggestedMove} not offered] ${result.reasoning ?? ""}`.trim();
-    result.decision      = PACING_DECISION.NARRATIVE;
-    result.suggestedMove = null;
+  // The move contracts' gate (overhaul 4, moves/contracts/gate.js): a move
+  // the speaker's sheet, the tracks or the table say cannot be made is
+  // neither rolled nor offered — a Heal at 5 health of 5 (HEAL-ROLLED-AT-FULL-
+  // HEALTH), a social move against a fellow player character (finding G;
+  // issue #354 P2-06), a Strike with no fight under way (D6). The line is
+  // narrated and told why: its narration is given the premise as NOT SO and
+  // its card one line (NOTHING-TO-RECOVER-UNTOLD); a move the refusal offers
+  // instead is the card's Roll. Not the fallback for a call that failed, which
+  // keeps the move pipeline running; readMove and the roll check again. A
+  // `!roll` never comes here.
+  let refused = null;
+  if (result.fallback !== true && result.decision !== PACING_DECISION.NARRATIVE && result.suggestedMove) {
+    const verdict = await gateTheLine(result.suggestedMove, { playerText, character, campaignState });
+    if (verdict && !verdict.ok) {
+      refused = refusalOf(verdict);
+      result.reasoning     = `[cannot be made: ${verdict.code} — ${verdict.why}] ${result.reasoning ?? ""}`.trim();
+      result.decision      = verdict.offer ? PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE : PACING_DECISION.NARRATIVE;
+      result.suggestedMove = verdict.offer ?? null;
+    }
   }
 
   // The dial holds. At 0–2 the table has said "narrate unless the player
@@ -350,6 +344,9 @@ export async function decidePacing({
     category: result.category,
     confidence: result.confidence,
     reasoning: result.reasoning,
+    // The move the line was read as, refused by the gate — told in the
+    // narration and on its card (narrator.js narratePacedInput `refusal`).
+    ...(refused ? { refused } : {}),
   };
 }
 
@@ -424,10 +421,10 @@ export async function routePacedInput({
   // A line the classifier read as narrative is never rolled for a throw
   // here: the table is told it was not narrated (PACED-ROUTER-THROW).
   // narratePacedInput itself never throws — it tells the table of its own.
-  const { suggestedMove, suggestedTargetId } = pacing;
+  const { suggestedMove, suggestedTargetId, refused = null } = pacing;
   try {
     const working = foundry.utils.deepClone(campaignState);
-    await narratePacedInput(playerText, working, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}) });
+    await narratePacedInput(playerText, working, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}), ...(refused ? { refusal: refused } : {}) });
   } catch (err) {
     console.error(`${MODULE_ID} | the paced narration could not be started:`, err);
     await tellPacedLineNotNarrated(campaignState, err);
@@ -444,21 +441,22 @@ export async function routePacedInput({
 }
 
 /**
- * The speaker's sheet as both readers are told it (moves/situation.js
- * readSituation) — for what the code decides of a recovery move. Null with no
- * player character behind the line, or when it cannot be read: then nothing
- * is decided from it.
+ * The gate's verdict on the move the classifier read a line as, for the
+ * speaker — their situation read live (moves/situation.js readMoveSituation),
+ * the line as the reading (NOT_AT_A_PC reads its addressee). Null when it
+ * cannot be asked: then nothing is decided from it (an unknown is never a
+ * refusal).
  *
- * @param {{ name?: string|null, actorId?: string|null }|null} character — the speaker
- * @param {Object|null} campaignState — for the command vehicle
- * @returns {ReturnType<typeof readSituation>}
+ * @param {string} moveId
+ * @param {{ playerText: string, character: { actorId?: string|null }|null, campaignState: Object|null }} ctx
+ * @returns {Promise<Object|null>}
  */
-function speakerSituation(character, campaignState) {
+async function gateTheLine(moveId, { playerText, character, campaignState }) {
   try {
-    const actor = character?.actorId ? (globalThis.game?.actors?.get?.(character.actorId) ?? null) : null;
-    return readSituation(actor, { campaignState });
+    const situation = await readMoveSituation(character?.actorId ?? null, { campaignState });
+    return checkMove(moveId, situation, { line: playerText ?? "" }, { stage: "offer" });
   } catch (err) {
-    console.warn(`${MODULE_ID} | pacing: the speaker's sheet could not be read — nothing is decided from it:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | pacing: the move gate could not be asked — nothing is decided from it:`, err?.message ?? err);
     return null;
   }
 }

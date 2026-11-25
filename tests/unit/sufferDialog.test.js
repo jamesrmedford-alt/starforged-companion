@@ -493,13 +493,12 @@ describe("runSufferResolution — expedition-progress", () => {
     expect(r[0]).toMatchObject({ kind: "expedition-progress", trackId: "e1" });
   });
 
-  it("creates a default expedition and marks it when none is open", async () => {
+  it("begins no expedition and marks nothing when none is open — said, never a silent skip (overhaul 4, D6)", async () => {
     trackState.tracks = [];
     const r = await runSufferResolution([{ kind: "expedition-progress", count: 1 }], { id: "pc1" });
-    expect(trackState.created).toHaveLength(1);
-    expect(trackState.created[0]).toMatchObject({ label: "Expedition", type: "expedition", rank: "dangerous" });
-    expect(trackState.marked).toEqual([trackState.created[0].id]);
-    expect(r[0]).toMatchObject({ kind: "expedition-progress", created: true });
+    expect(trackState.created).toHaveLength(0);
+    expect(trackState.marked).toEqual([]);
+    expect(r[0]).toMatchObject({ kind: "expedition-progress", skipped: true, ok: false, reason: "no-expedition" });
   });
 
   it("warns and skips when several expeditions are open (ambiguous)", async () => {

@@ -122,6 +122,7 @@ describe('the ⚔ Battle instead button', () => {
     });
     await table.settle(); await table.drain();
     expect(resolveMove).not.toHaveBeenCalled();
-    expect(table.cards(f => f.trackGoneCard)).toHaveLength(1);
+    // Told by the move gate's not-rolled notice (overhaul 4; it was the track-gone card).
+    expect(table.cards(f => f.moveNotRolledNotice === 'cannot')).toHaveLength(1);
   }, 30_000);
 });

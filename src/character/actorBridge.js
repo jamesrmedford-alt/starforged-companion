@@ -703,6 +703,10 @@ export function readConnections(actor) {
       // The connection was severed: its record is `active: false`, written
       // through as this flag (setBondItemLost, issue #330 D10).
       lost:      b.flags?.[MODULE_ID]?.lost === true,
+      // The connection record's `_id` the Item is keyed to (bondItemsFor) —
+      // how the move contracts' situation finds the person's NPC card
+      // (moves/situation.js readMoveSituation). null on an Item with no key.
+      connectionId: b.flags?.[MODULE_ID]?.connectionId ?? null,
     };
   });
 }
