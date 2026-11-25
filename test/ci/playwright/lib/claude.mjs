@@ -52,7 +52,13 @@
 // name (appendGenerativeTierUpdates).
 
 import { createHash } from "node:crypto";
-import { thinkingOffFor } from "../../../../src/narration/thinking.js";
+// The module's thinking-off form (src/narration/thinking.js), loaded only where
+// a call is sent to another model (readers.mjs, recording): the e2e container
+// mounts test/ci/playwright alone (at /pw), so a static import of src/ failed
+// there before any scenario ran ("Cannot find module '/src/narration/thinking.js'",
+// PR #387's first e2e run). The scripted playthroughs never swap a model.
+let thinkingModule = null;
+const loadThinkingOff = async () => (thinkingModule ??= import("../../../../src/narration/thinking.js")).then(m => m.thinkingOffFor);
 
 const ANTHROPIC_HOST = "api.anthropic.com";
 const SIDECAR_SECTION = "## RESPONSE FORMAT — MANDATORY SIDECAR";
@@ -303,7 +309,7 @@ function stubText({ system, user }) {
  * that carries the asked model's form is given the new model's (none, for a
  * model that has none); a `thinking` the caller set otherwise is left as it is.
  */
-function swapModel(body, model) {
+function swapModel(body, model, thinkingOffFor) {
   if (typeof model !== "string" || !model) return null;
   let asked = null;
   try { asked = JSON.parse(body); } catch { return null; }
@@ -389,7 +395,7 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
     // rewritten, and the entry, the gate and the recording carry the model
     // the call goes to — the one it is priced at. The entry keeps the model
     // the page asked for beside it.
-    const swapped = typeof model === "function" ? swapModel(body, model(entry.kind, live.model)) : null;
+    const swapped = typeof model === "function" ? swapModel(body, model(entry.kind, live.model), await loadThinkingOff()) : null;
     if (swapped && swapped.model !== live.model) {
       entry.modelAsked = live.model;
       entry.model = swapped.model;

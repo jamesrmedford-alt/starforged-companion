@@ -144,7 +144,14 @@ multi-client harness (`tests/helpers/multiClient.js`).
   `players` service, `docker-compose.e2e.yml`) ships the browsers; `npm ci`
   installs `playwright@1.56.1` from `test/ci/playwright/package-lock.json`.
   **Bump the image tag and the package together**: a mismatched package
-  can't find its browser.
+  can't find its browser. The container mounts `test/ci/playwright` alone
+  (at `/pw`), so **a suite CI runs there imports nothing outside it**: a
+  static `import … from "../../../../src/…"` fails before the first scenario
+  ("Cannot find module '/src/…'" — PR #387's first run), where a local
+  `cloud.sh` run, from the repo, passes. What a suite needs from `src/` only
+  on a local path is imported lazily on that path (`lib/claude.mjs`
+  `loadThinkingOff`, for a model swap); `e2eSuitesStayInTheirMount.test.js`
+  walks the playthrough's and the multiplayer suite's import graphs.
 - **Result.** The suite runs whatever Cypress's result (a Quench failure
   doesn't make the world unusable), and `e2e.sh` fails if either part
   failed. The orchestrator log carries `[multiplayer] PASS / FAIL` lines,
