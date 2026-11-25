@@ -90,8 +90,10 @@ describe('issue #362 AC37 — a revealed truth is confirmed lore once', () => {
 
   it('control: the beat\'s other truths are archived at the scene\'s end as before — a marker the model writes is ignored', async () => {
     const plan = await seedPlan();
-    table.replies = revealing(plan.id, [{ subject: 'the corridor', fact: OTHER, revealOf: plan.id }]);
-    await narrateMoveOn(table, moveResolution({ outcome: 'strong_hit', outcomeLabel: 'Strong Hit' }));
+    // The player's line bears it out (overhaul 2 §5.2): it binds, and the scene's end archives it.
+    table.replies = revealing(plan.id, [{ subject: 'the corridor', fact: OTHER, revealOf: plan.id, from: 'line' }]);
+    await narrateMoveOn(table, moveResolution({ outcome: 'strong_hit', outcomeLabel: 'Strong Hit',
+      playerNarration: 'I watch the corridor lights flicker in the drone\'s count.' }));
     expect((stored().sceneTruths ?? []).find(t => t.fact === OTHER)?.revealOf).toBeUndefined();
     await endTheScene();
     expect(await loreStating(OTHER)).toHaveLength(1);

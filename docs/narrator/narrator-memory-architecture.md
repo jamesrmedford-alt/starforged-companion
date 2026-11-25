@@ -83,7 +83,8 @@ player input
    │    → ENTITIES IN SCENE cards + matchedEntityIds
    │
    ├─ buildNarratorSystemPrompt                                [READ 2+3]
-   │    §6.5 ledger block: SCENE FRAME → TRUTHS → STATE → SHIP POSITION
+   │    §6.5 ledger block: THE SCENE → WHAT BINDS → CORRECTED → STANDING NOW
+   │      → WHAT THE NARRATION HAS DESCRIBED → PLAY LET THESE GO → COMMAND VEHICLE
    │    scope = matchedIds ∪ currentLocation ∪ scene ∪
    │            text-mentions in (player text ∪ frame.present)
    │
@@ -411,8 +412,41 @@ move pipeline's snapshot predates its confirm dialog, and a second scene was
 minted over the live one's ledgers, which were neither kept nor archived.
 Oracle follow-ups, session and clock vignettes and vow scenes start a scene
 when none is active, as move, paced and `@scene` narration do
-(`ensureSceneStarted`, canonical GM — issue #321 U34; their facts landed
+(`ensureCurrentScene`, canonical GM — issue #321 U34; their facts landed
 under no scene), and so does a `!truth set` / `!state set` (issue #326 W59).
+
+**Scene turns** (overhaul 2, slice 2 — D1 reverses issue #353 R2's "scenes
+stay manual"). A session was one scene unless someone typed `!scene` (the
+long haul's third and fourth live runs), so the scene's question, its colour
+and its hooks were the session's. Each scene now has an anchor —
+`campaignState.sceneBegan = { sceneId, at, cause, what, place, ship, tracks }`,
+written once at its start from the stores (`sceneLifecycle.js openScene`,
+`sceneTurns.js sceneAnchorOf`) — and at the start of every beat of play's
+narration (`narrator.js ensureCurrentScene` at the move, paced, round and
+oracle follow-up sites; start-only elsewhere) `sceneLifecycle.js
+turnSceneIfDue` compares the stores with it (`sceneTurnDue`): the characters'
+place, the ship's place key, a fight / an expedition / a scene challenge
+begun or ended, time the player's line skips (`TIME_SKIP` — phrases, never a
+bare word) or a Sojourn. Begins before, ends after: an arrival's narration
+opens the new place; the beat whose resolution ended a fight
+(`endingTrackIds` — `index.js applyOutcomeEffects`, and Finish the Scene in
+`movePipeline.js`) is the fight's last, and the next beat turns. Several
+causes are one turn, the first in that order. A turn is `endScene(…, { turn:
+true })` then `startScene(…, { cause, what, carry })`: today's end — what
+binds migrated, LAST KNOWN kept, the strikes kept — less what is the
+session's (D16, amending #362 D4): the unanswered mysteries go on in the new
+scene (`secrets.js carrySceneMysteries`) and the `!pace` override stands. The
+frame's cast and let-go questions and the spotlight's last actor are carried
+into the new scene's first frame; no world snapshot is taken; the session
+summary is made. The beat that opens a scene is told so in overhaul 4's
+obligations block (WHAT THIS NARRATION MUST TELL, AND MUST NOT — "[scene] This
+beat opens a new scene: ‹what›…", TELL; each question play let go, NOT SO
+[letgo]; `sceneTurns.js sceneObligations`), and the record's
+`scene.started` carries the cause in words, which the Session Log heads the
+scene with ("A new scene — ‹what›"). A slot the scene began without (no
+place, no ship position — the inciting incident sets the first) is filled
+from the first store that records it, without turning; a scene open when
+this shipped takes its anchor at its first check.
 Scene starts run one at a time on the GM: a start waits for the one in
 flight, then adopts it — two narrations one command fires, each on its own
 working copy, minted two scenes inside the first start's write round trip,
@@ -450,10 +484,48 @@ frame's `present` list names, on **every** path (`addSceneFrameCast` in
 partner's card and facts in scope on turns like *"What does that even mean?"*
 or *"I convince him"*.
 
-**Drop order under budget pressure:** state, line by line — every other
-attribute before a character's location / vessel / condition, the oldest
-first within each (issue #286 A6) → (never) truths → (never) ship
-position → (never) scene frame. Soft cap `factContinuity.maxLedgerTokens`.
+**Drop order under budget pressure** (overhaul 2 D8): the described colour —
+its state, then its truths, the oldest first — then standing state, line by
+line, every other attribute before a character's location / vessel /
+condition, the oldest first within each (issue #286 A6) → (never) WHAT
+BINDS → (never) CORRECTED → (never) PLAY LET THESE GO (§7.3) → (never) THE
+SCENE (its place, ship and frame lines) → (never) the command vehicle. Soft
+cap `factContinuity.maxLedgerTokens`.
+
+**What binds, and what is colour** (overhaul 2, slice 3 — §5; D5, D6, D7,
+D13). Every truth and state entry carries its `basis`: `player` (the
+player's line), `dice` (a move's result, an oracle's answer), `gm` (a
+command, a correction, a Keep), `setup` (the inciting premise) — these bind —
+or `narrator`, the narration's own colour. A narrator fact says where it
+comes from (`"from": "line"` / `"result"`, normalised in `sidecarParser.js`);
+`narrator.js applySidecarSideData` floors the claim against the beat's own
+words (`ctx.ground` — `groundOf`: the player's line, and `decided`: the stakes
+line the outcome delivered, the move's target, the oracle's question and
+answer, a triggered clock's name — `decidedOfMove`) with `provenance.js
+factBasis`: one of the fact's own telling words, stemmed, in the ground, a
+name no evidence. Anything else is colour. The inciting incident's block is
+`setup` whole; a bookend, a clock vignette that triggered nothing and the
+oath scene beyond its vow write colour only. A `!truth set` / `!state set` /
+correction stamps the actor's basis. An entry from before bases reads as its
+asserter's (D13: the GM's and a player's as theirs, the narrator's colour; no
+migration).
+
+Colour is shown under WHAT THE NARRATION HAS DESCRIBED — kept to while it
+stands, changed without argument when the table changes it — while one of
+the scene's latest `COLOUR_BEATS` (6) narrations wrote or restated it: its
+`said` list (at most three narration ids, newest first); the scene's
+narrations are its stamped cards (`sceneId`, invariant 1;
+`sceneNarrationsOf`), and with none stamped (a scene from before) it all
+stands. A restatement the dedup meets refreshes `said`; one the table's words
+bear out raises the basis (`raisedBasis` — never lowered); a GM's Keep in the
+correction dialog raises it to `gm` (`confirmTruth`); the save's merge carries
+both (`mergeSceneLedgers` → `withRestatement`). The X-Card takes its
+narration off what it restated. Colour sharing a let-go question's stem the
+beat's words do not hold stops rendering. At a scene's end colour is filed
+nowhere — no tier detail, no Lore, no LAST KNOWN (`migrateSceneTruth` →
+`faded`, counted on `!scene end`'s card) — and the record keeps it
+(`truth.set.basis`); no view tells it (§ record, `read.js` `established` is
+binding only).
 
 ---
 
@@ -468,7 +540,8 @@ latest line sets out to settle. While the frame holds one, `applySceneFrame`
 (`sceneQuestion`) keeps it — a later snapshot cannot reword it — until a beat
 marks it answered (`questionAnswered`), after which the next beat's question
 is the scene's. The answering beat is told to end on a cut forward; no beat
-ends a scene (scenes stay manual — decisions.md). Applied
+ends a scene — the stores turn it (overhaul 2 D1, reversing issue #353 R2's
+"scenes stay manual"; §3 "Scene turns"). Applied
 by `applySceneFrame` (`ledgers.js`), which keeps the frames of the scene it
 replaces as a bounded `previous` chain (never rendered), so an X-Card on a
 narration puts back the frame its narration replaced (issue #345 D3);
@@ -493,41 +566,105 @@ of session 3's prompts, and 23 narrations of 23 ended on it. Two rules:
   and the first line of play replaces it. Its truths and state are recorded
   as before. The vignette's mode block says so (`BOOKEND_FRAME_RULE`); the
   apply drops a question whatever the model sends.
-- **A question play leaves unanswered is released** (`countSceneQuestionBeat`).
+- **A question play leaves unanswered is let go** (`countSceneQuestionBeat`).
   The frame carries `questionBeats` — 0 on the beat that set the question, one
   more for each later beat that left it open — and at `SCENE_QUESTION_BEATS`
   (3) the frame keeps no question. The count is on the frame, beside the
   question it counts: stored and merged with it (it survives a reload) and
   carried in the `previous` chain (an X-Card on a beat puts back the count
   that beat changed). An `@scene` answer writes no frame and is no beat.
+  Since overhaul 2 (§7.3; known-issues REFRAIN-OUTLIVES-THE-QUESTION) the
+  released question is **let go and stays let go**: it goes onto the frame's
+  `letGo` list — `{ text, stems }`, its own telling stems with the PCs' and
+  the ship's names left out, at most four, the newest kept — and the frame's
+  Now line goes with it, in the same write. The list is code-kept like the
+  question (`applySceneFrame` carries it; no fact block writes or drops it;
+  the `previous` chain carries it, so an X-Card on the beat that let it go
+  puts the question back). In the fourth live run the released question came
+  straight back in other words four times in one session — "Will Mira answer
+  the second hail before the pilot's offer lapses?", "Which channel will Mira
+  answer?", "Who will answer the second hail light?", "Who is on the second
+  hail channel?" — the count restarting each time, and the Now line ("…while
+  the pilot's offer and a second hail both wait on the comm") carrying it
+  all along.
+- **The question is the player's** (`narrator.js playersFrame`,
+  `factContinuity/provenance.js`; overhaul 2 §7.2). Every beat's frame is
+  read against the beat's own player words (`ctx.ground` — `groundOf`: the
+  move's written line, the paced line, a round's lines, the oracle's typed
+  question) before `applySceneFrame`. A question the frame does not already
+  hold stands only when its mode may set one (`QUESTION_MODES`: the move,
+  paced, round and oracle follow-up modes — never a clock vignette, the oath
+  scene or the inciting incident, which have no player's words), when it
+  shares a telling word with those words — the stemmed words of a plan's
+  reveal (`world/tellingWords.js tellingStems`), a PC's or the command vehicle's name
+  no evidence (`namesNoEvidence`) — and when it is no let-go question again:
+  one sharing a let-go stem the beat's player words do not hold is the same
+  question and is not set (`playersQuestion`); a line that names the stem
+  takes the hook up, and it stands. A Now line carrying a let-go question is
+  stored empty (`touchesLetGo`). Read so, the run's session 3 set one question
+  of four, for three beats.
 
-A frame with no question asks the next beat for one: SCENE FRAME's last line
-reads `Question: none stands — set the one the scene turns on now, from the
-player's latest line.` (`buildLedgerBlock`'s `askSceneQuestion`, worded per
-mode by `SCENE_QUESTION_ASK`) — in the modes whose fact block may set it, never
-in a vignette's prompt, an `@scene` answer's, the recap's, the consistency
-audit's or the Private Channel's. The sidecar rule says a question is never a
-hook of the narrator's own that the player's line did not take up, and that a
-dropped one is not brought back, in the block or in the prose; HOW A BEAT ENDS
-says such a hook is not rung twice. Rendered at the top of §6.5:
+A frame with no question asks the next beat for one: THE SCENE's last line
+reads `Turns on: none stands — if the player's latest line sets out to settle
+something, set that, in a few words that use the line's own; if it does not,
+set none.` (`buildLedgerBlock`'s `askSceneQuestion`, worded per mode by
+`SCENE_QUESTION_ASK` — the move, paced, round and oracle follow-up modes
+alone; the clock, oath-scene and inciting entries are gone with overhaul 2) —
+never in a vignette's prompt, an `@scene` answer's, the recap's, the
+consistency audit's or the Private Channel's. The sidecar rule says the
+question is the player's, from the line's own words, and that one listed
+under PLAY LET THESE GO is not set again, in any words, nor brought back in
+the prose; HOW A BEAT ENDS says the hook is the story's answer to the
+player's line, never a new thread of the narrator's own, and never one under
+PLAY LET THESE GO. The let-go questions render under PLAY LET THESE GO, after
+CORRECTED, never dropped under the cap. Rendered as THE SCENE, at the top of
+§6.5 (overhaul 2 §5.5 — the scene's anchor, the place and the ship by the
+table's record, then the frame's lines, each saying whose it is):
 
 ```
-SCENE FRAME (the scene as it stands):
-  Where:   Lyra's orbital graveyard
-  Present: Venri Quint, Vance
-  Now:     Hailing Vance's shuttle across the debris field
-  Question: Will Vance let them board?
+THE SCENE — began 3 beats ago, when the characters are at Lyra Station.
+  Place:    Lyra Station — where the characters are, by the table's record
+  Ship:     Wayfinder near Lyra Station
+  Where:    Lyra's orbital graveyard — as the narration has it
+  Present:  Venri Quint, Vance
+  Now:      Hailing Vance's shuttle across the debris field — as the narration has it
+  Turns on: Will Vance let them board? — from the player's line
 ```
 
-(An answered question reads `Question (answered): … — the scene has moved
-past it; set the question it turns on now.`; a frame with none, `Question:
-none stands — …` as above.)
+(An answered question reads `Turns on (answered): … — the scene has moved
+past it; set what it turns on now.`; a frame with none, `Turns on: none
+stands — …` as above.)
 
 Two side effects beyond display:
 1. `present` names are treated as mentioned for ledger scoping (§3).
 2. `resolvePathRelevance` (paced/@scene) unions `present` into the lexical
    match text, so present entities keep their ENTITIES IN SCENE card every
    turn.
+
+**One place** (overhaul 2 slice 4 — §6, D9, D17;
+SHIP-POSITION-AND-FRAME-DISAGREE). In the fourth live run's session 3 the
+frame said "open space off the lock" while the ship's record said docked at
+Bleakhold, the narration argued its own Where against the player's line
+("You are no longer at Tamsin's stall, so…"), and a50 copied "the Ashen Wake's
+pilot" after the cutter was renamed. Three stores, three facts: the
+characters' recorded place (`currentLocationId`), where the ship is (its
+position record), and where in that place the narration has them (the
+frame's Where — colour). THE SCENE composes them, each line saying whose it
+is, from one read (`sceneForReading`), which the pacing classifier is told
+by the same renderer (`formatSceneForReading` — its `formatScene`'s own
+current-location read and frame lines are gone). The frame rule asks for a
+room, a street, a deck — never where the ship is in space, which is a
+ship/position change — and for the scene where the player's line put it,
+with no difference explained in the prose. The ship rule asks for a
+ship/position when the player's line or the prose puts the ship somewhere
+its position does not say. Only a beat of play moves the ship (a bookend's,
+a clock vignette's and the oath scene's ship/position are dropped; the
+inciting incident's starting position stands). A fight begun while docked
+tells its opening beat NOT SO [place]. A line that walks the characters to a
+recorded place the frame names moves the current location with the frame
+(`sceneLifecycle.js placeWalkedTo`; `place.arrived`, `how: "line"`), and the
+next beat turns the scene; the ship stays. Names the table changed are
+written new in the frame's words as they are read (`writeNewNames`).
 
 **Knob:** `factContinuity.sceneFrame` (world Boolean, default on; Fact
 Continuity pane). Disabling removes the sidecar key, the block, and both
@@ -713,7 +850,7 @@ truths alone; backlog §8.8 keeps the elide option if playtests show it.
 | NPC's location / condition drifts | ledger writes | inspect `campaignState.sceneState.bySubject` — if empty, the required-emission rules aren't being honoured by the model; strengthen wording in `appendSidecarInstruction` before adding machinery |
 | Premise / stakes drift | ledger truths | inspect `campaignState.sceneTruths`; if the inciting facts are missing, check the `inciting_incident` addendum fired (mode threading) |
 | Whole-scene wobble: wrong place, wrong cast | frame | inspect `campaignState.sceneFrame`; if stale, the model is omitting the key — tighten the "EVERY response" rule or consider re-asserting the frame in the user message |
-| Every beat ends on the same hook; one question in every prompt | frame question | inspect `campaignState.sceneFrame.question` / `questionBeats`; a question is released after `SCENE_QUESTION_BEATS` (`narrator.js`) — if a refrain still runs longer, the model is re-setting the same hook from a line that did not take it up: tighten the sidecar's `question` rule before lowering the number |
+| Every beat ends on the same hook; one question in every prompt | frame question | inspect `campaignState.sceneFrame.question` / `questionBeats` / `letGo`; a question is let go after `SCENE_QUESTION_BEATS` (`narrator.js`) and a let-go one is refused in code (`provenance.js playersQuestion`) — if a refrain still runs, look for a hook with no question behind it (colour, the ring) before lowering the number |
 | Conversation partner forgotten on short turns | frame `present` + scoping | confirm the name appears in `present`; confirm `resolvePathRelevance` unioned it (matched cards in prompt) |
 | Established entity facts not surfacing | entity records + scoping | is the entity confirmed? are its truths entity-keyed (not text)? did relevance match it? |
 | Prompt too large / cost creep | budgets | lower `narratorContextCards` / `maxLedgerTokens`; frame is ~30–60 tokens and not the culprit |

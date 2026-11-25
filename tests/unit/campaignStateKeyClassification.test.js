@@ -140,6 +140,8 @@ const CLASSIFICATION = {
   sceneState:             SCENE,
   sceneFrame:             SCENE,
   spotlight:              SCENE,
+  // The scene's anchor (overhaul 2 §4.1): written once at its start, cleared at its end.
+  sceneBegan:             SCENE,
   sessionRetractions:     STORE,
   recentOracles:          STORE,
   // The names the table changed (issue #377 item 1): a card's rename sync,
@@ -170,6 +172,7 @@ function scene(side, sceneId) {
     sceneState:     { bySubject: { [`${side}-subject`]: [{ attribute: 'where', value: side }] }, sceneId },
     sceneFrame:     { place: `the ${side}'s place`, sceneId },
     spotlight:      { lastActorId: `pc-${side}`, sceneId },
+    sceneBegan:     { sceneId, cause: 'first', what: `the ${side}'s scene` },
   };
 }
 
@@ -266,7 +269,7 @@ describe('issue #364 CAMPAIGNSTATE-KEY-CLASSIFICATION — a move\'s record treat
     const after = await recordMove(stateOf('store', 'sc-1'), stateOf('working', 'sc-1'));
     expect(after.currentSceneId).toBe('sc-1');
     expect(after.sceneTruths.map(t => t.id)).toEqual(['t-store', 't-working']);
-    for (const name of ['sceneState', 'sceneFrame', 'spotlight']) expect(after[name], name).toEqual(scene('working', 'sc-1')[name]);
+    for (const name of ['sceneState', 'sceneFrame', 'spotlight', 'sceneBegan']) expect(after[name], name).toEqual(scene('working', 'sc-1')[name]);
   });
 
   it.each(fieldsOf(MERGED))('merged: %s is not the stale working copy when the store moved on', async (name) => {

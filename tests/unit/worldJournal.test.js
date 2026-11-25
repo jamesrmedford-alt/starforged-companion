@@ -747,11 +747,12 @@ describe("postContradictionNotification — kind-aware remedies (NARRCHK-REMEDY-
     expect(card.content).toMatch(/openCorrectionDialog/);
   });
 
-  it("replaces the button with a targeted hint for identity/ship/frame/retraction kinds", async () => {
+  it("replaces the button with a targeted hint for identity/place/retraction kinds — ship and frame read as place", async () => {
     for (const [kind, hint] of [
       ["identity",   /character sheet \/ connection record/],
-      ["ship",       /!at &lt;place&gt;/],   // the command that sets it (issue #326 W66)
-      ["frame",      /@scene/],
+      ["place",      /!at &lt;place&gt;/],   // the command that sets it (issue #326 W66; overhaul 2 §5.8)
+      ["ship",       /!at &lt;place&gt;/],
+      ["frame",      /!at &lt;place&gt;/],   // the frame is the narration's own: no catch of its own
       ["retraction", /already blocked at the ledger/],
     ]) {
       global.ChatMessage._reset?.();

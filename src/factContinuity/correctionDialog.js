@@ -17,6 +17,7 @@
 import {
   strikeTruth,
   replaceTruth,
+  confirmTruth,
   strikeStateValue,
   setStateValue,
   subjectKey,
@@ -27,6 +28,10 @@ import { resolveEntityById } from '../entities/registry.js';
 import { propagateRetraction } from './retractions.js';
 import { persistSceneLedgerFields } from './sceneLifecycle.js';
 import { nameSwapOf, withNameChange, recordNameChanged } from './nameChanges.js';
+import { entryBasis } from './provenance.js';
+
+/** How a truth's basis reads on its row (overhaul 2 §5.1). */
+const BASIS_NAMES = Object.freeze({ player: 'the player', dice: 'the dice', gm: 'the GM', setup: 'the premise', narrator: 'the narration\'s colour' });
 
 const MODULE_ID = 'starforged-companion';
 
@@ -138,15 +143,21 @@ function renderTruthRow(truth, ctx, flagged = false) {
     `
     : '';
   const flagHint  = flagged ? ` <span class="sf-correct-flagged" title="The fact the Narrative Review caught">⚠ flagged by the review</span>` : '';
+  // A colour truth binds once the GM keeps it (overhaul 2 §5.3, D7).
+  const basis     = entryBasis(truth);
+  const keep      = ctx.isGM && basis === 'narrator'
+    ? `<button type="button" class="sf-correct-btn" data-action="keep-truth" data-truth-id="${escape(truth.id)}" title="Keep it: the narration described it; kept, it binds">Keep</button>`
+    : '';
+  const basisHint = ` <span class="sf-correct-basis">— ${escape(BASIS_NAMES[basis] ?? basis)}</span>`;
   return `
     <li class="sf-correct-row${flagged ? ' sf-correct-row--flagged' : ''}">
       <div class="sf-correct-meta">
         <code class="sf-correct-id">${idPrefix}</code>
         <span class="sf-correct-subject">${subjLabel}</span>
-        <span class="sf-correct-asserter">(${actor})</span>${lockHint}${flagHint}
+        <span class="sf-correct-asserter">(${actor})</span>${basisHint}${lockHint}${flagHint}
       </div>
       <div class="sf-correct-fact">${fact}</div>
-      <div class="sf-correct-actions">${buttons}</div>
+      <div class="sf-correct-actions">${keep}${buttons}</div>
     </li>
   `;
 }
@@ -240,6 +251,13 @@ async function handleRowAction(button, ctx) {
       });
       return;
     }
+    case 'keep-truth': {
+      // The GM keeps what the narration described (overhaul 2 §5.3): it binds.
+      const working = workingCopy();
+      if (!confirmTruth(button.dataset.truthId, working, ctx)) return;
+      await persistCorrection(working, 'sceneTruths');
+      return;
+    }
     case 'strike-state': {
       const working = workingCopy();
       if (!strikeStateValue(button.dataset.stateKey, button.dataset.attribute, working)) return;
@@ -254,7 +272,7 @@ async function handleRowAction(button, ctx) {
       const next = await promptForText(`New value for "${attr}"`, String(cur?.value ?? ''));
       if (!next) return;
       const working = workingCopy();
-      if (!setStateValue(key, attr, next, working)) return;
+      if (!setStateValue(key, attr, next, working, ctx)) return;
       await persistCorrection(working, 'sceneState');
       return;
     }

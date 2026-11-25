@@ -3,8 +3,11 @@
  * src/factContinuity/consistencyCheck.js
  *
  * Post-narration audit pass. After every narration the prose is compared
- * against the full active-scene ledger block — scene frame, binding truths,
- * retracted facts, current state, and ship position — by a Haiku call.
+ * against what binds in the active-scene ledger block (overhaul 2 §5.8, D15)
+ * — the place and the ship by the table's record, the recorded identities,
+ * what binds, the retracted facts and the standing state — by a Haiku call.
+ * What the narration described (its colour, the frame's Where and Now) is
+ * not audited: a narration that changes it is no contradiction.
  * High-confidence contradictions surface on the existing GM-only Narrative
  * Review card, augmented in Phase E with a "Retract the offending fact"
  * button that opens the correction dialog.
@@ -82,19 +85,17 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   const identities = buildRecordedIdentitiesBlock(options.matchedEntityIds ?? []);
 
   // Nothing to audit against — an empty ledger means nothing can be
-  // contradicted. Broadened (narrator-context audit 2026-07) beyond
-  // truths+state to everything the ledger block holds: the scene frame,
-  // ship position, and retracted facts (a re-assertion of a struck fact is
-  // exactly the contradiction the check exists to catch — and the frame
-  // audit is the §8.3 staleness mitigation the architecture doc sketched).
-  if (!ledger.truths && !ledger.state && !ledger.frame
-      && !ledger.shipPosition && !ledger.corrections && !identities) {
+  // contradicted. What binds alone (overhaul 2 §5.8, D15): the scene's place
+  // and ship by the table's record, what binds, the table's strikes, the
+  // standing state and the recorded identities. What the narration described
+  // is its own, and a narration that changes it is no contradiction; the
+  // frame's Where is colour too (FRAME-REASONING-IN-PROSE).
+  if (!ledger.binds && !ledger.standing && !ledger.place && !ledger.corrections && !identities) {
     return { contradictions: [], dispatched: false };
   }
 
-  const systemPrompt = buildAuditPrompt(ledger.truths, ledger.state, prose, {
-    frame:        ledger.frame,
-    shipPosition: ledger.shipPosition,
+  const systemPrompt = buildAuditPrompt(ledger.binds, ledger.standing, prose, {
+    place:        ledger.place,
     corrections:  ledger.corrections,
     identities,
   });
@@ -174,15 +175,16 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
 }
 
 /**
- * Build the audit system prompt per scope §11.1, broadened (2026-07) to the
- * full ledger block: scene frame, retracted facts, and ship position audit
- * alongside truths and state. Exported for testing.
+ * Build the audit system prompt per scope §11.1 — broadened (2026-07) to the
+ * retracted facts, the ship and the identities, and since overhaul 2 (§5.8)
+ * to what binds alone: THE PLACE, RECORDED IDENTITIES, WHAT BINDS, RETRACTED
+ * FACTS, STANDING NOW. Exported for testing.
  *
  * @param {string} truthsBlock
  * @param {string} stateBlock
  * @param {string} narration
- * @param {{ frame?: string, shipPosition?: string, corrections?: string,
- *           identities?: string }} [extra]
+ * @param {{ place?: string, corrections?: string, identities?: string }} [extra] — `place`:
+ *   THE SCENE's Place and Ship lines (overhaul 2 §5.8)
  */
 export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {}) {
   return [
@@ -190,25 +192,22 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     'internal consistency against the established facts of the active',
     'scene. Return JSON only.',
     '',
-    'SCENE FRAME (where the scene is set, who is present):',
-    extra.frame?.trim() || '(none)',
+    'THE PLACE (where the characters are and where their ship is, by the table\'s record):',
+    extra.place?.trim() || '(none)',
     '',
     'RECORDED IDENTITIES (each character\'s established pronouns — prose that',
     'misgenders one of them IS a contradiction):',
     extra.identities?.trim() || '(none)',
     '',
-    'ACTIVE SCENE TRUTHS:',
+    'WHAT BINDS (what the player said, the dice decided or the GM set):',
     truthsBlock?.trim() || '(none)',
     '',
     'RETRACTED FACTS (corrected by the table — re-asserting one of these IS',
     'a contradiction):',
     extra.corrections?.trim() || '(none)',
     '',
-    'ACTIVE SCENE STATE:',
+    'STANDING NOW:',
     stateBlock?.trim() || '(none)',
-    '',
-    'SHIP POSITION:',
-    extra.shipPosition?.trim() || '(none)',
     '',
     'NARRATION:',
     narration.trim(),
@@ -217,7 +216,7 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     '{',
     '  "contradictions": [',
     '    { "subject": string, "violated": string, "evidence": string,',
-    '      "kind": "truth" | "state" | "frame" | "ship" | "retraction" | "identity",',
+    '      "kind": "truth" | "state" | "place" | "retraction" | "identity",',
     '      "confidence": "high" | "medium" | "low" }',
     '  ]',
     '}',
@@ -300,7 +299,10 @@ export function resolveContradictedTruthId(contradiction, campaignState) {
 }
 
 /** The section headings the audit sometimes returns in front of (or as) the fact. */
-const LEDGER_SECTION_LABEL = /^\s*(?:active scene (?:truths|state)|current state|scene frame|ship position|retracted facts|recorded identities)\b[^—:-]*[—:-]\s*/i;
+const LEDGER_SECTION_LABEL = /^\s*(?:what binds|standing now|the place|retracted facts|recorded identities)\b[^—:-]*[—:-]\s*/i;
+
+/** A binding line's basis, as the block writes it after its value (overhaul 2 §5.5). */
+const BASIS_SUFFIX = / \((?:the player|the dice|the GM|the premise)\)$/;
 
 /**
  * A contradiction as its review card shows it (issue #354 P2-19): the
@@ -312,7 +314,7 @@ const LEDGER_SECTION_LABEL = /^\s*(?:active scene (?:truths|state)|current state
  *
  * @param {{ subject?: string, violated?: string, evidence?: string, kind?: string, truthId?: string|null }} c
  * @param {Object} campaignState
- * @param {{ state?: string }} [ledger] — buildLedgerBlock's blocks, as audited
+ * @param {{ standing?: string }} [ledger] — buildLedgerBlock's blocks, as audited
  * @returns {{ subject: string, recorded: string, evidence: string }}
  */
 export function describeContradiction(c, campaignState, ledger = {}) {
@@ -322,8 +324,8 @@ export function describeContradiction(c, campaignState, ledger = {}) {
   let recorded = '';
   try {
     // The ledger's own state lines: "  Isaac Sutton — location: the bridge".
-    const stateLines = String(ledger?.state ?? '').split('\n')
-      .map(line => /^\s+(.+?) — ([^:]+): (.+)$/.exec(line))
+    const stateLines = String(ledger?.standing ?? '').split('\n')
+      .map(line => /^\s+(.+?) — ([^:]+): (.+)$/.exec(line.replace(BASIS_SUFFIX, '')))
       .filter(Boolean)
       .map(m => ({ label: m[1].trim(), attribute: m[2].trim(), value: m[3].trim() }));
     const ofSubject = stateLines.filter(l => norm(l.label) === norm(subject));
@@ -415,7 +417,11 @@ function normaliseConfidence(v) {
 
 function normaliseKind(v) {
   const s = String(v ?? '').toLowerCase();
-  return ['state', 'frame', 'ship', 'retraction', 'identity'].includes(s) ? s : 'truth';
+  // `place`: where the characters are or their ship is, by the table's
+  // record (overhaul 2 §5.8 — the `frame` and `ship` kinds folded in; the
+  // frame is the narration's own colour now, and no contradiction to audit).
+  if (s === 'frame' || s === 'ship') return 'place';
+  return ['state', 'place', 'retraction', 'identity'].includes(s) ? s : 'truth';
 }
 
 // Review cards already posted, keyed by scene + subject + violated fact.

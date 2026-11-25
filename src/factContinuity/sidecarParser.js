@@ -198,8 +198,8 @@ function stripBlocks(rawText, blocks) {
 export function normaliseSidecar(parsed) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   return {
-    newTruths:     Array.isArray(parsed.newTruths)    ? parsed.newTruths    : [],
-    stateChanges:  Array.isArray(parsed.stateChanges) ? parsed.stateChanges : [],
+    newTruths:     Array.isArray(parsed.newTruths)    ? withFrom(parsed.newTruths)    : [],
+    stateChanges:  Array.isArray(parsed.stateChanges) ? withFrom(parsed.stateChanges) : [],
     sceneFrame:    normaliseSceneFrame(parsed.sceneFrame),
     plans:         normalisePlans(parsed.plans),
     openQuestions: normaliseOpenQuestions(parsed.openQuestions),
@@ -208,6 +208,37 @@ export function normaliseSidecar(parsed) {
     newThreats:    normaliseNewThreats(parsed.newThreats),
     builtFrom:     normaliseBuiltFrom(parsed.builtFrom),
   };
+}
+
+/** The two places a narrator fact may say it comes from (overhaul 2 §5.2). */
+const FROM_VALUES = new Set(['line', 'result']);
+
+/**
+ * A fact's `from` as the narrator gave it (overhaul 2 §5.2, D5): "line" —
+ * the player's line says it — or "result" — the move's outcome or the
+ * oracle's answer decides it — else null: absent, misspelled, another value,
+ * a non-string. Untagged is the narrator's own colour. Case and spaces aside.
+ *
+ * @param {unknown} from
+ * @returns {"line"|"result"|null}
+ */
+function normaliseFrom(from) {
+  const v = typeof from === 'string' ? from.trim().toLowerCase() : '';
+  return FROM_VALUES.has(v) ? v : null;
+}
+
+/**
+ * A fact list with each object entry's `from` normalised — kept when it is
+ * one of FROM_VALUES, left off otherwise (an untagged fact is colour, and its
+ * shape is as it was) — other entries as they were (applySidecar skips them).
+ */
+function withFrom(list) {
+  return list.map((e) => {
+    if (!e || typeof e !== 'object' || Array.isArray(e)) return e;
+    const { from, ...rest } = e;
+    const tag = normaliseFrom(from);
+    return tag ? { ...rest, from: tag } : rest;
+  });
 }
 
 /** The most entries a set-piece's account is read for (a scene has a handful of seeds). */

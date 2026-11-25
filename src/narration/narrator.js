@@ -18,6 +18,7 @@ import {
   splitNarratorSystemPrompt,
   sanitizePlayerText,
   SCENE_LEDGER_FIELDS,
+  sceneForReading,
   resolveNarrationPerspective,
   sessionPerspectiveOf,
 } from './narratorPrompt.js';
@@ -41,11 +42,14 @@ import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js
 import { narrateKeepingObligations } from '../moves/contracts/checks.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
-import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
+import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, placeWalkedTo } from '../factContinuity/sceneLifecycle.js';
+import { recordPlaceArrival } from '../record/tableSnapshot.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
+import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, COLOUR_BEATS } from '../factContinuity/provenance.js';
 import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
 import { readMoveSituation } from '../moves/situation.js';
+import { sceneObligations } from '../factContinuity/sceneTurns.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -66,7 +70,7 @@ import {
 } from '../world/worldJournal.js';
 import { getSettlement, listSettlements }  from '../entities/settlement.js';
 import { getFaction, listFactions, mergeFactionLandscape } from '../entities/faction.js';
-import { getShip }        from '../entities/ship.js';
+import { getShip, getCommandVehicle, getCommandVehicleActorId } from '../entities/ship.js';
 import { getPlanet, listPlanets }       from '../entities/planet.js';
 import { getLocation, listLocations }   from '../entities/location.js';
 import { getCreature }    from '../entities/creature.js';
@@ -115,6 +119,20 @@ const MODULE_ID      = 'starforged-companion';
 
 /** campaignState fields a narrator sidecar writes (applySidecar + applySceneFrame). */
 const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']);
+
+/**
+ * What the scene obliges a beat of play's narration (sceneTurns.js
+ * sceneObligations), with the ship's line as the scene's one read has it
+ * (sceneForReading — overhaul 2 §6.2's [place]). The ledger is the store's
+ * scene (`extras.sceneLedger`), else the caller's; the ship is the record's.
+ *
+ * @param {Object|null} ledger
+ * @param {Object} campaignState
+ * @returns {Array<{ kind: string, list: string, text: string }>}
+ */
+function sceneObligationsOf(ledger, campaignState) {
+  return sceneObligations(ledger ?? campaignState, { ship: sceneForReading(campaignState).ship });
+}
 
 /**
  * True when the X-Card is active. Checks the caller's campaignState AND the
@@ -392,6 +410,13 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   const extras = {
     mode,
     sceneLedger,
+    // The scene's narrations so far (overhaul 2 §5.3, §8): the colour window
+    // — a colour entry stands in the block while one of the latest
+    // COLOUR_BEATS wrote or restated it — and how many beats ago it began.
+    sceneNarrations: sceneNarrationsOf(sceneLedger?.currentSceneId ?? campaignState?.currentSceneId ?? null,
+      campaignState?.currentSessionId ?? null),
+    // The beat's player words: a let-go hook they take up stands in the block.
+    playerLine: typeof playerNarration === 'string' ? playerNarration : '',
     // Lines, Veils and Private Lines, read live (issue #321 U08; rules/
     // reachability.md §9: a safety-critical flag is read at the point of
     // use): the move pipeline narrates from a snapshot taken before its
@@ -1305,9 +1330,14 @@ export async function narrateResolution(resolution, campaignState, options = {},
 
   const character    = getActiveCharacter(campaignState, options?.speakerActorId);
 
-  // First narration of a session implicitly starts a scene if none is active.
-  // See issue #227 (Fact Continuity) §9.1.
-  await ensureSceneStarted(campaignState, 'first_narration_move_resolution');
+  // First narration of a session implicitly starts a scene if none is active
+  // (issue #227 §9.1); one whose place or situation changed turns it, before
+  // this narration tells it (overhaul 2 §4.3 — an arrival, a fight begun; a
+  // fight this move ended turns it at the next beat).
+  await ensureCurrentScene(campaignState, {
+    mode: 'move_resolution', reason: 'first_narration_move_resolution', line: writtenLine(resolution),
+    moveId: resolution?.moveId ?? null, endingTrackIds: Array.isArray(resolution?.endingTrackIds) ? resolution.endingTrackIds : [],
+  });
 
   // Phase 2 — relevance resolver runs before the narrator call:
   //   - Picks the narrator-permission block (discovery / interaction / embellishment)
@@ -1371,9 +1401,12 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // Costs chosen after their narration, told by this beat of play (D10) —
   // not this result's own (its card is [chosen]).
   const chosenSince = choicesChosenSince({ except: [resolution?._id, resolution?.upgradeOf] });
-  // One list for the block and its checks (overhaul 4, slice 4).
-  const moveObligations = obligationsFor({ mode: 'move', resolution, situation: touched.situation,
-    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince });
+  // One list for the block and its checks (overhaul 4, slice 4) — with what
+  // the scene obliges: TELL [scene] on the beat that opens one, NOT SO [letgo]
+  // (overhaul 2 §10.3; kinds checks.js trips on nothing — they are told only).
+  const moveObligations = [...obligationsFor({ mode: 'move', resolution, situation: touched.situation,
+    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince }),
+    ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const userMessage  = buildNarratorUserMessage(
     resolution,
     resolution.playerNarration ?? '',
@@ -1398,6 +1431,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // to decide with it: an exit that wrote none files them with their rolls
   // alone (issue #362 AC07).
   let sideDataApplied = false;
+  // What its fact block is checked against: the line the player wrote — a
+  // burn's or an improve's re-narration has none (overhaul 2 §5.2, §7.2).
+  const ground = groundOf({ line: writtenLine(resolution), decided: decidedOfMove(resolution, { moveTarget: options?.moveTarget ?? null }) });
 
   try {
     // Checked against its obligations before it posts (overhaul 4, slice 4 —
@@ -1430,6 +1466,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
       narrationId,
       planRequests:     extras.planRequests,
       endingTrackIds,
+      mode:             'move_resolution',
+      ground,
     });
 
     if (!narration?.trim()) {
@@ -1472,6 +1510,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
           narrationId,
           planRequests:     extras.planRequests,
           endingTrackIds,
+          mode:             'move_resolution',
+          ground,
         });
         if (narration?.trim()) {
           sideDataApplied = true;
@@ -1818,7 +1858,11 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState, noKeyReason || NO_CLAUDE_KEY_REASON) };
   }
 
-  await ensureSceneStarted(campaignState, 'first_narration_round_resolution');
+  await ensureCurrentScene(campaignState, {
+    mode: 'round_resolution', reason: 'first_narration_round_resolution', line: entries.map(e => e.text).filter(Boolean).join('\n'),
+    moveIds: entries.map(e => e.input?.moveId).filter(Boolean),
+    endingTrackIds: entries.flatMap(e => (Array.isArray(e.input?.endingTrackIds) ? e.input.endingTrackIds : [])),
+  });
 
   // Each move entry's relevance, unioned, at the widest class among them.
   const widest = widestRoundClass(entries);
@@ -1872,6 +1916,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     entries,
     sentenceTarget,
     audio: extras.audioMarkupEnabled === true,
+    sceneObligations: sceneObligationsOf(extras.sceneLedger, campaignState),
   });
   const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
   // Asked after the call's long wait: is this narration still the round's?
@@ -1901,7 +1946,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       }
       const narration = applyNarratorSidecar(raw, campaignState, {
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
-        endingTrackIds,
+        endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text),
+          decided: entries.flatMap(e => (e.input?.kind === 'move' ? decidedOfMove(e.input) : [])) }),
       });
       if (!narration?.trim()) {
         failure = EMPTY_REPLY_REASON;
@@ -2712,6 +2758,33 @@ function ringEntryText(message) {
  */
 function sessionNarratorCards(sessionId) {
   return (game.messages?.contents ?? []).filter(m => inNarratorMemory(m, sessionId));
+}
+
+/**
+ * The scene's narrations so far, from the cards stamped with it (overhaul 2
+ * §8 — record/cards.js registerSceneStampHook): `window`, the newest
+ * COLOUR_BEATS narrations' ids (a colour entry stands while one of them wrote
+ * or restated it), and `beats`, how many there are. With no card of the scene
+ * stamped — a scene from before the stamp — `{ window: null, beats: null }`:
+ * its colour stands, as everything did. Never throws.
+ *
+ * @param {string|null} sceneId
+ * @param {string|null} sessionId
+ * @returns {{ window: Set<string>|null, beats: number|null }}
+ */
+function sceneNarrationsOf(sceneId, sessionId) {
+  try {
+    if (!sceneId) return { window: null, beats: null };
+    const ids = sessionNarratorCards(sessionId)
+      .filter(m => m.flags?.[MODULE_ID]?.sceneId === sceneId)
+      .map(m => m.flags?.[MODULE_ID]?.narrationId)
+      .filter(id => typeof id === 'string' && id);
+    if (!ids.length) return { window: null, beats: null };
+    return { window: new Set(ids.slice(-COLOUR_BEATS)), beats: ids.length };
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: the scene's narrations could not be read:`, err?.message ?? err);
+    return { window: null, beats: null };
+  }
 }
 
 /**
@@ -3938,7 +4011,8 @@ export async function interrogateScene(question, campaignState, options = {}) {
   // @scene continues the scene in progress (issue #286 A4) — this starts one
   // only when none is active, so the question is asked of the frame, truths,
   // state and CORRECTED list as they stand. The answer adds nothing to them.
-  await ensureSceneStarted(campaignState, 'first_narration_scene_interrogation');
+  // A question is no beat: it starts a scene when none is open, never turns one.
+  await ensureCurrentScene(campaignState, { mode: 'scene_interrogation', reason: 'first_narration_scene_interrogation' });
   const extras = await buildNarratorExtras('scene_interrogation', campaignState, {
     playerNarration: question,
     character,
@@ -4119,7 +4193,7 @@ export async function narrateOracleFollowup({
   // (issue #321 U34 — NARR-INCITING-SCENE on every sidecar-writing path).
   // Written under no scene, the next move's scene start ended them as a
   // phantom scene, discarding the state and the frame.
-  await ensureSceneStarted(campaignState, 'oracle_followup');
+  await ensureCurrentScene(campaignState, { mode: 'oracle_followup', reason: 'oracle_followup', line: question });
 
   // The roller's own PC, or no one: the router names none for a player with
   // no PC of their own (oracleFollowup.js), and getActiveCharacter's first-PC
@@ -4149,6 +4223,7 @@ export async function narrateOracleFollowup({
   const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
   const userMessage    = buildOracleUserMessage({
     kind, oracleName, question, rolledLine, recentContext, seedLines,
+    sceneObligations: sceneObligationsOf(extras.sceneLedger, campaignState),
     stepLine: step ? `It is the next escalation step of ${step.plan.subject.name} under UNREVEALED: "${step.step.text}". Play it as that.` : '',
   });
   const stepReveals = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
@@ -4167,7 +4242,7 @@ export async function narrateOracleFollowup({
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
 
     if (!text?.trim()) {
       fileUnansweredPlanRequests(extras.planRequests, campaignState);
@@ -4191,7 +4266,7 @@ export async function narrateOracleFollowup({
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
         if (text?.trim()) {
           sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -4267,8 +4342,13 @@ async function complicationStep(campaignState, scope, trackId = null) {
 }
 
 function buildOracleUserMessage({
-  kind = 'oracle_table', oracleName, question, rolledLine, recentContext, seedLines = [], stepLine = '',
+  kind = 'oracle_table', oracleName, question, rolledLine, recentContext, seedLines = [], stepLine = '', sceneObligations: lines = [],
 }) {
+  // What the scene obliges it to tell (overhaul 2 §10.3), in overhaul 4's
+  // block — the answer's own, for a yes/no question (below).
+  const sceneOwed = Array.isArray(lines) ? lines : [];
+  const complicationBlock = formatObligationsBlock(sceneOwed);
+  const owed = complicationBlock ? `${complicationBlock}\n\n` : '';
   // recentContext is a pre-joined STRING (getRecentNarrationContext), matching
   // the scene/paced builders. Use it directly — calling .join here threw
   // "recentContext.join is not a function" and silently killed every oracle
@@ -4290,6 +4370,7 @@ function buildOracleUserMessage({
       (rolledLine ? `Oracle: ${rolledLine}\n` : '') +
       (stepLine ? `${stepLine}\n` : '') +
       `${recent}\n\n` +
+      owed +
       `Render the complication arriving now, as 2-3 sentences of in-fiction prose anchored to ` +
       `the current scene: it happens, concretely, and it costs or threatens the characters. ` +
       `Do not resolve it. Do not repeat the dice number or the literal table text — transform ` +
@@ -4300,9 +4381,9 @@ function buildOracleUserMessage({
   // back after the recent scene, which may say otherwise, and before the ask
   // — its obligations block, TELL [oracle] the answer, NOT SO its opposite
   // (overhaul 4).
-  const binds = formatObligationsBlock(obligationsFor({
+  const binds = formatObligationsBlock([...obligationsFor({
     mode: 'oracle', oracle: { kind, question: sanitizePlayerText(question ?? ''), rolledLine },
-  }));
+  }), ...sceneOwed]);
   return (
     `The player invoked the oracle:\n` +
     `Oracle: ${oracleName}\n` +
@@ -4451,7 +4532,12 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   const apiKey = getApiKey();
 
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
-  await ensureSceneStarted(campaignState, 'session_vignette');
+  // A bookend starts one, never turns one: Begin's opening is the session's
+  // ("the session begins"), a closing or spotlight cutaway its own scene.
+  await ensureCurrentScene(campaignState, {
+    mode: 'session_vignette', reason: 'session_vignette',
+    cause: /^\s*OPENING VIGNETTE\b/i.test(String(userMessage ?? '')) ? 'session' : 'cutaway',
+  });
 
   // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
   const { character, roundCharacters } = Array.isArray(actorIds)
@@ -4474,7 +4560,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
       maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
     });
     if (xCard.interrupted('narrateSessionVignette')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette' });
     if (!text?.trim()) return null;
     scheduleNarrationCapture(text, campaignState, capture);   // its NPCs' developments → their cards (#286 D4)
     return text;
@@ -4489,7 +4575,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateSessionVignette')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette' });
         if (!text?.trim()) return null;
         scheduleNarrationCapture(text, campaignState, capture);
         return text;
@@ -4556,7 +4642,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     if (!apiKey) return null;
 
     // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
-    await ensureSceneStarted(campaignState, 'clock_vignette');
+    await ensureCurrentScene(campaignState, { mode: 'clock_advance', reason: 'clock_vignette' });
 
     // Its own role (a threat tightening, or arriving), not the session
     // vignette's "calm before / after" (issue #322 V23). The PCs at the table
@@ -4615,7 +4701,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
       });
       if (xCard.interrupted('narrateClockAdvancement')) return null;
       if (!(await triggerStands())) return null;
-      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor });
+      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
       if (!text?.trim()) return null;
       // The developments of the recorded NPCs it names → their cards, as a
       // session vignette's (#286 D4) — every post site goes through here
@@ -4639,7 +4725,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
           });
           if (xCard.interrupted('narrateClockAdvancement')) return null;
           if (!(await triggerStands())) return null;
-          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor });
+          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
           if (!text?.trim()) return null;
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
           narrated = true;
@@ -4734,7 +4820,7 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
   if (!apiKey) return null;
 
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
-  await ensureSceneStarted(campaignState, 'vow_swearing');
+  await ensureCurrentScene(campaignState, { mode: 'vow_swearing', reason: 'vow_swearing' });
 
   const character    = getActiveCharacter(campaignState, speakerActorId);
   const ironTruth    = getTruth(campaignState, 'iron');
@@ -4753,7 +4839,7 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateVowSwearing')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, mode: 'vow_swearing', ground: groundOf({ line: vow?.name ?? '' }) });
     return (text && text.trim()) ? text : null;
   };
 
@@ -4847,7 +4933,7 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
   // ended that phantom scene — discarding the target NPC's opening
   // location/condition (state never migrates) and clearing the opening frame.
   // Starting the scene HERE means the first move continues it instead.
-  await ensureSceneStarted(campaignState, 'inciting_incident');
+  await ensureCurrentScene(campaignState, { mode: 'inciting_incident', reason: 'inciting_incident', cause: 'campaign' });
 
   // The PCs at the table, not the campaign's first PC (issue #362 AC75).
   const { character, roundCharacters } = await partyBlocksAtTable(campaignState);
@@ -4865,7 +4951,7 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateIncitingIncident')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, mode: 'inciting_incident' });
     return (text && text.trim()) ? text : null;
   };
 
@@ -4959,7 +5045,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
     // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
     let suggestedMove, extras, systemPrompt, userMessage, pacedObligations = [], pacedChosenSince = [];
     try {
-      await ensureSceneStarted(campaignState, 'first_narration_paced');
+      await ensureCurrentScene(campaignState, { mode: 'paced_narrative', reason: 'first_narration_paced', line: playerText });
 
       // Don't suggest a social move against a fellow player character (finding G):
       // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
@@ -4983,9 +5069,11 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       const sentenceTarget = settings.narrationLength ?? 3;
       const touched = await beatSituation(character?.actorId ?? null, campaignState);
       pacedChosenSince = choicesChosenSince();
-      // One list for the block and its checks (overhaul 4, slice 4).
-      pacedObligations = obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
-        situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince });
+      // One list for the block and its checks (overhaul 4, slice 4) — with what
+      // the scene obliges (overhaul 2 §10.3).
+      pacedObligations = [...obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
+        situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince }),
+        ...sceneObligationsOf(extras.sceneLedger, campaignState)];
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
         { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null,
@@ -5020,6 +5108,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       }
       const text = applyNarratorSidecar(raw, campaignState, {
         moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
+        mode: 'paced_narrative', ground: groundOf({ line: playerText }),
       });
 
       if (!text?.trim()) {
@@ -5052,6 +5141,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
           }
           const text = applyNarratorSidecar(raw, campaignState, {
             moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
+            mode: 'paced_narrative', ground: groundOf({ line: playerText }),
           });
           if (text?.trim()) {
             const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
@@ -6142,33 +6232,51 @@ async function postFallbackCard(resolution, campaignState = null, reason = claud
 }
 
 /**
- * Ensure an active fact-continuity scene exists before a narrator call.
- * If `currentSceneId` is null, assigns one by calling startScene with the
- * given reason — on the canonical GM only (a world write); elsewhere it
- * debug-logs and returns. A persist failure is logged, never thrown.
+ * Ensure the narration is told in the right scene (overhaul 2 §4.3, in place
+ * of ensureSceneStarted). With none open, one starts (`cause`: why — Begin's
+ * opening "session", the inciting incident "campaign", else "first"). At a
+ * beat of play — a move's, a paced line's, a round's, an oracle follow-up's
+ * narration — the open scene turns when the stores say its place or its
+ * situation changed (sceneLifecycle.js turnSceneIfDue; D1 reverses issue #353
+ * R2's "scenes stay manual"), before this narration tells it: an arrival, the
+ * ship moved, a fight / an expedition / a scene challenge begun, a fight
+ * ended the beat before, time the line skips. On the canonical GM only (a
+ * world write); elsewhere it debug-logs and returns. Fail-open: a turn that
+ * fails leaves the scene as it was; nothing is thrown into the narration.
  *
- * @param {Object} campaignState
- * @param {string} reason — diagnostic only ("first_narration", "paced_narrative", …)
+ * @param {Object} campaignState — the narration's working copy
+ * @param {{ mode?: string|null, reason?: string, cause?: string, line?: string, moveId?: string|null,
+ *   moveIds?: string[], endingTrackIds?: string[] }} [beat] — `reason`: diagnostic only;
+ *   `line`: the beat's player words; `endingTrackIds`: the tracks its own resolution ended
+ * @returns {Promise<{ cause: string, what: string }|null>} the turn, when the scene turned
  */
-async function ensureSceneStarted(campaignState, reason) {
-  if (!campaignState) return;
-  let enabled = true;
-  try {
-    enabled = game.settings.get(MODULE_ID, 'factContinuity.enabled') ?? true;
-  } catch (err) {
-    console.debug?.(`${MODULE_ID} | ensureSceneStarted: setting lookup failed; defaulting to enabled:`, err);
-  }
-  if (!enabled) return;
-  if (campaignState.currentSceneId) return;
+async function ensureCurrentScene(campaignState, {
+  mode = null, reason = 'unknown', cause = 'first', line = '', moveId = null, moveIds = [], endingTrackIds = [],
+} = {}) {
+  if (!campaignState || !factContinuityEnabled()) return null;
   // A scene boundary is a world write (campaignState, WJ Lore pages, entity
   // tiers) — single-emitter, like the sidecar apply. A RUN_ON.CLAUDE command
   // or oracle follow-up narrating on a keyed author's client (no keyed GM
   // online) leaves it to the GM's next narration.
   if (!isCanonicalGM()) {
-    console.debug?.(`${MODULE_ID} | ensureSceneStarted (${reason}): not the canonical GM — scene start left to the GM.`);
-    return;
+    console.debug?.(`${MODULE_ID} | ensureCurrentScene (${reason}): not the canonical GM — the scene is left to the GM.`);
+    return null;
   }
-  await startScene(campaignState, { reason });
+  if (!campaignState.currentSceneId) await startScene(campaignState, { reason, cause });
+  // Only a beat of play turns a scene (overhaul 2 §4.3): a move's, a paced
+  // line's, a round's, an oracle follow-up's narration — the beat sites,
+  // provenance.js QUESTION_MODES. A bookend, a clock vignette, the oath scene,
+  // the inciting incident, an `@scene` question and a relayed block start one
+  // when none is open and never turn one.
+  if (!QUESTION_MODES.has(mode) || !campaignState.currentSceneId) return null;
+  const turned = await turnSceneIfDue(campaignState, { line, moveId, moveIds, endingIds: endingTrackIds });
+  // STORY SO FAR is made at every scene end (overhaul 2 §4.4, §8): the ring
+  // turns with the scene, and the summary is what tells the scenes before.
+  if (turned) {
+    void getRollingSessionSummary(campaignState, { forceRefresh: true }).catch(err =>
+      console.warn(`${MODULE_ID} | factContinuity: the session summary was not made at the scene's turn:`, err?.message ?? err));
+  }
+  return turned;
 }
 
 /**
@@ -6428,6 +6536,10 @@ function relayNarratorSidecar(sidecar, campaignState, ctx) {
       planRequests:     Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
       // A session vignette's frame is a bookend's (applySidecarSideData).
       ...(ctx.bookend === true ? { bookend: true } : {}),
+      // The narration's mode and the player's words it answered: the scene's
+      // question is the player's, checked on the GM (overhaul 2 §7.2).
+      ...(typeof ctx.mode === 'string' && ctx.mode ? { mode: ctx.mode } : {}),
+      ...(ctx.ground ? { ground: normaliseGround(ctx.ground) } : {}),
       ...(forced.length ? { forced: {
         reveals: forced,
         ...(typeof cause.clockId === 'string' && cause.clockId ? { clockId: cause.clockId } : {}),
@@ -6538,11 +6650,16 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
     });
     return;
   }
-  await ensureSceneStarted(campaignState, 'relayed_narration');
+  // A relayed fact block is applied to the scene it was written in or dropped
+  // (above): it starts one when none is open, and never turns one.
+  await ensureCurrentScene(campaignState, { mode: 'relayed', reason: 'relayed_narration' });
   sidecar.reveals = await standingForcedReveals(payload.forced, campaignState);
   await applySidecarSideData(sidecar, campaignState, {
     moveId: payload.moveId ?? null, narrationId, planRequests, relayed: true,
     bookend: payload.bookend === true,
+    // Re-normalised: they crossed the socket (overhaul 2 §5.4).
+    mode: typeof payload.mode === 'string' && QUESTION_MODES.has(payload.mode) ? payload.mode : null,
+    ground: normaliseGround(payload.ground),
   });
 }
 
@@ -6655,17 +6772,26 @@ export function bookendFrame(frame) {
 /**
  * Count one beat against the scene's question, on the frame applySceneFrame
  * has just written. A question this beat set starts at 0; one kept from the
- * frame before stands one beat longer; at SCENE_QUESTION_BEATS it is released
- * — the frame keeps no question, so the next beat's is the scene's. An
- * answered question is not counted (its mark already hands over to the next).
- * A bookend's frame (`bookend`) is no beat of play: the count stays as it was.
+ * frame before stands one beat longer; at SCENE_QUESTION_BEATS it is let go
+ * (overhaul 2 §7.3, REFRAIN-OUTLIVES-THE-QUESTION): the frame keeps no
+ * question, the question goes onto the frame's `letGo` list — where a later
+ * question sharing one of its words, which the player's words do not hold, is
+ * the same question and is not set (playersFrame) — and the frame's Now line
+ * goes with it: the hook leaves the frame. An answered question is not counted
+ * (its mark already hands over to the next) and is never let go. A bookend's
+ * frame (`bookend`) is no beat of play: the count stays as it was.
+ *
+ * It used to release the question and nothing more: the next fact block set
+ * it again in other words, and its count started over (the fourth live run's
+ * "second hail light", re-set four times in session 3).
  *
  * @param {Object|null} frame — the scene's new frame
  * @param {Object|null} prior — the frame it replaced
- * @param {{ bookend?: boolean }} [opts]
+ * @param {{ bookend?: boolean, about?: string[] }} [opts] — `about`: the names no
+ *   let-go stem is taken from (the PCs', the command vehicle's)
  * @returns {Object|null} the frame with its count, or without its question
  */
-export function countSceneQuestionBeat(frame, prior, { bookend = false } = {}) {
+export function countSceneQuestionBeat(frame, prior, { bookend = false, about = [] } = {}) {
   if (!frame || typeof frame !== 'object') return frame;
   const rest = { ...frame };
   delete rest.questionBeats;
@@ -6678,7 +6804,65 @@ export function countSceneQuestionBeat(frame, prior, { bookend = false } = {}) {
   if (beats < SCENE_QUESTION_BEATS) return { ...rest, questionBeats: beats };
   delete rest.question;
   delete rest.questionAnswered;
-  return rest;
+  return { ...rest, situation: '', letGo: withLetGo(rest.letGo, letGoEntry(question, { about })) };
+}
+
+/**
+ * The frame a beat's fact block may write (overhaul 2 §7.2, §7.3): a question
+ * the scene's frame does not already hold stands only as the player's
+ * (provenance.js playersQuestion — set on a beat with the player's words, and
+ * only when it shares a telling word with them and is no let-go question
+ * again); and a Now line that carries a let-go question is stored empty. A
+ * question the frame holds is kept by applySceneFrame whatever the block says,
+ * so only a new one is read here; a beat that answers the held one marks it as
+ * before.
+ *
+ * @param {Object|null} frame — the fact block's (normalised)
+ * @param {Object|null} prior — the scene's stored frame
+ * @param {{ sceneId?: string|null, line?: string, about?: string[] }} [opts] — `line`: the
+ *   beat's player words, '' for a beat that may set no question
+ * @returns {Object|null}
+ */
+export function playersFrame(frame, prior, { sceneId = null, line = '', about = [] } = {}) {
+  if (!frame || typeof frame !== 'object') return frame;
+  const same = !!prior && typeof prior === 'object' && (prior.sceneId ?? null) === sceneId;
+  const letGo = same ? prior.letGo : [];
+  const out = { ...frame };
+  const held = same ? openSceneQuestion(prior) : '';
+  const answered = same && prior.questionAnswered === true && typeof prior.question === 'string' ? prior.question.trim() : '';
+  const asked = typeof out.question === 'string' ? out.question.trim() : '';
+  if (!held && asked && asked !== answered && !playersQuestion(asked, line, letGo, { about })) {
+    delete out.question;
+    delete out.questionAnswered;
+  }
+  if (typeof out.situation === 'string' && out.situation && touchesLetGo(out.situation, line, letGo)) out.situation = '';
+  return out;
+}
+
+/**
+ * The names a scene question's or a fact's telling words never come from —
+ * the player characters' and the command vehicle's: a player names whom they
+ * talk to and what they fly, and that is no evidence the line said a thing
+ * (overhaul 2 §5.2, §7.2). Never throws.
+ *
+ * @param {Object} campaignState
+ * @returns {string[]}
+ */
+function namesNoEvidence(campaignState) {
+  const names = [];
+  try {
+    for (const a of getPlayerActors()) if (typeof a?.name === 'string' && a.name.trim()) names.push(a.name.trim());
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | factContinuity: the PCs' names were not read:`, err?.message ?? err);
+  }
+  try {
+    const id = getCommandVehicleActorId(campaignState);
+    const name = (id ? game.actors?.get?.(id)?.name : null) ?? getCommandVehicle(campaignState)?.name ?? '';
+    if (typeof name === 'string' && name.trim()) names.push(name.trim());
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | factContinuity: the command vehicle's name was not read:`, err?.message ?? err);
+  }
+  return names;
 }
 
 /**
@@ -6698,6 +6882,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // new position from the Ship Actor on the next turn.
   const shipPositionChanges = [];
   const otherChanges = [];
+  let walked = null;
   for (const c of sidecar.stateChanges ?? []) {
     const subject   = typeof c?.subject === 'string' ? c.subject.trim().toLowerCase() : '';
     const attribute = typeof c?.attribute === 'string' ? c.attribute.trim().toLowerCase() : '';
@@ -6746,12 +6931,22 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     // The narration id is stamped on every entry, so an X-Card on the
     // narration can retract them (issue #321 U07).
     const narrationId = typeof ctx.narrationId === 'string' ? ctx.narrationId : null;
+    // What each fact rests on (overhaul 2 §5.2, D5): the narrator's `from`,
+    // floored against the beat's own words — the player's line, what the dice
+    // decided — a name no evidence. The inciting incident's block is the
+    // premise whole (`setup`); a mode with no ground writes colour only.
+    const noEvidence = namesNoEvidence(campaignState);
+    const ground = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '', decided: '' };
+    const basisOf = ctx.mode === 'inciting_incident'
+      ? () => 'setup'
+      : ({ from, text, subject }) => factBasis(from, text, ground, { about: [subject, ...noEvidence].filter(Boolean) });
     applySidecar(filteredSidecar, {
       campaignState,
       sessionId: campaignState.currentSessionId ?? null,
       sceneId:   campaignState.currentSceneId   ?? null,
       moveId:    ctx.moveId ?? null,
       asserter:  'narrator',
+      basisOf,
       entities,
       narrationId,
       // The re-assertion checks read the store's ledgers too: the move
@@ -6775,15 +6970,34 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       // How long the scene's question stands (known-issues NARRATOR-REFRAINS;
       // SCENE_QUESTION_BEATS, above): a session vignette is a bookend — its frame says
       // where, who and what, never the question — and every other beat is
-      // counted against the question the frame keeps, which is released once
+      // counted against the question the frame keeps, which is let go once
       // play has left it unanswered for SCENE_QUESTION_BEATS. A session's
       // opening vignette used to set the question its whole session was then
-      // asked, beat after beat.
+      // asked, beat after beat. Since overhaul 2 (§7.2–7.3) the question is
+      // the player's: only a beat of play with the player's words sets one
+      // (QUESTION_MODES), it must share a telling word with them, and a let-go
+      // one is not set again — nor a Now line that carries it.
       const bookend = ctx.bookend === true;
       const prior = campaignState.sceneFrame ?? null;
-      const frame = bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame;
-      if (frame && applySceneFrame(frame, campaignState, { narrationId })) {
-        campaignState.sceneFrame = countSceneQuestionBeat(campaignState.sceneFrame, prior, { bookend });
+      const about = noEvidence;
+      const line = !bookend && QUESTION_MODES.has(ctx.mode) ? (ctx.ground?.line ?? '') : '';
+      const framed = playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
+        sceneId: campaignState.currentSceneId ?? null, line, about,
+      });
+      if (framed && applySceneFrame(framed, campaignState, { narrationId })) {
+        campaignState.sceneFrame = countSceneQuestionBeat(campaignState.sceneFrame, prior, { bookend, about });
+        // A line that walks them to another recorded place (overhaul 2 §6.4):
+        // the frame names it and so do the player's words — the current
+        // location moves with the frame, on this copy and in its persist
+        // (a later write of this copy keeps it), and the next beat turns.
+        // Never a Set a Course's: its arrival is the move's own — the outcome
+        // decides it, and the auto-move or the GM's drag applies it with the
+        // ship (a miss's frame "en route to Hollow Spire" arrives nowhere).
+        walked = line && ctx.moveId !== 'set_a_course' ? placeWalkedTo(campaignState.sceneFrame, line, campaignState) : null;
+        if (walked) {
+          campaignState.currentLocationId   = walked.id;
+          campaignState.currentLocationType = walked.type;
+        }
       }
     }
 
@@ -6794,14 +7008,38 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     // ledgers whole dropped a mid-narration `!truth` correction or oracle
     // truth and resurrected a scene End a Session had just closed — so the
     // ledgers are unioned by id, and skipped when the scene changed.
-    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
+    // A walk is written onto the store's state in the same persist, while the
+    // scene it was read in is still the store's; once landed, recorded.
+    const walkedIn = campaignState.currentSceneId ?? null;
+    let arrived = false;
+    const onto = walked ? (target) => {
+      if ((target.currentSceneId ?? null) !== walkedIn) return;
+      target.currentLocationId   = walked.id;
+      target.currentLocationType = walked.type;
+      arrived = true;
+    } : null;
+    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar', { onto }).then(written => {
+      if (walked && arrived && written) void recordPlaceArrival(campaignState, { how: 'line' });
+      return written;
+    }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
     );
   } catch (err) {
     console.warn(`${MODULE_ID} | factContinuity: applySidecar threw:`, err);
   }
 
-  if (shipPositionChanges.length) {
+  // Who may move the ship (overhaul 2 §6.3): a beat of play — a move's, a
+  // paced line's, a round's, an oracle follow-up's narration (a relayed one
+  // carries its mode) — and the inciting incident's REQUIRED starting
+  // position, the premise's. A bookend (the opening, the closing, the
+  // spotlight), a clock vignette and the oath scene never move it: the
+  // fourth live run's frames and the ship's record disagreed after narrations
+  // that were no beat of play (SHIP-POSITION-AND-FRAME-DISAGREE).
+  const movesTheShip = ctx.bookend !== true && (QUESTION_MODES.has(ctx.mode) || ctx.mode === 'inciting_incident');
+  if (shipPositionChanges.length && !movesTheShip) {
+    console.debug?.(`${MODULE_ID} | shipPosition: ${shipPositionChanges.length} ship/position change(s) of a `
+      + `${ctx.mode ?? 'non-play'} narration dropped — only a beat of play moves the ship.`);
+  } else if (shipPositionChanges.length) {
     applyShipPositionChanges(shipPositionChanges, campaignState, { narrationId: ctx.narrationId ?? null }).catch(err =>
       console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
     );

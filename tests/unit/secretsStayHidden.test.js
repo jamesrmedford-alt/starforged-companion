@@ -26,7 +26,7 @@ const byFile = new Map(sources.map(s => [s.file, s]));
 const STORE_READERS = new Map([
   ['src/entities/connection.js', 'a deleted NPC card\'s agenda plan, retired with the card (issue #362 D10 — the plans\' subject ids are read, the plan retired; no plan field reaches a card); an NPC card the X-Card keeps gets a fresh agenda (planNpcAgenda — a write, no read; issue #364 XCARD-USED-NPC-AGENDA-DELETED)'],
   ['src/entities/entityExtractor.js', 'a significant threat\'s plan (planSignificantThreat — a write, no read)'],
-  ['src/factContinuity/sceneLifecycle.js', 'an ended scene\'s unanswered mysteries retired (retireSceneMysteries — a write, no read; issue #362 D4)'],
+  ['src/factContinuity/sceneLifecycle.js', 'an ended scene\'s unanswered mysteries retired (retireSceneMysteries — a write, no read; issue #362 D4), a turned scene\'s carried into the next (carrySceneMysteries — a write, no read; overhaul 2 D16)'],
   ['src/index.js', 'the vow Items\' end hooks registered (registerPlanSubjectHooks — wiring, no read; issue #362 D4); the plans-in-play socket, the table view\'s setting and its sync registered (wiring, no read; issue #362 D1)'],
   ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story (on a player\'s client asked of the canonical GM — requestPlansInPlay, issue #362 D1)'],
   ['src/narration/worldSnapshot.js', 'the narrator\'s world snapshot (issue #357): every active plan, rendered as prompt text for the cached block — stored by worldSnapshotStore.js on a page of the GM-only Secrets journal, read by narrator.js alone'],

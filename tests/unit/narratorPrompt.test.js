@@ -829,7 +829,7 @@ describe('formatEntityCard', () => {
         mood:      { value: 'not a whereabouts attribute' },
       },
     }), 'connection');
-    expect(card).toMatch(/LAST KNOWN \(from earlier scenes — this scene's CURRENT STATE wins\):\n {2}location: the cargo office \(Session 4\)\n {2}condition: bleeding from the shoulder \(Session 4\)/);
+    expect(card).toMatch(/LAST KNOWN \(from earlier scenes — what this scene says of them now wins\):\n {2}location: the cargo office \(Session 4\)\n {2}condition: bleeding from the shoulder \(Session 4\)/);
     expect(card).not.toContain('not a whereabouts attribute');
     expect(formatEntityCard(makeConnection(), 'connection')).not.toContain('LAST KNOWN');
   });

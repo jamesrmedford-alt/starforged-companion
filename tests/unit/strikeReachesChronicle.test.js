@@ -121,7 +121,8 @@ async function sessionPlayed() {
     recordedEvent('sess-1', 'line', { who, ref: { line: 'm1' }, d: { via: 'typed' }, text: 'I ask Vance about the crash.' }),
     recordedEvent('sess-1', 'move.resolved', { who, ref: { res: 'r1' }, d: { moveId: 'gather_information', moveName: 'Gather Information', statUsed: 'wits', outcome: 'strong_hit' } }),
     recordedEvent('sess-1', 'narration', { who, ref: { nar: 'nar-limp', res: 'r1' }, d: { mode: 'move' }, text: 'Vance limps to the window.' }),
-    recordedEvent('sess-1', 'truth.set', { ref: { truth: 'tr-limp', nar: 'nar-limp' }, d: { subject: { kind: 'text', text: 'Vance' }, fact: 'walks with a limp', by: 'narrator' } }),
+    // What the Gather Information hit decided (overhaul 2 §5.2): it binds, and the scribe is told it.
+    recordedEvent('sess-1', 'truth.set', { ref: { truth: 'tr-limp', nar: 'nar-limp' }, d: { subject: { kind: 'text', text: 'Vance' }, fact: 'walks with a limp', by: 'narrator', basis: 'dice' } }),
     ...playedBeats('sess-1', [{ said: 'I thank him.', told: 'Vance nods once.', actor: 'pc-1' }], { begun: false }),
   ], { number: 2 });
 }

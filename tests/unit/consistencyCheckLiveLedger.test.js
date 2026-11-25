@@ -38,6 +38,7 @@ import { apiPost } from '../../src/api-proxy.js';
 import { applyNarratorSidecar, postNarrationCard } from '../../src/narration/narrator.js';
 import { suppressScene, clearXCard } from '../../src/context/safety.js';
 import { applyFactContinuityCommand } from '../../src/factContinuity/chatCommands.js';
+import { groundOf } from '../../src/factContinuity/provenance.js';
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
@@ -46,10 +47,16 @@ const SESSION = 'sess-7';
 const stored   = () => game.settings.get(MODULE_ID, 'campaignState');
 const syncChat = () => { global.game.messages = { contents: ChatMessage._created.slice() }; };
 
-/** A move narration as the narrator makes one: the sidecar applied with its id, then its card. */
-async function narrate(narrationId, prose, sidecar, campaignState = stored()) {
+/**
+ * A move narration as the narrator makes one: the sidecar applied with its id
+ * and the beat's own words (overhaul 2 §5.2 — a fact `from` the line binds
+ * when the line bears it out; the audit reads what binds), then its card.
+ */
+async function narrate(narrationId, prose, sidecar, campaignState = stored(), line = LINE) {
   const raw = `${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
-  const text = applyNarratorSidecar(raw, campaignState, { narrationId, matchedEntityIds: [] });
+  const text = applyNarratorSidecar(raw, campaignState, {
+    narrationId, matchedEntityIds: [], mode: 'move_resolution', ground: groundOf({ line }),
+  });
   await postNarrationCard(text, { moveId: 'compel', outcome: 'weak_hit', _id: `res-${narrationId}` },
     stored(), { playerText: 'I press the prisoner for the code.', playerName: 'Kira', narrationId });
   return text;
@@ -63,9 +70,11 @@ async function lastAuditPrompt() {
 
 const section = (prompt, from, to) => (prompt.split(from)[1] ?? '').split(to)[0];
 
+/** The torch beat's line: its facts are the player's (they bind — the audit reads them). */
+const LINE = 'I hold the cutting torch to the prisoner\'s hand and press him for the code.';
 const TORCH = {
-  newTruths:    [{ subject: 'the prisoner', fact: 'His hand was burned with a cutting torch' }],
-  stateChanges: [{ subject: 'the prisoner', attribute: 'condition', value: 'burned hand' }],
+  newTruths:    [{ subject: 'the prisoner', fact: 'His hand was burned with a cutting torch', from: 'line' }],
+  stateChanges: [{ subject: 'the prisoner', attribute: 'condition', value: 'burned hand', from: 'line' }],
   sceneFrame:   { location: 'the interrogation cell', present: ['the prisoner'], situation: 'The torch hovers over his hand' },
 };
 const NEXT = { newTruths: [], stateChanges: [] };
@@ -73,7 +82,7 @@ const NEXT = { newTruths: [], stateChanges: [] };
 /** An earlier narration's truth, still standing: the audit runs against it after the torch beat is gone. */
 const GUARD_TRUTH = {
   id: 'truth-guard-0001', subject: { kind: 'text', text: 'the guard' }, fact: 'Carries the cell keys on his belt',
-  asserter: 'narrator', sessionId: SESSION, sceneId: 'sc-1', narrationId: 'nar-guard', createdAt: 1,
+  asserter: 'narrator', basis: 'player', sessionId: SESSION, sceneId: 'sc-1', narrationId: 'nar-guard', createdAt: 1,
 };
 
 beforeEach(() => {
@@ -96,10 +105,10 @@ beforeEach(() => {
 });
 
 describe('issue #329 X02 — the consistency check audits the ledger as it stands, not the pre-dialog snapshot', () => {
-  it('control: the audit of the torch narration lists its truth under ACTIVE SCENE TRUTHS', async () => {
+  it('control: the audit of the torch narration lists its truth under WHAT BINDS', async () => {
     await narrate('nar-torch', "The interrogator lifts the cutting torch toward the prisoner's hand.", TORCH);
     const prompt = await lastAuditPrompt();
-    expect(section(prompt, 'ACTIVE SCENE TRUTHS:', 'RETRACTED FACTS')).toMatch(/cutting torch/);
+    expect(section(prompt, 'WHAT BINDS (what the player said, the dice decided or the GM set):', 'RETRACTED FACTS')).toMatch(/cutting torch/);
   });
 
   it('after the X-Card on the torch beat (played while the next move waited), the audit is not handed the removed beat', async () => {
@@ -126,8 +135,8 @@ describe('issue #329 X02 — the consistency check audits the ledger as it stand
     // The audit is not handed the removed beat — not as a binding truth, not
     // under RETRACTED FACTS (U07: never named), not as state or frame — and
     // still audits against what stands.
-    expect(section(prompt, 'ACTIVE SCENE TRUTHS:', 'RETRACTED FACTS')).toMatch(/cell keys/);
-    expect(section(prompt, 'ACTIVE SCENE TRUTHS:', 'RETRACTED FACTS')).not.toMatch(/cutting torch/);
+    expect(section(prompt, 'WHAT BINDS (what the player said, the dice decided or the GM set):', 'RETRACTED FACTS')).toMatch(/cell keys/);
+    expect(section(prompt, 'WHAT BINDS (what the player said, the dice decided or the GM set):', 'RETRACTED FACTS')).not.toMatch(/cutting torch/);
     expect(prompt).not.toMatch(/cutting torch/);
     expect(prompt).not.toMatch(/burned hand/);
     expect(prompt).not.toMatch(/interrogation cell/);
@@ -140,9 +149,9 @@ describe('issue #329 X02 — the consistency check audits the ledger as it stand
 
     apiPost.mockClear();
     await narrate('nar-next', 'Ren pockets the guard\'s keycard as you walk out.', {
-      newTruths: [{ subject: 'Ren', fact: 'Pocketed the guard\'s keycard' }], stateChanges: [],
-    }, snapshot);
-    const truths = section(await lastAuditPrompt(), 'ACTIVE SCENE TRUTHS:', 'RETRACTED FACTS');
+      newTruths: [{ subject: 'Ren', fact: 'Pocketed the guard\'s keycard', from: 'line' }], stateChanges: [],
+    }, snapshot, 'I pocket the guard\'s keycard on the way out.');
+    const truths = section(await lastAuditPrompt(), 'WHAT BINDS (what the player said, the dice decided or the GM set):', 'RETRACTED FACTS');
     expect(truths).toMatch(/Pocketed the guard's keycard/);
     expect(truths).toMatch(/cutting torch/);
   });
@@ -179,8 +188,8 @@ describe('issue #329 X02 — the consistency check audits the ledger as it stand
     const prompt = await lastAuditPrompt();
 
     // Under RETRACTED FACTS — what the audit catches the narrator re-asserting
-    // — and not under ACTIVE SCENE TRUTHS.
-    expect(section(prompt, 'ACTIVE SCENE TRUTHS:', 'RETRACTED FACTS')).not.toMatch(/cutting torch/);
-    expect(section(prompt, 'RETRACTED FACTS', 'ACTIVE SCENE STATE:')).toMatch(/cutting torch/);
+    // — and not under WHAT BINDS.
+    expect(section(prompt, 'WHAT BINDS (what the player said, the dice decided or the GM set):', 'RETRACTED FACTS')).not.toMatch(/cutting torch/);
+    expect(section(prompt, 'RETRACTED FACTS', 'STANDING NOW:')).toMatch(/cutting torch/);
   });
 });

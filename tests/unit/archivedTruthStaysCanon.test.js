@@ -74,9 +74,10 @@ afterEach(() => {
 
 const lorePage = () => journals.get(JOURNAL_NAMES.lore)?.pages.contents.find(p => p.name === 'the dockmaster: Is dead');
 const loreEntry = () => lorePage()?.flags[MODULE_ID]?.loreEntry;
+// The narration's fact is the player's line's (overhaul 2 §5.2): it binds, and a scene's end files it.
 const narratorAsserts = (narrationId) => applySidecar(
   { newTruths: [{ subject: 'the dockmaster', fact: 'Is dead' }], stateChanges: [] },
-  { campaignState: stored(), narrationId },
+  { campaignState: stored(), narrationId, basisOf: () => 'player' },
 );
 
 describe('X31 — a fact the GM re-established after a strike is canon after the scene ends', () => {

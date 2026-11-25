@@ -189,8 +189,8 @@ describe('SCENE-ANSWER-NOT-A-CAMERA — on the table: an answer is not written b
     expect(call.system).not.toContain('## RESPOND NOW');
     expect(call.system).not.toContain('EMBELLISHMENT MODE');
     // The scene it is asked about is in view — its frame, with its question.
-    expect(call.system).toContain('  Where:   Bleakhold Station, berth nine');
-    expect(call.system).toContain('  Question: Who is calling for the Kobayashi IV?');
+    expect(call.system).toContain('  Where:    Bleakhold Station, berth nine — as the narration has it');
+    expect(call.system).toContain('  Turns on: Who is calling for the Kobayashi IV? — from the player\'s line');
   }, 60_000);
 
   it('the card shows the answer without its block; the frame, its question and its count, the truths, the state and the plans are as they were', async () => {

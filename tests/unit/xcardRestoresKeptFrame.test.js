@@ -92,7 +92,7 @@ describe("issue #345 D3 — after an X-Card the kept narration's scene frame is 
     expect(stored().xCardedNarrationIds).toEqual(['nar-2']);
 
     expect(stored().sceneFrame?.situation ?? null).toBe(KEPT_FRAME.situation);
-    expect(buildLedgerBlock(stored(), {}).frame).toContain("Bleakhold's docking ring");
+    expect(buildLedgerBlock(stored(), {}).scene).toContain("Bleakhold's docking ring");
   });
   it("a move resolving from a snapshot read before the X-Card does not put the removed frame back over the restored one", async () => {
     await narrate('nar-1', { sceneFrame: KEPT_FRAME });

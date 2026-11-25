@@ -123,7 +123,7 @@ describe('the World Journal panel and a fact-continuity catch', () => {
 
     expect(card._deleted ?? false).toBe(false);
     expect(promoteLoreToConfirmed).not.toHaveBeenCalled();
-    expect(/Vance — walks with a limp/.test(buildLedgerBlock(stored(), {}).truths)).toBe(true);
+    expect(/Vance — walks with a limp/.test(buildLedgerBlock(stored(), {}).described)).toBe(true);
     expect(warn.mock.calls.at(-1)?.[0]).toMatch(/fact-continuity catch/);
   });
 

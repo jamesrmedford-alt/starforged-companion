@@ -119,7 +119,7 @@ describe("RECAP-TAKES-CLOSING-VIGNETTE-AS-THE-SCENE — the closing vignette's c
     expect(recap.system).not.toMatch(/pirate ship/i);
     expect(recap.system).not.toMatch(/tangerine/i);
     expect(recap.system).not.toMatch(/SCENE FRAME/);
-    expect(recap.system).not.toMatch(/ACTIVE SCENE — BINDING/);
+    expect(recap.system).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
     expect(world().campaignRecapCache?.text).toBe(RECAP);
   }, 30_000);
 
@@ -133,10 +133,13 @@ describe("RECAP-TAKES-CLOSING-VIGNETTE-AS-THE-SCENE — the closing vignette's c
     expect(Object.keys(cs.sceneState?.bySubject ?? {})).toEqual([]);
   }, 30_000);
 
-  it("what the cutaway established is kept: filed as a scene's end files it", async () => {
+  // A bookend writes colour only (overhaul 2 §5.2, §10.4): what the cutaway
+  // described ends with its scene as a scene's end leaves colour — filed
+  // nowhere — and the record keeps it.
+  it("what the cutaway described is colour: its scene's end files none of it", async () => {
     await endSession();
     const lore = filed().filter(f => f.startsWith("World Journal — Lore /"));
-    expect(lore.join("\n")).toMatch(/the raider captain: Eats a tangerine/);
+    expect(lore.join("\n")).not.toMatch(/Eats a tangerine/);
   }, 30_000);
 
   it("a vignette that fails after opening its scene leaves none open either", async () => {
@@ -157,7 +160,7 @@ describe("a recap carries no active-scene block (issue #374 A1, option 3)", () =
 
   it("a recap asked for mid-session is not told the open scene is binding", () => {
     const recap = prompt("campaign_recap");
-    expect(recap).not.toMatch(/ACTIVE SCENE — BINDING/);
+    expect(recap).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
     expect(recap).not.toMatch(/SCENE FRAME/);
     expect(recap).not.toMatch(/They are\s+binding/);
   });
@@ -176,13 +179,13 @@ describe("a recap carries no active-scene block (issue #374 A1, option 3)", () =
     expect(recap).not.toMatch(/WHERE THINGS STAND NOW/);
     expect(recap).not.toMatch(/Toffee burning in a skillet/);
     const { standingLines } = await import("../../src/record/recapView.js");
-    const state = { ...withScene(), sceneState: { sceneId: "sc-open", bySubject: { "the skillet": [{ attribute: "smell", value: "burnt sugar", subjectText: "the skillet" }] } } };
+    const state = { ...withScene(), sceneState: { sceneId: "sc-open", bySubject: { "the skillet": [{ attribute: "smell", value: "burnt sugar", subjectText: "the skillet", basis: "player" }] } } };
     expect(await standingLines(state)).toContain("the skillet — smell: burnt sugar.");
   });
 
   it("control: a narration of that scene still is", () => {
     const paced = prompt("paced_narrative");
-    expect(paced).toMatch(/ACTIVE SCENE — BINDING/);
+    expect(paced).toMatch(/ACTIVE SCENE — WHAT BINDS/);
     expect(paced).toMatch(/Toffee burning/);
   });
 
@@ -194,7 +197,7 @@ describe("a recap carries no active-scene block (issue #374 A1, option 3)", () =
     try {
       const recap = buildNarratorSystemPrompt({ ...withScene(), shipIds: ["cv-k4"] }, {}, null, "", { mode: "campaign_recap" });
       expect(recap).toMatch(/SHIP POSITION: .*docked at Bleakhold Station/);
-      expect(recap).not.toMatch(/ACTIVE SCENE — BINDING/);
+      expect(recap).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
     } finally {
       game.actors._reset();
     }

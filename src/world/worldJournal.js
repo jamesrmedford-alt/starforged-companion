@@ -2933,11 +2933,15 @@ async function postContradictionNotification(transition) {
   // dialog only fixes scene truths/state — for the other audit kinds the
   // remedy lives elsewhere, so point the GM at the right tool instead of a
   // dialog that cannot address the flag.
-  const kind = String(transition.kind ?? "truth").toLowerCase();
+  // The audit's `frame` and `ship` kinds read as `place` (overhaul 2 §5.8) —
+  // a catch recorded under either before that is told the place's remedy.
+  const raw = String(transition.kind ?? "truth").toLowerCase();
+  const kind = raw === "frame" || raw === "ship" ? "place" : raw;
   const REMEDY_HINTS = {
-    frame:      "The scene frame refreshes with the next narration — nudge with <code>@scene</code> (or <code>!scene start</code>) if it stays stale.",
-    // `!at <place>` sets the position — no `!ship` verb does (issue #326 W66).
-    ship:       "Ship position lives on the ship record — correct it with <code>!at &lt;place&gt;</code> or by moving the command-vehicle token.",
+    // Where the characters are and where the ship is live on the table's
+    // record (overhaul 2 §5.8): `!at <place>` sets both, the command-vehicle
+    // token moves the ship — no `!ship` verb does (issue #326 W66).
+    place:      "Where the characters are and where the ship is live on the table's record — correct them with <code>!at &lt;place&gt;</code> or by moving the command-vehicle token.",
     identity:   "Recorded pronouns live on the character sheet / connection record — fix them there (entity panel or sheet).",
     retraction: "Re-asserting a retracted fact is already blocked at the ledger — no correction needed. Use Replace in the correction dialog if the fact should genuinely change.",
   };

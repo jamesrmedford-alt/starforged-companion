@@ -1804,6 +1804,39 @@ export async function retireSceneMysteries(sceneId) {
 }
 
 /**
+ * The mysteries a scene posed and never answered go on in the scene a turn
+ * opened from it (overhaul 2 D16, amending issue #362 D4): a turn — the
+ * characters walking from the market to the dock, a fight beginning — is no
+ * end of the session's situation, and would retire the mystery just posed.
+ * Each unanswered one is the new scene's — made in it and about it — so it is
+ * in play there and retires with it, at the GM's `!scene end`, a `!scene start`
+ * that replaces it, or the session's end (retireSceneMysteries). Bookkeeping:
+ * the plan keeps the narration that made it (`keepStamp`), so the X-Card on
+ * that narration still takes it back. Canonical GM; never throws.
+ *
+ * @param {string|null} fromSceneId — the scene that turned
+ * @param {string|null} toSceneId   — the scene it turned into
+ * @returns {Promise<Object[]>} the plans carried
+ */
+export async function carrySceneMysteries(fromSceneId, toSceneId) {
+  if (typeof fromSceneId !== "string" || !fromSceneId || typeof toSceneId !== "string" || !toSceneId
+      || fromSceneId === toSceneId || !skeletonsEnabled() || !isCanonicalGM()) return [];
+  const carried = [];
+  try {
+    const open = listSkeletons().filter(r => r.kind === "mystery" && r.subject.type === "scene"
+      && r.subject.id === fromSceneId && r.status === "active" && !r.truthRevealed);
+    for (const plan of open) {
+      const written = await updateSkeleton(plan.id, r => (r.status === "active" && !r.truthRevealed && r.subject.id === fromSceneId
+        ? { ...r, subject: { ...r.subject, id: toSceneId }, sceneId: toSceneId } : null), { keepStamp: true });
+      if (written) carried.push(written);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the turned scene's unanswered mysteries were not carried into the next:`, err?.message ?? err);
+  }
+  return carried;
+}
+
+/**
  * A vow Item completed or deleted closes its vow's plan once no copy of the
  * vow is left open (a shared vow has a copy per PC): completed — fulfilled,
  * forsaken (the pipeline marks every copy completed), or closed on the sheet

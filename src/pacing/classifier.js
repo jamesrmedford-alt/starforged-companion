@@ -31,6 +31,7 @@ import { apiPost } from "../api-proxy.js";
 import { toMoveId } from "../schemas.js";
 import { SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 import { buildSituationBlock } from "../moves/situation.js";
+import { sceneForReading, formatSceneForReading } from "../narration/narratorPrompt.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL         = "claude-sonnet-5-5";
@@ -723,35 +724,20 @@ function formatChartedPlaces(campaignState) {
 
 function formatScene(campaignState) {
   const parts = [];
-  if (campaignState?.currentLocationId && campaignState?.currentLocationType) {
-    try {
-      const id   = campaignState.currentLocationId;
-      const type = campaignState.currentLocationType;
-      // Post-PR#100 location-family entities are Actors; pre-migration
-      // records were JournalEntries. Try both hosts, tolerate either.
-      const actor = globalThis.game?.actors?.get?.(id);
-      const entry = globalThis.game?.journal?.get?.(id);
-      const data  = actor?.flags?.["starforged-companion"]?.[type]
-        ?? entry?.pages?.contents?.[0]?.flags?.["starforged-companion"]?.[type];
-      const name  = data?.name ?? actor?.name ?? entry?.name;
-      if (name) parts.push(`Current location: ${name} (${type})`);
-    } catch (err) {
-      console.warn(`starforged-companion | pacing classifier: current-location read failed:`, err);
-    }
-  }
-
-  // Narrator-memory scene frame (Cluster A4) — gives the classifier the
-  // established-hazard / time-pressure signal the MOVEMENT WITH STAKES rule
-  // keys on (F9: travel was waved through as plain NARRATIVE because the
-  // classifier had no scene stakes context).
-  const frame = campaignState?.sceneFrame;
-  if (frame && typeof frame === "object") {
-    if (frame.location)  parts.push(`Scene frame — where: ${frame.location}`);
-    if (Array.isArray(frame.present) && frame.present.length) {
-      parts.push(`Scene frame — present: ${frame.present.join(", ")}`);
-    }
-    if (frame.situation) parts.push(`Scene frame — now: ${frame.situation}`);
-  }
+  // The scene as the narrator is told it (overhaul 2 §10.1): one read, one
+  // renderer — the place (the current location, through its host record) and
+  // the ship by the table's record, the frame's where / present / now and
+  // what the scene turns on (narratorPrompt.js sceneForReading /
+  // formatSceneForReading). Its own current-location read and frame lines
+  // are gone: the reader and the narrator are told the scene by one
+  // renderer. The frame gives the classifier the established-hazard /
+  // time-pressure signal the MOVEMENT WITH STAKES rule keys on (F9: travel
+  // was waved through as plain NARRATIVE because the classifier had no scene
+  // stakes context). The line reader (moves/readerSituation.js, issue #384)
+  // is unwired and reads its own place and frame lines; until it is pointed
+  // at this read, this is where a reader is told the scene.
+  const scene = formatSceneForReading(sceneForReading(campaignState));
+  if (scene) parts.push(scene);
 
   if (campaignState?.xCardActive) parts.push("X-Card is active — scene paused.");
   return parts.join("\n");

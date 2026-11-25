@@ -28,7 +28,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn(async () => ({ content: [{ type: 'text', text: '{"contradictions":[]}' }] })) }));
 
-import { applyNarratorSidecar, postNarrationCard } from '../../src/narration/narrator.js';
+import { postNarrationCard } from '../../src/narration/narrator.js';
+import { applyAsTheTable } from '../helpers/tableFacts.js';
+// The narrations' facts are the table's (overhaul 2 §5.1–5.2): what a scene's end
+// files is what binds; the narrator's own colour has its own tests (colourNotFiled).
 import { suppressScene } from '../../src/context/safety.js';
 import { endScene } from '../../src/factContinuity/sceneLifecycle.js';
 import { applyFactContinuityCommand } from '../../src/factContinuity/chatCommands.js';
@@ -107,7 +110,7 @@ const BODY = 'His body was dumped at Bleakhold';
 
 /** A narration as the narrator makes one: the sidecar applied with its id (on the canonical GM), then its card. */
 async function narrate(narrationId, newTruths) {
-  const text = applyNarratorSidecar(
+  const text = applyAsTheTable(
     `The airlock cycles.\n\`\`\`json\n${JSON.stringify({ newTruths, stateChanges: [] })}\n\`\`\``,
     stored(), { narrationId },
   );

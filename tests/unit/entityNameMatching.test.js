@@ -184,11 +184,12 @@ describe('issue #354 P2-18 — a working label is filed as a name', () => {
 });
 
 describe('issue #354 P2-19 — a contradiction card says what conflicts', () => {
-  const ledger = { state: 'ACTIVE SCENE STATE\n  Isaac Sutton — location: the bridge\n  Isaac Sutton — condition: unhurt\n  ISV Savela — integrity: 4' };
+  // The block's standing state, each line labelled with what it rests on (overhaul 2 §5.5).
+  const ledger = { standing: 'STANDING NOW:\n  Isaac Sutton — location: the bridge (the GM)\n  Isaac Sutton — condition: unhurt (the GM)\n  ISV Savela — integrity: 4 (the GM)' };
 
   it('a state catch shows the recorded value and the narration\'s words, the subject by its proper name', () => {
     const shown = describeContradiction(
-      { subject: 'isaac sutton', kind: 'state', violated: 'ACTIVE SCENE STATE — isaac sutton location', evidence: 'Isaac steps out of the airlock onto the hull.' },
+      { subject: 'isaac sutton', kind: 'state', violated: 'STANDING NOW — isaac sutton location', evidence: 'Isaac steps out of the airlock onto the hull.' },
       {}, ledger);
     expect(shown).toEqual({ subject: 'Isaac Sutton', recorded: 'location: the bridge', evidence: 'Isaac steps out of the airlock onto the hull.' });
   });
@@ -201,7 +202,7 @@ describe('issue #354 P2-19 — a contradiction card says what conflicts', () => 
   });
 
   it('with no ledger line it falls back to the audit\'s words, without a section heading — and never throws', () => {
-    expect(describeContradiction({ subject: 'Archer', kind: 'state', violated: 'CURRENT STATE: mood — furious', evidence: 'She laughs.' }, {}, {}))
+    expect(describeContradiction({ subject: 'Archer', kind: 'state', violated: 'STANDING NOW: mood — furious', evidence: 'She laughs.' }, {}, {}))
       .toMatchObject({ subject: 'Archer', recorded: 'mood — furious' });
     expect(() => describeContradiction(null, null, null)).not.toThrow();
   });

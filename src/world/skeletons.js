@@ -24,6 +24,7 @@
  */
 
 import { sameSubject } from "../entities/nameMatch.js";
+import { words, tellingStems } from "./tellingWords.js";
 
 /** The kinds of plan (issue #353 "The skeleton record"). */
 export const SKELETON_KINDS = Object.freeze(["threat", "mystery", "npcAgenda", "expedition", "discovery", "vow"]);
@@ -495,11 +496,6 @@ export function applyPlanToSkeleton(record, plan) {
   return next;
 }
 
-/** The words of a name or a passage, lower-cased, for whole-word matching. */
-function words(value) {
-  return String(value ?? "").toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);
-}
-
 /** Leading articles and filler a subject name may carry ("the escort"). */
 const NAME_FILLER = new Set(["the", "a", "an", "of", "and", "to", "in", "on", "at"]);
 
@@ -520,45 +516,9 @@ export function nameMentioned(name, passage) {
   return false;
 }
 
-/**
- * Words too common to show that a passage tells a truth: function words, and
- * the general ones a narration and a truth share by chance ("thing", "still").
- */
-const TRUTH_COMMON = new Set([
-  "about", "above", "after", "again", "against", "along", "already", "also", "always", "among", "around", "away",
-  "back", "because", "been", "before", "behind", "being", "below", "between", "both", "came", "come", "could",
-  "does", "done", "down", "each", "even", "ever", "every", "from", "gave", "give", "goes", "gone", "have",
-  "having", "here", "hers", "into", "itself", "just", "keep", "kept", "know", "known", "least", "less", "like",
-  "made", "make", "many", "might", "more", "most", "much", "must", "near", "never", "none", "once", "only",
-  "onto", "other", "others", "over", "own", "past", "really", "same", "says", "said", "shall", "should", "since",
-  "some", "someone", "something", "still", "such", "take", "taken", "than", "that", "their", "theirs", "them",
-  "then", "there", "these", "they", "thing", "things", "this", "those", "through", "under", "until", "upon",
-  "very", "want", "wants", "were", "what", "when", "where", "whether", "which", "while", "whom", "whose",
-  "will", "with", "within", "without", "would", "your", "yours",
-]);
-
-/**
- * A word as it is compared: without its possessive, its plural or its -ing /
- * -ed ending, a final "e" or a doubled last letter — so "raiding", "raided"
- * and "raids" are one word, as are "lane" and "lanes", "name" and "named".
- * Rough on purpose: the same rule is applied to both sides.
- */
-function wordStem(word) {
-  let w = String(word).replace(/'s?$/, "");
-  if (w.length > 5 && w.endsWith("ing")) w = w.slice(0, -3);
-  else if (w.length > 4 && w.endsWith("ed")) w = w.slice(0, -2);
-  else if (w.length > 4 && w.endsWith("ies")) w = `${w.slice(0, -3)}y`;
-  else if (w.length > 4 && /(?:ch|sh|x|z|ss)es$/.test(w)) w = w.slice(0, -2);
-  else if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) w = w.slice(0, -1);
-  if (w.length > 3 && w.endsWith("e")) w = w.slice(0, -1);
-  if (w.length > 3 && w.at(-1) === w.at(-2)) w = w.slice(0, -1);
-  return w;
-}
-
-/** The stems of a passage's telling words: four letters or more, none of the common ones. */
-function tellingStems(passage) {
-  return new Set(words(passage).filter(w => w.length >= 4 && !TRUTH_COMMON.has(w)).map(wordStem).filter(s => s.length >= 3));
-}
+// The telling words a reveal is read by — the common ones left out, each
+// stemmed — are tellingWords.js's, which a scene question's provenance reads
+// too (overhaul 2): a leaf, so its readers read no plan.
 
 /**
  * Whether a narration's prose tells any of a plan's truth (known-issues
