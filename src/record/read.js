@@ -377,6 +377,9 @@ function sessionBeats(events, { xcarded, superseded }) {
         // RECORD-VIEW-SMALLER); a move within it is its beats' (`where`).
         const scene = scenes.findLast(x => x.sceneId === (e.scene ?? null));
         if (scene && !scene.where?.location) scene.where = where;
+        // …and its last frame (overhaul 2 §9): who was there at the end, what
+        // it turned on — galleyVignette.js recordedStop.
+        if (scene) scene.last = where;
         for (const text of Array.isArray(d.letGo) ? d.letGo : []) {
           if (typeof text === 'string' && text.trim() && !letGo.includes(text)) letGo.push(text);
         }

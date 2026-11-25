@@ -366,7 +366,7 @@ export async function readMove({
         // The roller's support vehicles and companions, by name (SUPPORT-VEHICLES-UNLISTED).
         roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null,
         // What the line follows — its destination, its target (alpha 23 playtest).
-        recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
+        recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null, campaignState),
         // Whether it may be no move at all (issue #354 P2-01).
         allowNoMove,
       });
@@ -439,7 +439,7 @@ export async function readMove({
   // which a stated miss is drawn from.
   const readStat = apiKey
     ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId,
-      recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
+      recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null, campaignState),
       roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null })
     : null;
   // A forced travel move that names no destination — a paced card's "Roll

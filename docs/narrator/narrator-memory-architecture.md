@@ -121,6 +121,25 @@ from its `roundEntries` (issue #340).
 Move narration reads the last `MOVE_RING_CARDS` (4, bounded by
 `narratorContextCards`) entries (B1); it used to read none.
 
+**The ring turns with the scene** (overhaul 2 slice 5 — §8). A beat of
+play's narration — the move's, the round's, the oracle follow-up's, the
+paced line's — is told its own scene's cards (`getRecentNarrationContext(…,
+{ scene })`, the scene by `ringSceneOf`: the open scene's id and its
+anchor's `what`; the cards by the `sceneId` the stamp hook gave them,
+invariant 1), the newest `limit` — and before them, while the scene's own
+leave room in `limit`, the last `SCENE_BEFORE_ENTRIES` (2) told before it
+began, headed `THE SCENE BEFORE — it ended when ‹what›. How it ended:` (then
+`THIS SCENE:`). The move reads four in all: a new scene's first beat the two
+before it; its third its own two and those two; its fifth its own four. What
+came earlier is the session summary's, made at every scene end (slice 2).
+The reader's recent scene (`getRecentSceneForReading(sessionId,
+campaignState)` — the pacing classifier's and the move interpreter's) is the
+scene's last three entries, with fewer the one before, headed. An `@scene`
+question (a recall wants the session) and the Private Channel read the
+session's ring; so does every beat with the session summary off
+(`narratorSessionSummary` — it is what tells the scenes before), and a
+session whose cards carry no stamp (from before it).
+
 **The flag-family contract.** Any card whose prose is *fiction the narrator
 should remember* must carry all three flags:
 
@@ -640,6 +659,17 @@ Two side effects beyond display:
 2. `resolvePathRelevance` (paced/@scene) unions `present` into the lexical
    match text, so present entities keep their ENTITIES IN SCENE card every
    turn.
+
+**Openings from the record** (overhaul 2 slice 6 — §9;
+OPENING-CONTRADICTS-WHERE-IT-STOPPED). A session's opening is told where the
+last session stopped by that session's record (`galleyVignette.js
+whereLastSessionStopped` → internal `recordedStop`): its last scene's place,
+who was with them at the end, what binds there — the player's, the dice's,
+the GM's, the premise's facts, labelled, never the narration's colour — the
+question still open and what play let go; then the last narration as the
+table read it, its details the narration's own. Nothing in the opening
+contradicts what binds; its ending, the material's, never ends on a let-go
+hook. A session from before the record is told by its summary, as before.
 
 **One place** (overhaul 2 slice 4 — §6, D9, D17;
 SHIP-POSITION-AND-FRAME-DISAGREE). In the fourth live run's session 3 the

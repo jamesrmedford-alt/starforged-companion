@@ -243,7 +243,26 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   vignette — so it adds no store). Both are read in one call,
   `galleyVignette.whereLastSessionStopped`, made once, by
   `composeOpeningScene`; nothing is said with neither (a campaign's first
-  session, a world whose chat is gone and whose summary is off). It picks the
+  session, a world whose chat is gone and whose summary is off). Since
+  overhaul 2 slice 6 (§9; OPENING-CONTRADICTS-WHERE-IT-STOPPED) a session
+  with a record is told by its record instead of its summary (internal
+  `recordedStop` — `readRecord({ session })` of the session
+  `lastSessionToTell` names, else of the newest earlier session the record
+  says a table began, as a summary never made leaves it to the record): its
+  last scene's place (`scene.started`'s, else
+  the session's end's), who was with them at the end (its last frame's
+  `present`), what binds there (the truths its beats established — the
+  player's, the dice's, the GM's, the premise's, labelled; never colour), the
+  question still open (the last frame's, unanswered) and what play let go,
+  the ship from its live record — "WHERE THE LAST SESSION STOPPED — session
+  N's record, the table's facts" — then the last narration "as the table read
+  it — the narration's own words; what binds is above". The rule after it:
+  nothing in this scene contradicts what binds; the narration's details may
+  be left out. The ending stays the material's (SET-PIECES-SHAPED-BY-THEIR-
+  PROMPT) and never ends on anything under Let go. The summary paragraph is
+  not in the user message then (LAST
+  SESSION stays in the system prompt as narrative texture); a session from
+  before the record (`legacy`) is told by its summary, as before. It picks the
   story up there: the scene is set where that leaves them, aboard or not —
   nobody is moved "back aboard" — nothing still going on is over or behind
   them, and no more time has passed than it allows (the third opening soaked
@@ -1066,7 +1085,15 @@ move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
 it as well — the last 3 entries, the newest 2,400 characters
 (`getRecentSceneForReading`, passed by `movePipeline.readMove` and
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
-playtest). Both are told the speaker's **situation**, in one block built once
+playtest). Since overhaul 2 slice 5 (§8) the ring turns with the scene: the
+move, round, oracle follow-up and paced narrations read the open scene's
+cards (by their `sceneId` stamp — `ringSceneOf` / internal `sceneRingText`),
+the newest of their limit, and before them, while there is room, the last two
+told before the scene began, under `THE SCENE BEFORE — it ended when ‹what›.
+How it ended:` (`SCENE_BEFORE_ENTRIES`); the reader's recent scene is the
+scene's last three, with fewer the one before, headed. `@scene` and the
+Private Channel read the session's ring, as does every beat with the session
+summary off or no card of the session stamped. Both are told the speaker's **situation**, in one block built once
 (`moves/situation.js buildSituationBlock` — the classifier's CHARACTER
 section, `buildContextSummary` for the interpreter): the sheet's health,
 spirit and supply, each beside the impact its recovery move clears (wounded,

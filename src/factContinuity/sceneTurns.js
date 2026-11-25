@@ -310,12 +310,15 @@ export function sceneOpeningOf(state) {
  *   NOT SO [letgo]  each question play let go (§7.3): not to end on it or bring
  *                   it back unless the player's line takes it up
  *
- * Told, not checked: overhaul 4's checks (moves/contracts/checks.js) trip
- * only their own kinds, and this overhaul does not edit them. The design's
- * checks for these — [scene] and [place] logged, [place] a tripwire for the
- * judge ("docked", "berth", "clamps" in the prose of a ship's fight), [letgo]
- * a floor (a let-go stem in the prose's last two sentences that the line does
- * not hold) — are checks.js's to make (known-issues SCENE-OBLIGATIONS-TOLD-ONLY).
+ * Told, and audited: every beat's obligations go to the post-narration
+ * audit (overhaul 4 — consistencyCheck.js, kind `obligation`), these with
+ * them. Not checked in code: overhaul 4's checks (moves/contracts/checks.js)
+ * trip only their own kinds, and this overhaul does not edit them. The
+ * design's code checks for these — [place] a tripwire for the judge
+ * ("docked", "berth", "clamps" in the prose of a ship's fight), [letgo] a
+ * floor (a let-go stem in the prose's last two sentences that the line does
+ * not hold) — are checks.js's to make (known-issues
+ * SCENE-OBLIGATIONS-UNCHECKED).
  *
  * @param {Object} state — the scene ledger as the store has it
  * @param {{ ship?: string }} [opts] — the ship's line as the scene's read has

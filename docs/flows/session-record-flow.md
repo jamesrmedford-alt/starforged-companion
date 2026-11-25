@@ -193,7 +193,10 @@ the recap and the summary alike.
 **LAST SESSION** — `lifecycle.js` `lastSessionToTell(campaignState)`, the one
 accessor (read by `narrator.js` `previousSessionSummaryFor`, the world
 snapshot's `memoryUnits` through `summaryView.js` `earlierSessionStories`, and
-the opening scene's `whereLastSessionStopped`): the story of the newest
+the opening scene's `whereLastSessionStopped` — which, for a session with a
+record, reads that session's last scene from `readRecord` instead — its
+place, its `last` frame (each scene keeps its last frame beside its first,
+`read.js`), what binds there: overhaul 2 §9): the story of the newest
 earlier session a table began (a `session.begun`, or a page that holds a
 story, or a page from before the record) — its valid summary view, else the
 story its page held — followed, as facts, by what was played in any session

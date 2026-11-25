@@ -90,7 +90,9 @@ function recordBondRoll(message) {
  * (`updateSource`), when the card's module flags carry `narratorCard: true`
  * and no `sceneId` of their own. The post sites are untouched, and a new card
  * type is stamped with no code of its own. Its readers: the colour window and
- * the scene's beats in the ACTIVE SCENE block (narrator.js sceneNarrationsOf).
+ * the scene's beats in the ACTIVE SCENE block (narrator.js sceneNarrationsOf),
+ * and the ring and the reader's recent scene, which turn with the scene
+ * (getRecentNarrationContext's `scene`, getRecentSceneForReading — §8).
  * It writes no world state — it sets a flag on the message being created.
  * Once, at load.
  */
