@@ -1,0 +1,980 @@
+{
+  "schema": 1,
+  "id": "readers-live-20261125-073803",
+  "mode": "live",
+  "questions": [
+    "Lines wanting a move: does the mended one reader (one:claude-sonnet-5-5) read at least the two readers' count on this same tree less two, of 112, with no family more than two readings below theirs?",
+    "The first measure's misses: are develop-2, gear-1, progress-1, progress-3, named-after-moves and done-1 now read in both readings, and why not where not (the reader's own reason)?",
+    "Controls: does the one reader offer or roll a move for no more of the 40 controls than the two readers on this tree, plus one, with trust-1 and trust-2 narrated in both readings?",
+    "Another move: is it rolled or offered in no more readings than the two readers' on this tree?",
+    "Issue #383's kinds: does each — trust, worth, claim-supported, claim-refuted, named-after-run — come out as wanted in at least three of its four readings, for each arm?",
+    "Fights: are the fight lines still 12 of 12 read by the one reader, every reading allowed by the position, and no fight control rolled?",
+    "Time: is the one reader's median rolled line at least 1 s faster than the two readers', and its median narrated line no more than 0.3 s slower?",
+    "Cost: is the one reader's whole spend a line no more than the two readers' on this tree — and what does a call now take in uncached input, cache-read and output tokens, against the first measure's 1,773, 8,213 and 244?",
+    "The dials: is the one reader's rolled share of action-roll moves within 10 points of the two readers'?",
+    "Unreadable replies: are no more than one in a hundred readings failed, with the reply now leaving out what is null or false?",
+    "The gate: did the two readers on this tree (after overhaul 4's gate entered decidePacing) read any line differently from their first measure at 8b7bf479, and which?",
+    "Regressions: did any line the one reader's first measure read right, or any control it narrated, come out wrong after the mend?"
+  ],
+  "startedAt": "2026-11-25T07:38:03.760Z",
+  "finishedAt": "2026-11-25T08:02:00.616Z",
+  "commit": "b86559b3d9976c1608b2cbd50721ea8b84877d16",
+  "versions": {
+    "foundry": "13.351",
+    "system": "foundry-ironsworn 1.28.4",
+    "module": "1.1.1",
+    "browser": "chromium 157.0.8103.78"
+  },
+  "arms": [
+    {
+      "id": "one:claude-sonnet-5-5",
+      "design": "one",
+      "model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "two:claude-sonnet-5-5",
+      "design": "two",
+      "model": "claude-sonnet-5-5"
+    }
+  ],
+  "repeats": 2,
+  "readersModel": [
+    "claude-sonnet-5-5"
+  ],
+  "thinking": {
+    "one:claude-sonnet-5-5": "between_tools",
+    "two:claude-sonnet-5-5": "between_tools"
+  },
+  "cases": {
+    "inTheList": 76,
+    "chosen": 76
+  },
+  "readings": {
+    "planned": 304,
+    "made": 304
+  },
+  "stopped": null,
+  "infrastructure": null,
+  "caps": {
+    "actions": 0,
+    "calls": 608,
+    "minutes": 90,
+    "usd": 3
+  },
+  "prices": {
+    "asOf": "2026-11-23",
+    "notes": "Standard rates, read from Anthropic's price list on the date above. A cache write is charged at 1.25 times input when it is kept five minutes and twice input when it is kept an hour, by the split the response reports (lib/budget.mjs); a write that does not say is priced as an hour's. Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "usdPerMillionTokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01
+      }
+    }
+  },
+  "spend": {
+    "caps": {
+      "actions": 0,
+      "calls": 608,
+      "minutes": 90,
+      "usd": 3
+    },
+    "stopped": null,
+    "actions": 0,
+    "calls": 371,
+    "minutes": 23.92,
+    "usd": 1.8306,
+    "inFlightUsd": 0,
+    "byRole": {
+      "one:claude-sonnet-5-5 line": {
+        "calls": 152,
+        "usd": 0.8425,
+        "input": 210554,
+        "output": 24941,
+        "cacheRead": 1359453,
+        "cacheWrite": 9003
+      },
+      "two:claude-sonnet-5-5 pacing": {
+        "calls": 152,
+        "usd": 0.5671,
+        "input": 129266,
+        "output": 19707,
+        "cacheRead": 956434,
+        "cacheWrite": 6334
+      },
+      "two:claude-sonnet-5-5 move": {
+        "calls": 67,
+        "usd": 0.421,
+        "input": 59766,
+        "output": 24197,
+        "cacheRead": 431508,
+        "cacheWrite": 6538
+      }
+    }
+  },
+  "calls": {
+    "total": 391,
+    "byArm": {
+      "one:claude-sonnet-5-5": {
+        "pacing": 0,
+        "move": 0,
+        "line": 152,
+        "usd": 0.8425
+      },
+      "two:claude-sonnet-5-5": {
+        "pacing": 152,
+        "move": 67,
+        "line": 0,
+        "usd": 0.9881
+      }
+    },
+    "notAReaders": [
+      {
+        "n": 1,
+        "step": "(context bleakhold-after-fight)",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 2,
+        "step": "(context bleakhold-after-fight)",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 51,
+        "step": "one:claude-sonnet-5-5 · connect-1 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 52,
+        "step": "one:claude-sonnet-5-5 · connect-1 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 144,
+        "step": "one:claude-sonnet-5-5 · develop-1 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 146,
+        "step": "one:claude-sonnet-5-5 · develop-1 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 214,
+        "step": "one:claude-sonnet-5-5 · bond-1 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 215,
+        "step": "one:claude-sonnet-5-5 · bond-1 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 240,
+        "step": "one:claude-sonnet-5-5 · progress-1 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 243,
+        "step": "two:claude-sonnet-5-5 · progress-1 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 270,
+        "step": "(context ashfall-drift)",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 271,
+        "step": "(context ashfall-drift)",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 312,
+        "step": "one:claude-sonnet-5-5 · danger-2 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 314,
+        "step": "one:claude-sonnet-5-5 · danger-2 · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 338,
+        "step": "one:claude-sonnet-5-5 · fight-ahead-attack · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 339,
+        "step": "one:claude-sonnet-5-5 · fight-ahead-attack · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 368,
+        "step": "one:claude-sonnet-5-5 · fight-pinned-attack · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 369,
+        "step": "one:claude-sonnet-5-5 · fight-pinned-attack · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 382,
+        "step": "one:claude-sonnet-5-5 · claim-refuted · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      },
+      {
+        "n": 383,
+        "step": "one:claude-sonnet-5-5 · claim-refuted · 1",
+        "kind": "callChronicleAPI>writeChronicleEntry",
+        "model": "claude-sonnet-5-5",
+        "source": "refused (not one of the readers' calls, and this run sends a model nothing else)"
+      }
+    ],
+    "failed": []
+  },
+  "settings": {
+    "mischiefDial": "balanced",
+    "pacing.enabled": true,
+    "pacing.densityWindow": 5,
+    "pacing.dial.combat": 9,
+    "pacing.dial.investigation": 6,
+    "pacing.dial.exploration": 6,
+    "pacing.dial.social": 5,
+    "pacing.dial.downtime": 1,
+    "narratorSessionSummary": false,
+    "autoSeedConnection": false,
+    "autoSeedStarship": false
+  },
+  "world": {
+    "session": "readers-20261125-073803",
+    "stateRead": {
+      "location": "the pacing reader's CURRENT SCENE — \"Current location\", from campaignState.currentLocationId / currentLocationType",
+      "frame": "the pacing reader's CURRENT SCENE — \"Scene frame\", from campaignState.sceneFrame",
+      "connection": "both readers' SITUATION block, from the bond Item on the character's sheet: its name, rank and relationship track, or that it is bonded",
+      "vow": "both readers' SITUATION block, from the vow Item on the character's sheet: its name, rank and progress",
+      "tracks": "the move reader's \"Open progress tracks\", by type and label, and its combat position directive; an open fight (\"COMBAT STATUS: ACTIVE\") or scene challenge reaches the pacing reader too; the one reader's SITUATION gives each with its rank and progress, a fight with the character's position in it",
+      "health": "both readers' SITUATION block, from the sheet's health meter",
+      "spirit": "both readers' SITUATION block, from the sheet's spirit meter",
+      "supply": "both readers' SITUATION block, from the sheet's supply meter",
+      "impacts": "both readers' SITUATION block: wounded, shaken and unprepared, from the sheet's impacts",
+      "integrity": "both readers' SITUATION block: the command vehicle's integrity, from its ship record (its STARSHIP asset's track where it has one)",
+      "battered": "both readers' SITUATION block: whether the command vehicle is battered, from the starship's own impact"
+    },
+    "contexts": {
+      "bleakhold-after-fight": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "The Kobayashi IV made Bleakhold Station on one good thruster, and the clamps took her with a groan. The raider cutter that jumped you on the lane is scrap now, drifting somewhere behind you, but her last volley opened the port hull plating and cooked a power relay, and the damage board shows more amber than green. The dockmaster, Oren Halvard, logged your scorched hull without a word and waved off the first night's berth fee.\n\nYou are in the galley now, with the hatch sealed. Your ribs ache where the harness caught you, blood has dried along your forearm from the relay fire, and your hands have not quite stopped shaking. The stores locker is close to bare, because the fight and the long burn here ate most of what you carried. Beyond the hatch, Bleakhold's market hums through the deck.",
+          "location": "Bleakhold Station",
+          "frame": {
+            "location": "Galley of the Kobayashi IV, docked at Bleakhold Station",
+            "present": [
+              "Mira Kestrel"
+            ],
+            "situation": "Mira has limped into Bleakhold after the fight with the raider cutter: hurt, shaken, low on stores, the ship damaged"
+          },
+          "sheet": {
+            "health": 3,
+            "spirit": 3,
+            "supply": 2,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 3,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 16,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 16
+            }
+          ],
+          "tracks": [],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 3 of 5 (not wounded); Spirit 3 of 5 (not shaken); Supply 2 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 3 of 5 (not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 3 of 5 (not wounded); Spirit 3 of 5 (not shaken); Supply 2 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 3 of 5 (not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: none.\n- Scene challenges: none.\n- Expeditions: none.\n- Place: Bleakhold Station (settlement).\n- Scene — where: Galley of the Kobayashi IV, docked at Bleakhold Station; present: Mira Kestrel; now: Mira has limped into Bleakhold after the fight with the raider cutter: hurt, shaken, low on stores, the ship damaged.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "spire-stall": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "The docks of Hollow Spire run dry and dim at this hour, ration notices pasted over older ration notices. Tamsin Okoro's stall sits at the far end under its one lamp, her ledger open in front of her as thick as a door. She looks up when your shadow crosses the page, and nods you to the stool she keeps for people she does not mind.\n\n\"Three freighters overdue this month, all on the Bleakhold run,\" Tamsin says, turning the ledger so you can read the column. Her finger stops on the last name. \"The Lark's Tithe. My sister's boy, Joss, crewed her.\" Two stalls down, Idris Vane the water-seller is counting ration chits into a tin and pretending not to listen. Traders drift past in ones and twos, and none of them meets your eye for long.",
+          "location": "Hollow Spire",
+          "frame": {
+            "location": "Tamsin Okoro's ledger stall, the docks of Hollow Spire",
+            "present": [
+              "Mira Kestrel",
+              "Tamsin Okoro",
+              "Idris Vane"
+            ],
+            "situation": "Tamsin has shown Mira three freighters overdue on the Bleakhold run, her nephew Joss aboard the last; the dock traders are keeping their distance"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 5,
+            "supply": 4,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 5,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 16,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 8
+            }
+          ],
+          "tracks": [],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 2 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 2 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: none.\n- Scene challenges: none.\n- Expeditions: none.\n- Place: Hollow Spire (settlement).\n- Scene — where: Tamsin Okoro's ledger stall, the docks of Hollow Spire; present: Mira Kestrel, Tamsin Okoro, Idris Vane; now: Tamsin has shown Mira three freighters overdue on the Bleakhold run, her nephew Joss aboard the last; the dock traders are keeping their distance.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "aboard-at-spire": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "The Kobayashi IV sits against Hollow Spire's docking collar with her reactor idling, and you are alone in the cockpit with the pre-flight board. Tamsin Okoro's last message is still on the comm panel: the Bleakhold run is the one the raiders keep hitting, four days out along the marked lane, and Bleakhold Station is where the missing freighters were bound.\n\nUnder it she has added a second line: a set of coordinates with no name against them, a debris drift well off the charts where a salvager swears he saw a cutter lying dark. The lockers behind your seat have not been gone through since the last port, and the lamps of the Spire's docks slide slowly across the viewport as the ship turns on her clamp.",
+          "location": "Hollow Spire",
+          "frame": {
+            "location": "Cockpit of the Kobayashi IV, docked at Hollow Spire",
+            "present": [
+              "Mira Kestrel"
+            ],
+            "situation": "Mira is readying to leave; Tamsin has sent word of the Bleakhold run, and a set of uncharted coordinates where a raider cutter was seen"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 5,
+            "supply": 4,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 5,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 16,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 8
+            }
+          ],
+          "tracks": [],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 2 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 2 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: none.\n- Scene challenges: none.\n- Expeditions: none.\n- Place: Hollow Spire (settlement).\n- Scene — where: Cockpit of the Kobayashi IV, docked at Hollow Spire; present: Mira Kestrel; now: Mira is readying to leave; Tamsin has sent word of the Bleakhold run, and a set of uncharted coordinates where a raider cutter was seen.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "spire-reckoning": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "Hollow Spire's docks are loud tonight, for once: word has run ahead of you that the Bleakhold clerk talked. You set the sealed ledger on Tamsin Okoro's counter and she reads the seal twice. It is the harbourmaster's own. Corvin Hale of Bleakhold Station has been buying the freighter schedules and sending the cutters after them, and the proof of it lies under her lamp.\n\nWarden Ysolde Marr of the lane authority stands at the end of the counter in her grey sash, hands folded, waiting to hear it from you. Tamsin has not let go of your sleeve since you came in. \"All these months,\" she says quietly, \"and you kept coming back to this stall.\"",
+          "location": "Hollow Spire",
+          "frame": {
+            "location": "Tamsin Okoro's ledger stall, the docks of Hollow Spire",
+            "present": [
+              "Mira Kestrel",
+              "Tamsin Okoro",
+              "Warden Ysolde Marr"
+            ],
+            "situation": "Mira has brought back sealed proof that Bleakhold's harbourmaster Corvin Hale is behind the raids; the lane warden is waiting to hear it from her"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 5,
+            "supply": 4,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 5,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 40,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 32
+            }
+          ],
+          "tracks": [],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 8 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 10 of 10 boxes — full, no bond forged yet).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 8 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 10 of 10 boxes — full, no bond forged yet).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: none.\n- Scene challenges: none.\n- Expeditions: none.\n- Place: Hollow Spire (settlement).\n- Scene — where: Tamsin Okoro's ledger stall, the docks of Hollow Spire; present: Mira Kestrel, Tamsin Okoro, Warden Ysolde Marr; now: Mira has brought back sealed proof that Bleakhold's harbourmaster Corvin Hale is behind the raids; the lane warden is waiting to hear it from her.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "bleakhold-clerk": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "Bleakhold Station's records office is a long, cold room of filing drums, and at this hour it holds one clerk. Devan Roe has the Hollow Spire freight schedules open on his desk and a second, smaller ledger half hidden under his sleeve. When you put the copied sailing times in front of him, the same times the raiders struck, the colour leaves his face.\n\n\"I only pass them along,\" Roe says, too fast. \"A man collects them at the cargo lock, every tenth day. I never asked who he works for.\" His hand is still on the second ledger. Behind him the drum that holds the outbound manifests stands unlocked, and through the office window you can see the cargo lock he means, empty for now.",
+          "location": "Bleakhold Station",
+          "frame": {
+            "location": "Records office, Bleakhold Station",
+            "present": [
+              "Mira Kestrel",
+              "Devan Roe"
+            ],
+            "situation": "The clerk Devan Roe has just admitted passing freight schedules to a man who collects them at the cargo lock; he is guarding a second ledger"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 5,
+            "supply": 4,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 5,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 24,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 16
+            }
+          ],
+          "tracks": [],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 6 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 6 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: none.\n- Scene challenges: none.\n- Expeditions: none.\n- Place: Bleakhold Station (settlement).\n- Scene — where: Records office, Bleakhold Station; present: Mira Kestrel, Devan Roe; now: The clerk Devan Roe has just admitted passing freight schedules to a man who collects them at the cargo lock; he is guarding a second ledger.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "ashfall-drift": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "Two days past the last charted marker, the debris drift closes around the Kobayashi IV like a slow tide: hull plates, ice, the ribs of ships older than the lanes. You have been feeling your way toward the coordinates Tamsin Okoro passed on, where a salvager swore he saw a raider cutter lying dark. Nothing out here has a name on any chart you own.\n\nAhead, half buried in the drift, hangs the wreck of a relay station, its dish torn and its docking ring still slowly turning. Beyond it the debris thickens into a tumbling wall with one narrow gap. Your scanner paints a faint, regular heat trace somewhere on the far side.",
+          "location": null,
+          "frame": {
+            "location": "The Ashfall Drift, uncharted debris beyond the Cinder Expanse lanes",
+            "present": [
+              "Mira Kestrel"
+            ],
+            "situation": "Mid-expedition toward a salvager's coordinates: a wrecked relay station ahead, a wall of tumbling debris with one gap, a heat trace beyond it"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 4,
+            "supply": 3,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 5,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 16,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 8
+            }
+          ],
+          "tracks": [
+            {
+              "type": "expedition",
+              "label": "The Ashfall Drift",
+              "ticks": 8
+            }
+          ],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 4 of 5 (not shaken); Supply 3 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 2 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 4 of 5 (not shaken); Supply 3 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 2 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: none.\n- Scene challenges: none.\n- Expeditions: \"The Ashfall Drift\" (dangerous, 2 of 10 boxes).\n- Place: none recorded.\n- Scene — where: The Ashfall Drift, uncharted debris beyond the Cinder Expanse lanes; present: Mira Kestrel; now: Mid-expedition toward a salvager's coordinates: a wrecked relay station ahead, a wall of tumbling debris with one gap, a heat trace beyond it.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "lane-ambush": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "Half a day out of Bleakhold Station on the marked lane, the Kobayashi IV's proximity alarm goes off like a dropped tray. A cutter has come up out of the sensor shadow of a dead freighter, close enough to read the name burned into her prow: the Cinder Wren. Her gun ports are open.\n\n\"Kobayashi IV, cut your drive and stand by to be boarded,\" a voice says on the open channel, bored, as if reading from a card. A warning shot crosses your bow and scatters into the dark. The dead freighter's hulk drifts between you, trailing a slow cloud of spilled cargo, and the lane behind you is empty all the way back to Bleakhold.",
+          "location": null,
+          "frame": {
+            "location": "Aboard the Kobayashi IV, on the marked lane half a day out of Bleakhold Station",
+            "present": [
+              "Mira Kestrel"
+            ],
+            "situation": "The raider cutter Cinder Wren has come out from behind a dead freighter, fired a warning shot and ordered Mira to stand by to be boarded"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 5,
+            "supply": 4,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 5,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 16,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 16
+            }
+          ],
+          "tracks": [],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: none.\n- Scene challenges: none.\n- Expeditions: none.\n- Place: none recorded.\n- Scene — where: Aboard the Kobayashi IV, on the marked lane half a day out of Bleakhold Station; present: Mira Kestrel; now: The raider cutter Cinder Wren has come out from behind a dead freighter, fired a warning shot and ordered Mira to stand by to be boarded.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "lane-fight-ahead": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "The Cinder Wren took your first volley across her drive housing and she is bleeding vapour now, slewing round the dead freighter's hulk to bring her guns back to bear. You are inside her turn and above her, the Kobayashi IV's forward battery warm and steady, and for the moment she cannot shake you.\n\nHer gunner is still in his turret: you can see the barrel tracking, a beat behind you every time. Somewhere in the engine bay behind you a relay is fizzing where her first answer clipped the hull, and the cargo cloud from the dead freighter drifts between the two ships like smoke.",
+          "location": null,
+          "frame": {
+            "location": "Aboard the Kobayashi IV, in a fight with the Cinder Wren on the marked lane out of Bleakhold Station",
+            "present": [
+              "Mira Kestrel"
+            ],
+            "situation": "Mira is in a running fight with the raider cutter Cinder Wren and holds the upper hand: inside her turn, her drive damaged"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 5,
+            "supply": 4,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 4,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 16,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 16
+            }
+          ],
+          "tracks": [
+            {
+              "type": "combat",
+              "label": "The Cinder Wren",
+              "ticks": 8,
+              "position": "in_control"
+            }
+          ],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 4 of 5 (not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 4 of 5 (not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: \"The Cinder Wren\" (dangerous, 2 of 10 boxes, Mira Kestrel is in control).\n- Scene challenges: none.\n- Expeditions: none.\n- Place: none recorded.\n- Scene — where: Aboard the Kobayashi IV, in a fight with the Cinder Wren on the marked lane out of Bleakhold Station; present: Mira Kestrel; now: Mira is in a running fight with the raider cutter Cinder Wren and holds the upper hand: inside her turn, her drive damaged.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "lane-fight-pinned": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "The Cinder Wren came round faster than she had any right to, and now the Kobayashi IV is pinned against the dead freighter's hulk with the cutter sitting off your stern. Her guns walk across the freighter's plating towards you, tearing it open in long bright seams, and every alarm on your board is lit.\n\nYou have one way out you can see, the cargo cloud trailing from the freighter's broken hold, and the forward battery still answers when you ask it. The Wren's pilot is in no hurry. She has you where she wants you, and she knows it.",
+          "location": null,
+          "frame": {
+            "location": "Aboard the Kobayashi IV, pinned against a dead freighter's hulk by the Cinder Wren on the marked lane",
+            "present": [
+              "Mira Kestrel"
+            ],
+            "situation": "The raider cutter Cinder Wren has Mira pinned against the dead freighter, her guns walking toward the Kobayashi IV"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 5,
+            "supply": 4,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 3,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 16,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 16
+            }
+          ],
+          "tracks": [
+            {
+              "type": "combat",
+              "label": "The Cinder Wren",
+              "ticks": 4,
+              "position": "bad_spot"
+            }
+          ],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 3 of 5 (not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 5 of 5 (full, not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 3 of 5 (not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 4 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: \"The Cinder Wren\" (dangerous, 1 of 10 boxes, Mira Kestrel is in a bad spot).\n- Scene challenges: none.\n- Expeditions: none.\n- Place: none recorded.\n- Scene — where: Aboard the Kobayashi IV, pinned against a dead freighter's hulk by the Cinder Wren on the marked lane; present: Mira Kestrel; now: The raider cutter Cinder Wren has Mira pinned against the dead freighter, her guns walking toward the Kobayashi IV.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      },
+      "bleakhold-brig": {
+        "set": {
+          "session": "readers-20261125-073803",
+          "scene": "Bleakhold Station's brig is two cells and a bench, and the Cinder Wren's pilot has the far cell. She sits with her back to the wall and her cuffed hands in her lap, and she has answered everything you asked, flatly, as if none of it mattered any more. Her orders came on a printed chit left at the cargo lock: a berth number, a sailing time, and no name on it.\n\n\"I never asked who wrote them,\" she says. \"And if you think the salvage broker sold you out, you're wrong. Tamsin Okoro sold nothing. She wouldn't sell a schedule to me if I paid her twice.\" The guard at the door shifts his weight and says nothing.",
+          "location": "Bleakhold Station",
+          "frame": {
+            "location": "The brig, Bleakhold Station",
+            "present": [
+              "Mira Kestrel",
+              "the Cinder Wren's pilot"
+            ],
+            "situation": "The captured pilot of the Cinder Wren has said her orders came unsigned at the cargo lock, and that Tamsin Okoro sold nothing"
+          },
+          "sheet": {
+            "health": 5,
+            "spirit": 4,
+            "supply": 4,
+            "impacts": {
+              "wounded": false,
+              "shaken": false,
+              "unprepared": false
+            }
+          },
+          "vehicle": {
+            "name": "Kobayashi IV",
+            "integrity": 5,
+            "battered": false
+          },
+          "connections": [
+            {
+              "name": "Tamsin Okoro",
+              "rank": "dangerous",
+              "ticks": 24,
+              "bonded": false
+            }
+          ],
+          "vows": [
+            {
+              "name": "Find who is raiding the Cinder Expanse lanes",
+              "rank": "dangerous",
+              "ticks": 16
+            }
+          ],
+          "tracks": [],
+          "situation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 4 of 5 (not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 6 of 10 boxes).",
+          "lineSituation": "SITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded); Spirit 4 of 5 (not shaken); Supply 4 of 5 (not unprepared).\n- Command vehicle: \"Kobayashi IV\", integrity 5 of 5 (full, not battered).\n- Open vows: \"Find who is raiding the Cinder Expanse lanes\" (dangerous, 4 of 10 boxes).\n- Connections: \"Tamsin Okoro\" (dangerous, relationship 6 of 10 boxes).\n- Support vehicles: none. Companions: none.\n- Other characters' open vows: none.\n- Open fights: none.\n- Scene challenges: none.\n- Expeditions: none.\n- Place: Bleakhold Station (settlement).\n- Scene — where: The brig, Bleakhold Station; present: Mira Kestrel, the Cinder Wren's pilot; now: The captured pilot of the Cinder Wren has said her orders came unsigned at the cargo lock, and that Tamsin Okoro sold nothing.\n- Charted places: Hollow Spire, Bleakhold Station, Vigil Reach."
+        },
+        "notSet": []
+      }
+    }
+  },
+  "summary": {
+    "one:claude-sonnet-5-5": {
+      "design": "one",
+      "model": "claude-sonnet-5-5",
+      "wanting": 112,
+      "read": 108,
+      "readRate": 0.9642857142857143,
+      "rolled": 60,
+      "offered": 48,
+      "offeredNotRolled": 0,
+      "anotherMove": 2,
+      "nothing": 2,
+      "controls": 40,
+      "controlsRight": 40,
+      "failed": 0,
+      "rolledShare": 0.6666666666666666,
+      "byKind": {
+        "worth": {
+          "readings": 4,
+          "wanted": 4
+        },
+        "trust": {
+          "readings": 4,
+          "wanted": 4
+        },
+        "named-after-run": {
+          "readings": 4,
+          "wanted": 4
+        },
+        "claim-supported": {
+          "readings": 4,
+          "wanted": 4
+        },
+        "claim-refuted": {
+          "readings": 4,
+          "wanted": 4
+        }
+      },
+      "fights": {
+        "readings": 14,
+        "wanting": 12,
+        "read": 12,
+        "illegal": 0,
+        "controls": 2,
+        "controlsRolled": 0
+      }
+    },
+    "two:claude-sonnet-5-5": {
+      "design": "two",
+      "model": "claude-sonnet-5-5",
+      "wanting": 112,
+      "read": 104,
+      "readRate": 0.9285714285714286,
+      "rolled": 60,
+      "offered": 44,
+      "offeredNotRolled": 1,
+      "anotherMove": 5,
+      "nothing": 2,
+      "controls": 40,
+      "controlsRight": 32,
+      "failed": 0,
+      "rolledShare": 0.7,
+      "byKind": {
+        "worth": {
+          "readings": 4,
+          "wanted": 4
+        },
+        "trust": {
+          "readings": 4,
+          "wanted": 0
+        },
+        "named-after-run": {
+          "readings": 4,
+          "wanted": 3
+        },
+        "claim-supported": {
+          "readings": 4,
+          "wanted": 4
+        },
+        "claim-refuted": {
+          "readings": 4,
+          "wanted": 0
+        }
+      },
+      "fights": {
+        "readings": 14,
+        "wanting": 12,
+        "read": 11,
+        "illegal": 0,
+        "controls": 2,
+        "controlsRolled": 0
+      }
+    }
+  },
+  "switch": [
+    {
+      "model": "claude-sonnet-5-5",
+      "two": "two:claude-sonnet-5-5",
+      "one": "one:claude-sonnet-5-5",
+      "verdict": "switch",
+      "criteria": [
+        {
+          "n": 1,
+          "name": "lines wanting a move",
+          "pass": true,
+          "detail": "read 108 of 112 against 104 of 112; no family fell by more than two"
+        },
+        {
+          "n": 2,
+          "name": "controls offered or rolled a move",
+          "pass": true,
+          "detail": "0 of 40 against 8 of 40"
+        },
+        {
+          "n": 3,
+          "name": "another move rolled or offered",
+          "pass": true,
+          "detail": "2 against 5"
+        },
+        {
+          "n": 4,
+          "name": "issue #383's kinds, each as wanted in three readings of four",
+          "pass": true,
+          "detail": "worth 4 of 4; trust 4 of 4; named-after-run 4 of 4; claim-supported 4 of 4; claim-refuted 4 of 4"
+        },
+        {
+          "n": 5,
+          "name": "fights",
+          "pass": true,
+          "detail": "read 12 of 12 against 11 of 12; 0 not legal for the position; 0 control(s) rolled"
+        },
+        {
+          "n": 6,
+          "name": "time: a rolled line 1 s faster, a narrated one no more than 0.3 s slower",
+          "pass": true,
+          "detail": "rolled 2.37 s against 5.19 s; narrated 1.59 s against 1.76 s"
+        },
+        {
+          "n": 7,
+          "name": "cost: a line no dearer (the whole spend a line)",
+          "pass": true,
+          "detail": "$0.0055 against $0.0065 a line; the median line $0.0054 against $0.0040"
+        },
+        {
+          "n": 8,
+          "name": "the dials hold: the rolled share within 10 points",
+          "pass": true,
+          "detail": "67% (56 of 84) against 70% (56 of 80)"
+        },
+        {
+          "n": 9,
+          "name": "no more than one unreadable reply in a hundred",
+          "pass": true,
+          "detail": "0 of 152"
+        }
+      ]
+    }
+  ]
+}
