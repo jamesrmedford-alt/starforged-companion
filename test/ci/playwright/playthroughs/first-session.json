@@ -121,9 +121,9 @@
       ] },
     { "id": "end", "do": "endSession", "as": "player", "questFocus": "Find the courier",
       "calls": [
-        { "kind": "callNarratorAPI>getRollingSessionSummary", "carries": ["SESSION NARRATION"] },
+        { "kind": "callNarratorAPI>getRollingSessionSummary", "carries": ["THE SESSION"] },
         { "kind": "callNarratorAPI>narrateSessionVignette" },
-        { "kind": "callNarratorAPI>getCampaignRecap", "section": { "CAMPAIGN CHRONICLE": "[" } }
+        { "kind": "callNarratorAPI>getCampaignRecap", "section": { "THE RECORD": "[" } }
       ],
       "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "then": [

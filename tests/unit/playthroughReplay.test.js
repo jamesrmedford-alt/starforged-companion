@@ -21,7 +21,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  AFTER_STEP, SETUP_STEP, createClaudeHarness, normalizeHeading, promptFingerprint,
+  AFTER_STEP, SETUP_STEP, callerKind, createClaudeHarness, normalizeHeading, promptFingerprint,
   recordingProblem, requestContract, scenarioRevision, validateScenario,
 } from '../../test/ci/playwright/lib/claude.mjs';
 
@@ -99,6 +99,15 @@ const failuresOf = (reports) => Object.values(reports).flatMap(r => r.failures);
 const load = (dir, name) => JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, dir, `${name}.json`), 'utf8'));
 const SCENARIOS = ['first-session', 'batch-round'].map(name => [name, load('playthroughs', name), load('recordings', name)]);
 
+// Every module source file's text, for the headings the scenarios check.
+const SRC_TEXT = (function readSrc(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).map(e => {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) return readSrc(p);
+    return e.name.endsWith('.js') ? fs.readFileSync(p, 'utf8') : '';
+  }).join('\n');
+})(path.resolve(__dirname, '../../src'));
+
 describe.each(SCENARIOS)('the %s scenario and its recording agree', (_name, scenario, recording) => {
   it('is strict, and every step has a unique id', () => {
     expect(scenario.strict).toBe(true);
@@ -109,6 +118,24 @@ describe.each(SCENARIOS)('the %s scenario and its recording agree', (_name, scen
     const ids = new Set(scenario.steps.map(s => s.id));
     expect(recording.exchanges.filter(x => !ids.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
     expect(recordingProblem(recording, { strict: true })).toBeNull();
+  });
+
+  it('every heading its prompt checks name is one the module still writes', () => {
+    // The replay harness checks a call's prompt by its sections, so a heading
+    // the module renamed fails only on the stack — overhaul 3's record left
+    // "SESSION NARRATION" and "CAMPAIGN CHRONICLE" declared after both were
+    // gone. A heading counts when src writes it as a "## " heading.
+    const headings = new Set();
+    for (const step of scenario.steps) {
+      for (const call of step.calls ?? []) {
+        if (!call || typeof call !== 'object') continue;
+        for (const h of call.carries ?? []) headings.add(h);
+        for (const h of Object.keys(call.section ?? {})) headings.add(h);
+        for (const h of Object.keys(call.sectionLacks ?? {})) headings.add(h);
+      }
+    }
+    const missing = [...headings].filter(h => !SRC_TEXT.includes(`## ${h}`));
+    expect(missing).toEqual([]);
   });
 
   it('every required call has a recorded reply in its step, and every recording is declared', async () => {
@@ -261,6 +288,56 @@ describe('strict replay fails what a permissive replay only reported', () => {
     await harness.send('callHaiku>defaultCallTierAPI', { user: 'after' });
     expect(harness.checkStep(SETUP_STEP, {}, []).failures).toHaveLength(1);
     expect(harness.checkStep(AFTER_STEP, {}, ['callHaiku>defaultCallTierAPI']).failures).toEqual([]);
+  });
+});
+
+describe('a call\'s kind looks through the obligations check (overhaul 4)', () => {
+  const at = (name, file) => `    at ${name ? `${name} (` : ''}http://localhost:30000/modules/starforged-companion/src/${file}:10:5${name ? ')' : ''}`;
+  const stack = (...frames) => ['Error', ...frames].join('\n');
+
+  it('the narration made through narrateKeepingObligations keeps its caller\'s kind', () => {
+    // The first-session replay's own stack: the arrow handed to the check is
+    // named after it by V8, then the check, then the move's narration.
+    expect(callerKind(stack(
+      at('apiPost', 'api-proxy.js'),
+      at('callNarratorAPI', 'narration/narrator.js'),
+      at('narrateKeepingObligations.apiKey.apiKey', 'narration/narrator.js'),
+      at('narrateKeepingObligations', 'moves/contracts/checks.js'),
+      at('narrateResolution', 'narration/narrator.js'),
+    ))).toBe('callNarratorAPI>narrateResolution');
+  });
+
+  it('the judge\'s call is named for the narration it judges', () => {
+    expect(callerKind(stack(
+      at('apiPost', 'api-proxy.js'),
+      at('judgeNarration', 'moves/contracts/checks.js'),
+      at('narrateKeepingObligations', 'moves/contracts/checks.js'),
+      at('narratePacedInput', 'narration/narrator.js'),
+    ))).toBe('judgeNarration>narratePacedInput');
+  });
+
+  it('the recap and the summary, asked through their local `ask`, keep their own kinds (issue #382)', () => {
+    expect(callerKind(stack(
+      at('apiPost', 'api-proxy.js'),
+      at('callNarratorAPI', 'narration/narrator.js'),
+      at('ask', 'narration/narrator.js'),
+      at('getCampaignRecap', 'narration/narrator.js'),
+    ))).toBe('callNarratorAPI>getCampaignRecap');
+    expect(callerKind(stack(
+      at('apiPost', 'api-proxy.js'),
+      at('callNarratorAPI', 'narration/narrator.js'),
+      at('ask', 'narration/narrator.js'),
+      at('getRollingSessionSummary', 'narration/narrator.js'),
+    ))).toBe('callNarratorAPI>getRollingSessionSummary');
+  });
+
+  it('an anonymous frame and a frame named otherwise are unchanged', () => {
+    expect(callerKind(stack(
+      at('apiPost', 'api-proxy.js'),
+      at('', 'narration/narrator.js'),
+      at('callHaiku', 'entities/entityExtractor.js'),
+      at('defaultCallDetectionAPI', 'entities/entityExtractor.js'),
+    ))).toBe('callHaiku>defaultCallDetectionAPI');
   });
 });
 

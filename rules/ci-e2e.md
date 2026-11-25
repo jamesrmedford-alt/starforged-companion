@@ -171,7 +171,14 @@ fact block, detection and draft cards, End and Begin a Session.
   process. The page never reaches the network for Claude (no CORS), and the
   GM holds a placeholder key. A call's **kind** is the two named module
   frames above `apiPost` — `callNarratorAPI>narrateResolution`,
-  `callHaiku>defaultCallDetectionAPI`. Each call is filed under the scenario
+  `callHaiku>defaultCallDetectionAPI`; a wrapper that makes a call for its
+  caller is looked through (`lib/claude.mjs` `PASS_THROUGH`: the obligations
+  check, so a move's narration stays `callNarratorAPI>narrateResolution` and
+  its judge is `judgeNarration>narrateResolution`; and the `ask` helper the
+  recap and the session summary call through — add a new such wrapper
+  there, or every recording of its caller goes MISSING). A heading a call's
+  contract names must be one `src/` still writes as a `## ` heading
+  (`playthroughReplay.test.js` holds both scenarios to it). Each call is filed under the scenario
   step during which it started (the runner waits for 4 s with no call
   before a step's checks, and every background pass starts within 2 s), and
   a recording run stores that step on every exchange. A request gets an
@@ -1362,7 +1369,11 @@ run of moves (`recentMoves`), the two named-move lines (`named`, read right
 only when rolled — `want.rolled`) and issue #383's kinds (`kind`), two lines
 each. Its cost criterion is the whole spend a line (the mean), with the median
 told beside it: the median sets the pacing reader's one call against a whole
-reading.
+reading. `READERS_BASELINE=<a kept run's results.json>` brings that run's
+readings of the arms this run does not read in beside this run's (a case
+changed since is left out; the report names the run and its commit), so the
+one reader re-measured alone is judged against the two readers' last reading
+without paying to read them again.
 
 ## Quench batch coupling — shared defaults and hooks
 

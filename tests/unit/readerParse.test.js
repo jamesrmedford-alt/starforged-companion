@@ -42,6 +42,14 @@ describe('a reply the reader can read', () => {
     expect(parseReading(reading({ move: 'develop-your-relationship', stat: null })).moveId).toBe('develop_your_relationship');
   });
 
+  it('a reply that leaves out what is null or false reads as one that gives it', () => {
+    const full = parseReading(reading(), { narration: 'I jump the gap.' });
+    const lean = JSON.stringify({ move: 'face_danger', risk: 'high', category: 'exploration', confidence: 'high', reason: 'Crossing the gap is risky.', stat: 'edge',
+      stakes: { hit: 'You make the far side.', miss: 'You slip and fall hard.', missSuffer: { move: 'endure_harm', amount: 1 } } });
+    expect(parseReading(lean, { narration: 'I jump the gap.' })).toEqual(full);
+    expect(parseReading('{"move": null, "category": "social", "confidence": "high", "reason": "Talk."}')).toMatchObject({ moveId: null, asked: false, risk: null, failed: null });
+  });
+
   it('no move: null, "none" or "no move" — the open reading\'s right answer for a line that makes none', () => {
     for (const none of [null, 'none', 'No move', 'no_move']) {
       expect(parseReading(reading({ move: none, risk: null, stat: null, stakes: null })), String(none)).toMatchObject({ moveId: null, interpretation: null, failed: null, risk: null });
@@ -94,6 +102,31 @@ describe('the words held to their values', () => {
     delete legacy.reason;
     legacy.rationale = 'today\'s key';
     expect(parseReading(JSON.stringify(legacy)).reason).toBe('today\'s key');
+  });
+});
+
+describe('a line that names its move asks for it (classifier.js "A LINE THAT NAMES ITS MOVE ASKS FOR IT", in code)', () => {
+  const askedFor = (line, over) => parseReading(reading({ asked: false, ...over }), { narration: line }).asked;
+
+  it('the move\'s name of two words or more, in any tense or person, everyday English included', () => {
+    // The fourth live run's a33, offered for the density; the one reader's own asked missed it.
+    expect(askedFor('I set a course for Bleakhold Station.', { move: 'set_a_course', stat: 'supply' })).toBe(true);
+    expect(askedFor('I face danger and slip the ship through that gap.', { move: 'face_danger' })).toBe(true);
+    expect(askedFor('We gathered information from the dock clerks.', { move: 'gather_information', stat: 'wits' })).toBe(true);
+    expect(askedFor('I fulfil my vow at last.', { move: 'fulfill_your_vow', stat: null })).toBe(true);
+    expect(askedFor('Forging a bond with her is all I want.', { move: 'forge_a_bond', stat: null })).toBe(true);
+    // A scene-challenge variant is named by its ordinary move's name.
+    expect(askedFor('I face danger to hold the crowd back.', { move: 'face_danger_scene_challenge', sceneChallenge: 'The Riot' })).toBe(true);
+  });
+
+  it('not when the line names another move, or none; a one-word name is an everyday verb, left to the reader', () => {
+    expect(askedFor('I plot the course and take her out to Bleakhold Station.', { move: 'set_a_course', stat: 'supply' })).toBe(false);
+    expect(askedFor('I set a course for the drift beyond the charts.', { move: 'undertake_an_expedition', stat: 'wits' })).toBe(false);
+    expect(askedFor('I heal the cut on my arm.', { move: 'heal', stat: 'wits', healSituation: 'self' })).toBe(false);
+    // The reply's own asked stands.
+    expect(askedFor('I try to heal the cut on my arm.', { move: 'heal', stat: 'wits', healSituation: 'self', asked: true })).toBe(true);
+    // A chosen move is the card's: nothing is asked.
+    expect(parseReading(reading({ move: 'set_a_course', stat: 'supply' }), { mode: 'chosen', chosen: { moveId: 'set_a_course' }, narration: 'I set a course for Bleakhold.' }).asked).toBe(false);
   });
 });
 

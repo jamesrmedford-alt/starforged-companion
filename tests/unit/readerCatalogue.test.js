@@ -63,14 +63,17 @@ describe('the line reader\'s catalogue', () => {
   });
 
   it('a ruling sits beside its trigger, in brackets — the decided ones, in the module\'s own words', () => {
-    expect(entryOf('develop_your_relationship').ruling).toBe('No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.');
+    // A favour or a risk taken is one of the quoted deeds; a plea for the tie itself is talk (issue #384, the first measure).
+    expect(entryOf('develop_your_relationship').ruling).toBe('A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself — trust, friendship, to count on each other — is talk, no deed (rule 4). No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.');
+    expect(entryOf('fulfill_your_vow').ruling).toBe('When the line claims what the vow swore — its goal reached — as the scene bears out: this, not a milestone (rule 6).');
+    expect(entryOf('reach_a_milestone').ruling).toBe('It marks the vow\'s progress with no roll. The RECENT SCENE bears the headway out (rule 6).');
     expect(entryOf('forge_a_bond').ruling).toMatch(/^A full relationship track is ready for it; less does not forbid it, at worse odds\./);
     expect(entryOf('make_a_connection').ruling).toMatch(/^Not for someone who is already the character's connection/);
     expect(entryOf('undertake_an_expedition').ruling).toBe('Any journey toward a destination that is not a charted place, even when the player says "set a course".');
     expect(READER_CATALOGUE.find(g => g.title === 'LEGACY').note).toBe('Only when the line is plainly about it.');
     expect(READER_CATALOGUE.find(g => g.title === 'FATE').note).toBe('Only when the line is plainly about it.');
     const rendered = renderReaderCatalogue();
-    expect(rendered).toContain('[No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.]');
+    expect(rendered).toContain('Asking for the relationship itself — trust, friendship, to count on each other — is talk, no deed (rule 4). No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.]');
     expect(rendered).toContain('LEGACY [Only when the line is plainly about it.]');
   });
 

@@ -107,7 +107,7 @@ describe('the GM\'s rules record a cast member\'s draft with no bond (the fourth
     return null;
   };
   const CARDS = {
-    // Today's card (renderDraftCardHtml): a person's row asks whose connection — a button per character, and "No one" …
+    // The card before overhaul 4 (the kept runs' — renderDraftCardHtml then): a person's row asked whose connection — a button per character, and "No one" …
     'today, with the card\'s character': [{ label: 'Mira Kestrel', actorId: 'P1' }, { label: 'No one', actorId: '' }],
     // … or, where the card names none, a plain Confirm (the confirming user's own character's) and "No one".
     'today, with no character on the card': [{ label: 'Confirm' }, { label: 'No one', actorId: '' }],
@@ -138,13 +138,19 @@ describe('the GM\'s rules record a cast member\'s draft with no bond (the fourth
     expect(draftToConfirm([{ messageId: 'm', index: 0, name: 'Tamsin Vey', type: 'connection' }], members)).toMatchObject({ member: { name: 'Tamsin Vey' }, exact: true });
   });
 
-  it('the module\'s draft card marks its buttons as the rule reads them: "No one" by an empty actor id, a character\'s by theirs', () => {
-    // src/entities/entityExtractor.js renderDraftCardHtml (issue #354 P2-16), today's card.
+  it('the module\'s draft card marks its buttons as the rule reads them: a person\'s Confirm with no actor id, Make a Connection apart', () => {
+    // src/entities/entityExtractor.js renderDraftCardHtml — overhaul 4's card
+    // (decision D4, which replaced the "No one" and character buttons): the
+    // rule presses the row's sf-draft-confirm with no data-actor-id; the
+    // 🤝 Make a Connection buttons carry a PC's id under their own action,
+    // so the rule never presses one.
     const source = fs.readFileSync(path.join(ROOT, 'src/entities/entityExtractor.js'), 'utf8');
-    expect(source).toContain('`<button class="sf-draft-btn sf-draft-confirm sf-draft-no-bond" data-action="sf-draft-confirm" `');
-    expect(source).toContain('data-actor-id="" title="Add them with no connection on anyone\'s sheet">No one</button>');
-    expect(source).toContain('`data-index="${e.index}" data-actor-id="${escapeHtml(h.actorId)}">${escapeHtml(h.name)}</button>`');
+    expect(source).toContain('`data-action="sf-draft-confirm" data-index="${e.index}" title="Record them — no connection on anyone\'s sheet">Confirm</button>`');
     expect(source).toContain('`data-action="sf-draft-confirm" data-index="${e.index}">Confirm</button>`');
+    expect(source).toContain('`<button class="sf-draft-btn sf-draft-make-connection" data-action="sf-draft-make-connection" `');
+    expect(source).toContain('`data-index="${e.index}" data-actor-id="${escapeHtml(h.actorId)}" title="Roll Make a Connection for ${escapeHtml(h.name)}, with them">`');
+    expect(source, 'no "No one" button left to press').not.toContain('sf-draft-no-bond');
+    expect(source, 'no Confirm carries an actor id').not.toMatch(/data-action="sf-draft-confirm"[^`]*data-actor-id/);
   });
 
   it('a run records her with no bond; a rehearsal may ask for the fourth run\'s road; a replay plays under its own run\'s rule', () => {
