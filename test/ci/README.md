@@ -329,6 +329,9 @@ named on a line of its own as well ("WAITING ON YOU"). The
 scorecard's **Plain lines** row says what each line of play became —
 rolled, offered a move, narrated with nothing offered, or rightly narrated
 with nothing on the sheet to recover — and whether it named a move (`rules/ci-e2e.md` → "A charter's player stays in the fiction").
+It reads the line reader's reading and the route the table took, off what
+the step posted (a move card is a roll, a paced card's move an offer); a
+run kept from before the switch is read by its two readers' replies.
 Its **Refrains** row and section count what each session's narrations of
 play keep returning to (the `@scene` answers apart) — the words and phrases in a third or more of them, with the
 longest run in a row, and the narrations that end on someone waiting,
@@ -396,7 +399,10 @@ line the script makes one — asked for, with the script's stat and target, so
 the module rolls it at any dial and after any run of rolls, as the two
 readers' stand-in rolled it (the lines themselves name no move) — and the move
 path — confirmation, held result, price, victory card — is walked with no
-key. A line the script offers a move for is read unasked, and offered. A long run also writes `beats.json`,
+key. A line the script offers a move for is read unasked, and offered. The
+stand-in's `asked` is a choice, not a measure: a rehearsal walks the beats,
+and how the real reader reads a plain line is the live run's to measure (the
+Plain lines row) and the readers' plain-line test's. A long run also writes `beats.json`,
 `mechanics.json` and `ledger.json`. Its caps are its own: 100 actions, 400
 model calls, 60 minutes, $15.
 

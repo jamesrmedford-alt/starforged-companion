@@ -25,7 +25,7 @@ import { movesNamedIn, moveLabel } from '../../test/ci/playwright/lib/moveNames.
 import { ATTACK_MOVES, BEAT_CHECKS, LAST_RESORT_AFTER, createPointer, isSceneQuestion } from '../../test/ci/playwright/lib/beats.mjs';
 import { playerSystemPrompt } from '../../test/ci/playwright/lib/player.mjs';
 import { isProbeLine, scoreLedger } from '../../test/ci/playwright/lib/ledger.mjs';
-import { freeformOf, moveReadOf, pacingReadOf, scorecard } from '../../test/ci/playwright/lib/review.mjs';
+import { freeformOf, lineReadOf, moveReadOf, pacingReadOf, scorecard } from '../../test/ci/playwright/lib/review.mjs';
 
 const PLAYWRIGHT = path.resolve(__dirname, '../../test/ci/playwright');
 const CHARTER = { name: 'long-haul', ...JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'charters/long-haul.json'), 'utf8')) };
@@ -233,6 +233,80 @@ describe('what each line of play became — from the readers\' own replies', () 
     expect(f.wanted).toMatchObject({ lines: 1, rolled: 1 });
     expect(f.questionsAsPlay).toEqual({ lines: 1, offered: 1, rolled: 0 });
     expect(f.sceneQuestions).toBe(1);
+  });
+
+  // Since the switch (overhaul 1) one call reads a line — the line reader's —
+  // and the table routes its reading: what became of the line is read off
+  // what the step posted. A kept run, made on the two readers, is read as
+  // above (the second and fourth live runs' cases).
+  describe('a run on the line reader', () => {
+    const open = (text) => `MODE — READ THE LINE: say which move it sets about, if any.\n\nSITUATION — Mira Kestrel's sheet as it stands:\n\nPLAYER LINE\n"${text}"`;
+    const reader = (step, text, json, user = open(text)) => ({ step, kind: 'callReaderAPI>readLine', user, response: { content: [{ type: 'text', text: JSON.stringify(json) }] } });
+    const posted = (step, card, extra = {}) => ({ step, card, narrator: card.includes('narratorCard'), moveId: null, ...extra });
+    // A charter of three beats, each wanting one move.
+    const charter = { facts: [], baits: [], beats: [{ id: 'g', n: 1, wants: ['gather_information'] }, { id: 'd', n: 2, wants: ['develop_your_relationship'] }, { id: 'r', n: 3, wants: ['heal'] }] };
+    const beats = [{ id: 'g', n: 1, steps: ['a1', 'a3', 'a5'] }, { id: 'd', n: 2, steps: ['a2'] }, { id: 'r', n: 3, steps: ['a4', 'a6'] }];
+    const LINES = {
+      a1: 'I work the docks for who saw the raiders last.',
+      a2: 'I slide the salvage claim across Tamsin\'s ledger: it is hers.',
+      a3: 'I lean on the rail and watch the cutters come in.',
+      a4: 'I clean the gash in my forearm.',
+      a5: 'I gather information on the docks about the raiders.',
+      a6: 'I see to the cut on my arm again.',
+    };
+    const exchanges = [
+      reader('a1', LINES.a1, { move: 'gather_information', risk: 'plain', category: 'investigation', confidence: 'high', reason: 'Asking around the docks.', stat: 'wits' }),
+      reader('a2', LINES.a2, { move: 'develop_your_relationship', category: 'social', confidence: 'high', reason: 'A gift of worth.', target: 'Tamsin' }),
+      reader('a3', LINES.a3, { move: null, category: 'exploration', confidence: 'high', reason: 'Watching is no move.' }),
+      reader('a4', LINES.a4, { move: 'heal', risk: 'plain', category: 'downtime', confidence: 'high', reason: 'Tending a wound.', stat: 'iron' }),
+      reader('a5', LINES.a5, { move: 'gather_information', asked: true, risk: 'plain', category: 'investigation', confidence: 'high', reason: 'The player names it.', stat: 'wits' }),
+      // The control: a6's only reading is a card's chosen move — no reading of the line.
+      reader('a6', LINES.a6, { move: 'heal', category: 'downtime', confidence: 'high', reason: 'The card chose it.', stat: 'iron' },
+        `MODE — THE MOVE IS CHOSEN: heal (Heal), by a card the table pressed.\n\nPLAYER LINE\n"${LINES.a6}"`),
+    ];
+    const messages = [
+      say('a1', LINES.a1), posted('a1', ['moveResolution', 'resolutionId']), posted('a1', ['narratorCard', 'moveId'], { moveId: 'gather_information' }),
+      say('a2', LINES.a2), posted('a2', ['narratorCard', 'pacedNarrative', 'suggestedMove'], { suggestedMove: 'develop_your_relationship' }),
+      say('a3', LINES.a3), posted('a3', ['narratorCard', 'pacedNarrative', 'suggestedMove'], { suggestedMove: null }),
+      say('a4', LINES.a4), posted('a4', ['narratorCard', 'pacedNarrative', 'cannotMake'], { cannotMake: { moveId: 'heal', code: 'recoverable-health' } }),
+      say('a5', LINES.a5), posted('a5', ['moveResolution', 'resolutionId']), posted('a5', ['narratorCard', 'moveId'], { moveId: 'gather_information' }),
+      say('a6', LINES.a6), posted('a6', ['moveResolution', 'resolutionId']),
+    ];
+
+    it('reads the reader\'s open reading alone: its move and whether the player asked for it', () => {
+      expect(lineReadOf(exchanges[0])).toEqual({ move: 'gather_information', asked: false, reasoning: 'Asking around the docks.' });
+      expect(lineReadOf(exchanges[4])).toMatchObject({ move: 'gather_information', asked: true });
+      expect(lineReadOf(exchanges[2]), 'a line read as no move').toMatchObject({ move: null });
+      expect(lineReadOf(exchanges[5]), 'a card\'s chosen move is no reading of the line').toBeNull();
+      expect(lineReadOf(reader('a9', 'x', { category: 'social', reason: 'no move key' })), 'a reply that names no move').toBeNull();
+      expect(lineReadOf({ step: 'a9', kind: 'callReaderAPI>readLine', user: open('x'), response: { content: [{ type: 'text', text: 'I would call it a Compel.' }] } })).toBeNull();
+    });
+
+    it('what each line became, by what the step posted: a move card rolled, a paced card\'s move offered, else narrated — and a refused recovery read right', () => {
+      const f = freeformOf({ messages, exchanges, beats, charter });
+      const at = (step) => f.lines.find(l => l.step === step);
+      expect(at('a1')).toMatchObject({ became: 'rolled', move: 'gather_information', asked: false, right: true, reasoning: 'Asking around the docks.' });
+      expect(at('a2')).toMatchObject({ became: 'offered', move: 'develop_your_relationship', right: true });
+      expect(at('a3')).toMatchObject({ became: 'narrated', move: null, right: false });
+      expect(at('a4')).toMatchObject({ became: 'narrated', nothingToRecover: ['health'], right: true });
+      expect(at('a5')).toMatchObject({ became: 'rolled', move: 'gather_information', asked: true, named: ['Gather Information'], right: true });
+      // The control: the same cards with no reading of the line say nothing of it.
+      expect(at('a6')).toMatchObject({ became: 'unknown', move: null, right: false });
+      expect(at('a6')).not.toHaveProperty('asked');
+      expect(f.wanted).toEqual({ lines: 6, rolled: 2, offered: 1, anotherMove: 0, narrated: 1, nothingToRecover: 1, unknown: 1 });
+      expect(f.plain, 'the plain lines alone').toMatchObject({ lines: 5, rolled: 1, offered: 1, narrated: 1, nothingToRecover: 1, unknown: 1 });
+
+      const text = scorecard({ charter: CHARTER, run: { id: 'r', mode: 'live' }, beats, freeform: f });
+      expect(text).toContain('| Plain lines | 6 line(s) where a move was wanted: 2 rolled, 1 offered it, 0 read as another move, 1 narrated with nothing offered, 1 rightly narrated with nothing to recover, 1 with no reading recorded;');
+      expect(text).toContain(`| a5 | 1 | ${LINES.a5} | Gather Information | rolled (asked, the reader says) | gather_information | gather_information |`);
+      expect(text).toContain(`| a1 | 1 | ${LINES.a1} |  | rolled | gather_information | gather_information |`);
+      expect(text).toContain(`| a4 | 3 | ${LINES.a4} |  | narrated — right: nothing to recover (health full) |  | heal |`);
+    });
+
+    it('a recovery the contracts refused for something other than a full meter is no such reading', () => {
+      const refused = messages.map(m => (m.step === 'a4' && m.cannotMake ? { ...m, cannotMake: { moveId: 'heal', code: 'heal-a-patient' } } : m));
+      expect(freeformOf({ messages: refused, exchanges, beats, charter }).lines.find(l => l.step === 'a4')).toMatchObject({ became: 'narrated', right: false });
+    });
   });
 
   it('the scorecard says it in one row, lists every line, and names the beats that came to their last resort', () => {

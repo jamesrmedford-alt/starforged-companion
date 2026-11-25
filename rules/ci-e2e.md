@@ -1307,7 +1307,11 @@ line goes unread.
   the syntax gets. The ledger scores both alike.
 - **The scorecard's "Plain lines" row and "What each line of play became"**
   (`lib/review.mjs` → `freeformOf`) are the measure: for every line of play,
-  the pacing reader's decision and the move chosen — from the readers' own
+  how it was read — the line reader's reading (`lineReadOf`: its move, and
+  whether the player asked for it) and the route the table took, read off
+  what the step posted (a move card is a roll, a paced card's move an offer,
+  anything else narration); or, in a run kept from before the switch, the
+  pacing reader's decision and the move chosen, from the readers' own
   replies in the run's recording — the move its beat wanted, and whether the
   line named a move (`lib/moveNames.mjs`: a count to start reading from — a
   move's name as the rules write it, the rules' own words, and a move's own
@@ -1315,9 +1319,11 @@ line goes unread.
   at a29 was not counted; a test holds every word of every name in
   `src/schemas.js` `MOVES` to that list or to plain English). A line whose
   beat wants a recovery, narrated because the sheet had nothing for the one
-  it set about, is read right — by the reader's own reasoning, borne out by
-  the SITUATION block in the request it read (`nothingToRecoverOf`): the
-  fourth live run's eight such readings were counted as misses.
+  it set about, is read right — by the pacing reader's own reasoning, borne
+  out by the SITUATION block in the request it read (`nothingToRecoverOf`),
+  or, under the line reader, by the move contracts' refusal on the paced card
+  (`cannotMake`, a `recoverable-…` predicate): the fourth live run's eight
+  such readings were counted as misses.
   `rescore.mjs` applies it to a kept run by what its beats want now.
 
 **The readers' plain-line test** (`./scripts/cloud.sh readers`;

@@ -812,21 +812,75 @@ export function moveReadOf(exchange) {
 }
 
 /**
+ * The line reader's reading of a line (src/moves/reader.js — the one call
+ * that reads a typed line since the switch, overhaul 1): the move it read, or
+ * none, whether the player asked for it, and why. Only its open reading — a
+ * call whose user message opens READ THE LINE — is the line's: a roll asked
+ * for and a card's chosen move are read in modes of their own. A reply with
+ * no `move` is no reading (the module's parseReading fails it the same way).
+ * Whether the line was rolled, offered or narrated is the module's route, not
+ * the reader's: freeformOf reads it off what the step posted.
+ *
+ * @param {object|null} exchange — a recorded `callReaderAPI>readLine` call
+ * @returns {{ move: string|null, asked: boolean, reasoning: string|null }|null}
+ */
+export function lineReadOf(exchange) {
+  if (!/^MODE — READ THE LINE\b/.test(String(exchange?.user ?? "").trim())) return null;
+  const j = replyJson(exchange);
+  if (!j || !(Object.hasOwn(j, "move") || Object.hasOwn(j, "moveId"))) return null;
+  const raw = Object.hasOwn(j, "move") ? j.move : j.moveId;
+  const move = typeof raw === "string" && raw.trim() && !/^(?:none|null|no[ _-]?move)$/i.test(raw.trim()) ? raw.trim() : null;
+  return { move, asked: j.asked === true || j.asked === "true", reasoning: typeof j.reason === "string" ? j.reason : null };
+}
+
+/** The meter a recovery the move contracts refused had nothing for: their predicate's id (contracts/predicates.js RECOVERABLE). */
+const REFUSED_RECOVERY = /^recoverable-(health|spirit|supply)$/;
+
+/**
+ * What a step posted for a line the line reader read, as the table routed it
+ * (pacing/readAndRoute.js routeReading): a move's result card, or its
+ * narration, is a roll — of the move the narration names, else the
+ * reading's; a paced narration with a move on its button (`suggestedMove`)
+ * is an offer; anything else is narration. A recovery the contracts refused
+ * for having nothing to recover (the paced card's `cannotMake`) is named by
+ * its meter.
+ *
+ * @param {object[]} posted — the step's messages that are not the player's
+ * @param {{ move: string|null }} reading — lineReadOf's
+ * @returns {{ became: "rolled"|"offered"|"narrated", move: string|null, refusedRecovery: string[]|null }}
+ */
+function routedOf(posted, reading) {
+  const card = (m) => m.card ?? [];
+  const told = posted.find(m => m.narrator && m.moveId) ?? null;
+  if (told || posted.some(m => card(m).includes("moveResolution"))) return { became: "rolled", move: told?.moveId ?? reading.move ?? null, refusedRecovery: null };
+  const paced = posted.find(m => card(m).includes("pacedNarrative")) ?? null;
+  if (paced?.suggestedMove) return { became: "offered", move: paced.suggestedMove, refusedRecovery: null };
+  const meter = REFUSED_RECOVERY.exec(String(paced?.cannotMake?.code ?? ""))?.[1] ?? null;
+  return { became: "narrated", move: null, refusedRecovery: meter ? [meter] : null };
+}
+
+/**
  * What became of each line of play the player typed — the measure of
  * decisions.md → "A player is never made to name a move". For every line that
- * is not a command or a scene question: how the pacing reader read it (from
- * its own reply — `exchanges` are a run's recorded calls with their replies),
- * the move the move reader chose, whether the line named a move
- * (lib/moveNames.mjs), and — where the line's beat wants a move (the charter
- * beat's `wants`, or its check's moves; its first `setupLines` lines want
- * none) — whether that is the move it got.
+ * is not a command or a scene question: how it was read — from the readers'
+ * own replies (`exchanges` are a run's recorded calls with their replies) —
+ * whether the line named a move (lib/moveNames.mjs), and — where the line's
+ * beat wants a move (the charter beat's `wants`, or its check's moves; its
+ * first `setupLines` lines want none) — whether that is the move it got.
+ *
+ * A run reads whichever readers it had. Before the switch (overhaul 1), the
+ * pacing reader's decision and the move reader's move — the kept runs are
+ * scored so. Since, the line reader's reading (`lineReadOf`: the move, and
+ * whether the player asked for it), and the route the table took, read off
+ * what the step then posted (`routedOf`).
  *
  *   rolled    the line was made a move        offered   a move was offered on a button
  *   narrated  narrated, and nothing offered   unknown   no reading was recorded for it
  *
  * A line whose beat wants a recovery, narrated because the sheet had nothing
- * for the recovery it set about (`nothingToRecover`: the meters, as the
- * reader said and its sheet bore out — nothingToRecoverOf), is read right.
+ * for the recovery it set about (`nothingToRecover`: the meters — as the
+ * pacing reader said and its sheet bore out, nothingToRecoverOf; or as the
+ * move contracts refused it, the paced card's `cannotMake`), is read right.
  *
  * A count to start reading from: whether a line *should* have been a move is
  * the charter's say for its move beats and the reader's everywhere else.
@@ -850,16 +904,30 @@ export function freeformOf({ messages = [], exchanges = [], beats = [], charter 
     const pacingCall = call(m.step, /classifyInput$/);
     const pacing = pacingReadOf(pacingCall);
     const read = moveReadOf(call(m.step, /interpretMove$/));
+    // The line reader's, where the run has no two readers' reply for the line:
+    // the step's first open reading that can be read.
+    const line = pacing || read ? null
+      : exchanges.filter(x => x.step === m.step && /readLine$/.test(x.kind ?? "")).map(lineReadOf).find(Boolean) ?? null;
     let became = "unknown";
-    if (pacing?.decision === "MOVE") became = read?.noMove ? (pacing.suggested ? "offered" : "narrated") : "rolled";
-    else if (pacing?.decision === "NARRATIVE_WITH_MOVE_AVAILABLE") became = "offered";
-    else if (pacing) became = "narrated";
-    else if (read?.moveId) became = "rolled";
-    const move = became === "rolled" ? (read?.moveId ?? pacing?.suggested ?? null) : became === "offered" ? (pacing?.suggested ?? null) : null;
-    const recovery = became === "narrated" && wanted.some(id => RECOVER_MOVE_IDS.includes(id)) ? nothingToRecoverOf(pacing?.reasoning, pacingCall?.user) : null;
+    let move = null;
+    let recovery = null;
+    if (line) {
+      const routed = routedOf(messages.filter(x => x.step === m.step && !x.fromPlayer), line);
+      ({ became, move } = routed);
+      recovery = became === "narrated" && wanted.some(id => RECOVER_MOVE_IDS.includes(id)) ? routed.refusedRecovery : null;
+    } else {
+      if (pacing?.decision === "MOVE") became = read?.noMove ? (pacing.suggested ? "offered" : "narrated") : "rolled";
+      else if (pacing?.decision === "NARRATIVE_WITH_MOVE_AVAILABLE") became = "offered";
+      else if (pacing) became = "narrated";
+      else if (read?.moveId) became = "rolled";
+      move = became === "rolled" ? (read?.moveId ?? pacing?.suggested ?? null) : became === "offered" ? (pacing?.suggested ?? null) : null;
+      recovery = became === "narrated" && wanted.some(id => RECOVER_MOVE_IDS.includes(id)) ? nothingToRecoverOf(pacing?.reasoning, pacingCall?.user) : null;
+    }
     return {
       step: m.step, beat: state?.n ?? null, text: m.text, question, named: movesNamedIn(m.text), became, move, wanted,
-      right: wanted.length ? (!!move && wanted.includes(move)) || !!recovery : null, reasoning: pacing?.reasoning ?? null,
+      right: wanted.length ? (!!move && wanted.includes(move)) || !!recovery : null, reasoning: pacing?.reasoning ?? line?.reasoning ?? null,
+      // The line reader's own word that the player asked for the move (its rule 9).
+      ...(line ? { asked: line.asked } : {}),
       ...(recovery ? { nothingToRecover: recovery } : {}),
     };
   });
@@ -1439,7 +1507,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ["Continuity — the helpers", ledger ? `${helperRows.length} refusal(s) in summaries, Chronicle entries and recaps` : "not scored", "each helper's writing against the ledger", "medium: a refusal is a contradiction that was thought of"],
       ["Agency", `${agency.length} sentence(s) that speak for the character`, "quoted speech given to \"you\"", "low: a count to start reading from"],
       ...(slips ? [["Told, and written anyway", `${slips.directives.length} instruction(s) written as prose; ${slips.statsAloud.length} stat(s) read aloud; ${slips.crewInOpenings.length} opening sentence(s) naming a crew role`, "each narrated sentence against the instructions' own words, a stat with its number, a crew role in an opening", "medium for the first two; the third is to be read"]] : []),
-      ...(freeform ? [["Plain lines", plainLinesResult(freeform), "each line of play's reading, from the two readers' own replies; the move its beat wanted; a move's name looked for in the line", "medium: a count — whether a line should have been a move is the charter's say for its move beats only, and a named move is a phrase match, to be read"]] : []),
+      ...(freeform ? [["Plain lines", plainLinesResult(freeform), "each line of play's reading, from the readers' own replies — the line reader's, with the route the table took read off what the step posted, or, in a run before the switch, the two readers'; the move its beat wanted; a move's name looked for in the line", "medium: a count — whether a line should have been a move is the charter's say for its move beats only, and a named move is a phrase match, to be read"]] : []),
       ["Friction", friction ? `${friction.actionsPerLine ?? "—"} actions per line of play; the GM answered ${friction.gmAnswers} prompt(s); ${friction.didNotLand.length} action(s) did not land` : "not counted", "the player's actions and the GM's rules' answers", "high"],
       ["Narrator quality", worstOpening ? `repetition by content: ${pct(worstOpening.sharedShare)} of ${worstOpening.later}'s content words were in ${worstOpening.earlier}; ${worstOpening.repeatedActs.length} repeated who-is-doing-what` : "no two scenes of one kind to compare", "shared content words and repeated acts between scenes of one kind", "medium for repetition; the rest is the reading"],
       ...(setPieces?.totals.scenes || setPieces?.spotlights.length ? [["Set-pieces", setPiecesResult(setPieces), "each opening, closing and spotlight call: its MATERIAL's numbered results, and the words its reply's fact block gave for each (`builtFrom`) found in its prose; each Begin card's spotlight roll followed by its cutaway or by the note that it is the table's to envision", "high for the arithmetic; whether a result is in the scene recognisably, and not only in the words given, is for the reading"]] : []),
@@ -1588,7 +1656,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       "A player is never made to name a move: a plain line that sets about one should be rolled, or offered it on a button. Each line the player typed that was not a command or a scene question — how it was read, and whether its beat wanted a move.", "",
       table(["At", "Beat", "Line", "Named", "Became", "Move", "Wanted"], freeform.lines.map(l => [
         l.step, l.beat ?? "", cell(l.text.slice(0, 140)), l.named.join(", "),
-        `${l.became}${l.question ? " (a memory question asked as play)" : ""}${l.nothingToRecover ? ` — right: nothing to recover (${l.nothingToRecover.join(", ")} full)` : ""}${l.right === false ? " — **not what was wanted**" : ""}`,
+        `${l.became}${l.asked && l.became !== "narrated" ? " (asked, the reader says)" : ""}${l.question ? " (a memory question asked as play)" : ""}${l.nothingToRecover ? ` — right: nothing to recover (${l.nothingToRecover.join(", ")} full)` : ""}${l.right === false ? " — **not what was wanted**" : ""}`,
         l.move ?? "", l.wanted.join(" / "),
       ])), "");
     if (freeform.lastResort.length) out.push(`Beats that came to their last resort (the move named, after plain lines brought nothing): ${freeform.lastResort.join(", ")}.`, "");
