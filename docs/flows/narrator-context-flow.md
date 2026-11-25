@@ -899,13 +899,18 @@ short form there its line does not name, is added at that message's end,
 NAME-NOTE-MISSES-THE-USER-MESSAGE: it added nothing once this note was
 there at all)) · [6.5] active-scene ledger
 (SCENE FRAME — with the scene's question, shown while it stands, marked
-when answered (issue #353 R2), released when play has left it unanswered for
+when answered (issue #353 R2), let go when play has left it unanswered for
 `SCENE_QUESTION_BEATS` beats, and — with none — a line asking this beat for
-the one the scene turns on now, from the player's latest line
-(`askSceneQuestion`; never in a vignette's, an `@scene` answer's or the
-recap's prompt — known-issues NARRATOR-REFRAINS) → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
+one from the player's words, or none if they set out to settle nothing
+(`askSceneQuestion`; only the move, paced, round and oracle follow-up modes —
+overhaul 2 §7.2: never in a vignette's, a clock vignette's, the oath scene's,
+the inciting incident's, an `@scene` answer's or the recap's prompt —
+known-issues NARRATOR-REFRAINS) → TRUTHS → **CORRECTED** → **PLAY LET THESE
+GO** (the frame's `letGo`, at most four: hooks the narration posed that play
+did not take up — not to end on, restate or set again; REFRAIN-OUTLIVES-THE-QUESTION)
+→ STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
-condition last — frame/truths/corrections/ship are
+condition last — frame/truths/corrections/let-go/ship are
 never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
 `buildNarratorExtras` → `extras.unrevealed`, the active plans of the GM-only
 Secrets journal whose subject is in play — made in this scene, its entity
@@ -1491,11 +1496,22 @@ Starship" took the facts, the scene's place and relevance, issue #345 AA06), shi
 `position` stateChanges routed to the §20 ship record, `applySceneFrame`
 full-replacement snapshot — a session vignette's with its question taken off
 (`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
-play — it sets no question and changes none), every other beat's then counted
+play — it sets no question and changes none); every beat's frame is first
+read against the beat's player words (`playersFrame`, overhaul 2 §7.2–7.3:
+`ctx.ground` — `provenance.js groundOf`, the move's written line, the paced
+line, a round's lines, the oracle's typed question — and `ctx.mode`): a
+question the frame does not already hold stands only when the mode may set
+one (`QUESTION_MODES`), it shares a telling word with those words (the PCs'
+and the command vehicle's names are no evidence — `namesNoEvidence`) and it
+is no let-go question again (`playersQuestion`); a Now line that carries a
+let-go question is stored empty (`touchesLetGo`). Every beat is then counted
 against the question the frame keeps (`countSceneQuestionBeat` →
-`sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the frame keeps none —
-known-issues NARRATOR-REFRAINS: an opening vignette's hook was its session's
-question in 22 prompts) — each truth, state value and the frame stamped
+`sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the question is let go:
+onto the frame's code-kept `letGo` list — its text and telling stems — and
+the frame's Now line with it — known-issues NARRATOR-REFRAINS: an opening
+vignette's hook was its session's question in 22 prompts;
+REFRAIN-OUTLIVES-THE-QUESTION: a released question was set again in other
+words four times in one session) — each truth, state value and the frame stamped
 with the narration's `narrationId` (`newNarrationId`; issue #321 U07, for the
 X-Card) — the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`,

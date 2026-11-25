@@ -24,6 +24,12 @@
  *   - The narrator is told a question is the player's line's, never a hook the
  *     line did not take up, and not to ring such a hook again.
  *
+ * Since overhaul 2 (§7.2–7.3) the code holds the question to the player's
+ * words, and a released question is let go — onto the frame's `letGo` list,
+ * its Now line with it, told under PLAY LET THESE GO and not set again
+ * (sceneQuestionIsThePlayers.test.js, letGoStaysLetGo.test.js). The beats
+ * below that set a question are given lines it takes its words from.
+ *
  * The prose, the lines and the fact blocks below are the run's own.
  */
 
@@ -77,7 +83,9 @@ const A62_QUESTION = 'What will the voice trade to take its slip back?';
 const A62_SITUATION = "The stamp, registry and the voice's slip point to one broker's seal at Hollow Spire; the voice wants to retract its words.";
 
 const frame = (over = {}) => ({ location: GALLEY, present: ['Mira Kestrel'], situation: BEATS[0].situation, ...over });
-const ASK = "  Question: none stands — set the one the scene turns on now, from the player's latest line.";
+const ASK = "  Question: none stands — if the player's latest line sets out to settle something, set that, in a few words that use the line's own; if it does not, set none.";
+/** A line that takes the hook up — the question is the player's (overhaul 2 §7.2): it shares the hook's words. */
+const HOOK_LINE = 'I wait in the galley for the speaker over the hatch.';
 
 // ── The two rules, pure ──────────────────────────────────────────────────────
 
@@ -174,26 +182,37 @@ describe('NARRATOR-REFRAINS — what the narrator is told', () => {
     const text = appendSidecarInstruction({ mode: 'paced_narrative' });
     expect(text).not.toContain("Set it on the scene's first beat");
     expect(text).not.toContain('it is kept for the scene');
-    expect(text).toContain("what the player's latest line sets out to settle");
-    expect(text).toContain('a hook of your own that their line did not take up');
-    expect(text).toContain('When SCENE FRAME shows none, or one');
-    expect(text).toContain('do not bring it');
+    // Overhaul 2 §7.2: the player's, from the line's own words — and none when the line sets out to settle nothing.
+    expect(text).toContain("and it is the player's: when the player's latest line sets out");
+    expect(text).toContain("set that, in a few words that use the line's own;");
+    expect(text).toContain('or no line prompted this beat, set none — never a hook');
+    expect(text).not.toContain('what that beat puts in front of the characters');
+    // §7.3: a let-go one is not set again, in any words.
+    expect(text).toContain('listed under PLAY LET THESE GO: do not set it again, in any words, and do');
+    expect(text).toContain('not bring it back in your prose');
     // What issue #353 R2 asked for stands.
-    expect(text).toContain('"questionAnswered": true and end the beat on a cut');
+    expect(text).toContain('"questionAnswered": true and end the beat on a');
     expect(text).toContain('Never end the scene: the table ends scenes.');
   });
 
-  it('a beat does not end twice on a hook the player\'s line did not take up', () => {
+  it('a beat ends on the story\'s answer to the player\'s line — never a thread of the narrator\'s own, never a let-go one', () => {
     for (const mode of ['move_resolution', 'paced_narrative', 'round_resolution']) {
-      expect(blocks(mode, null).mode, mode).toContain("A hook the player's line did not take up is not rung again");
+      const text = blocks(mode, null).mode;
+      expect(text, mode).toContain("The hook is the story's answer to the player's line");
+      expect(text, mode).toContain('never a new thread of your own, and never one under PLAY LET THESE GO.');
+      expect(text, mode).not.toContain('is not rung again');
     }
   });
 
-  it('a frame with no question asks a beat of play for one, from the player\'s line', () => {
+  it('a frame with no question asks a beat of play for one, from the player\'s words', () => {
     expect(blocks('paced_narrative', noQuestion).beat).toContain(ASK);
     expect(blocks('move_resolution', noQuestion).beat).toContain(ASK);
-    expect(blocks('round_resolution', noQuestion).beat).toContain("from the players' lines this round.");
-    expect(blocks('oracle_followup', noQuestion).beat).toContain('  Question: none stands — set the one the scene turns on now.');
+    expect(blocks('round_resolution', noQuestion).beat).toContain("if the players' lines this round set out to settle something");
+    expect(blocks('oracle_followup', noQuestion).beat).toContain('  Question: none stands — if the question the player put to the oracle sets out to settle something');
+    // A clock vignette, the oath scene and the inciting incident have no player's words to set one from (§7.2).
+    for (const mode of ['clock_advance', 'vow_swearing', 'inciting_incident']) {
+      expect(blocks(mode, noQuestion).beat, mode).not.toContain('none stands');
+    }
     // A frame that has one shows it, and nothing is asked.
     const standing = blocks('paced_narrative', { ...noQuestion, question: HOOK }).beat;
     expect(standing).toContain(`  Question: ${HOOK}`);
@@ -262,20 +281,21 @@ describe('NARRATOR-REFRAINS — on the table: the opening\'s hook is not the ses
     expect(opened).not.toHaveProperty('question');
     expect(narrationCallsOf(table).at(-1).system).toContain('## A VIGNETTE IS NOT THE SCENE');
 
-    // a56 — the first line of play: no hook in its SCENE FRAME, and it is asked for the scene's question.
+    // a56 — the first line of play: no hook in its SCENE FRAME, and it is asked for the scene's question —
+    // which is the player's: the line asks the cutter's name, and that is what the scene turns on.
     table.replies = reply('The speaker over the hatch clicks, and a dry voice reads the name off like a line from a ledger.',
-      frame({ question: 'Will Mira cross to the Cinder Wren?' }));
+      frame({ question: 'What is the raider cutter called?' }));
     await narrateLine(BEATS[0].line);
     expect(lastSystem()).toContain(`  Where:   ${GALLEY}`);
     expect(lastSystem()).toContain(ASK);
     expect(lastSystem()).not.toContain(`Question: ${HOOK}`);
-    expect(stored().sceneFrame).toMatchObject({ question: 'Will Mira cross to the Cinder Wren?', questionBeats: 0 });
+    expect(stored().sceneFrame).toMatchObject({ question: 'What is the raider cutter called?', questionBeats: 0 });
   }, 60_000);
 
   it('a vignette that follows a beat into its scene moves the frame, and leaves that scene\'s question and its count alone', async () => {
     table.replies = reply('A cutter drops out of the lane.', { location: 'the bridge', present: ['Mira Kestrel'],
       situation: 'A raider cutter drops out of the lane', question: 'Will the cutter fire?' });
-    await narrateLine('I bring the ship about.');
+    await narrateLine('I bring the ship about to face the cutter.');
     await narrateLine('I hold my course.');
     expect(stored().sceneFrame).toMatchObject({ question: 'Will the cutter fire?', questionBeats: 1 });
 
@@ -294,9 +314,9 @@ describe('NARRATOR-REFRAINS — on the table: the opening\'s hook is not the ses
   }, 60_000);
 
   it(`a question a beat sets is shown for ${SCENE_QUESTION_BEATS} beats, then released: the next prompt asks, and that beat's question is kept`, async () => {
-    // The beat that sets it — the run's hook, as if a line of play had posed it.
+    // The beat that sets it — the run's hook, as if a line of play had taken it up.
     table.replies = reply('The speaker over the hatch crackles once.', frame({ question: HOOK }));
-    await narrateLine('I wait in the galley.');
+    await narrateLine(HOOK_LINE);
     expect(stored().sceneFrame).toMatchObject({ question: HOOK, questionBeats: 0 });
 
     // a56, a58, a61 — three lines that do not take it up; each block copies it, as the run's did.
@@ -309,7 +329,9 @@ describe('NARRATOR-REFRAINS — on the table: the opening\'s hook is not the ses
       if (i + 1 < SCENE_QUESTION_BEATS) expect(table.world.campaignState().sceneFrame).toMatchObject({ question: HOOK, questionBeats: i + 1 });
     }
     expect(table.world.campaignState().sceneFrame).not.toHaveProperty('question');
-    expect(stored().sceneFrame.situation).toBe(BEATS[(SCENE_QUESTION_BEATS - 1) % BEATS.length].situation);
+    // Let go (overhaul 2 §7.3): onto the frame's list, and its Now line with it.
+    expect(stored().sceneFrame.letGo.map(e => e.text)).toEqual([HOOK]);
+    expect(stored().sceneFrame.situation).toBe('');
 
     // a62 — the move's prompt shows no question and asks; its own is the scene's now.
     table.replies = reply('The stamp, the registry and the voice\'s own slip line up on the table.',
@@ -317,20 +339,26 @@ describe('NARRATOR-REFRAINS — on the table: the opening\'s hook is not the ses
     await narrateMoveOn(table, moveResolution({ moveId: 'gather_information', moveName: 'Gather Information',
       outcome: 'strong_hit', outcomeLabel: 'Strong Hit', playerNarration: BEATS[2].line }));
     expect(lastSystem()).toContain(ASK);
-    expect(lastSystem()).not.toContain(HOOK);
+    expect(lastSystem()).not.toContain(`Question: ${HOOK}`);
+    // …and is told the hook was let go.
+    expect(lastSystem()).toContain('PLAY LET THESE GO');
+    expect(lastSystem()).toContain(`  "${HOOK}"`);
     expect(stored().sceneFrame).toMatchObject({ question: A62_QUESTION, questionBeats: 0, situation: A62_SITUATION });
   }, 120_000);
 
   it('the X-Card on the releasing beat puts the question and its count back in the store', async () => {
     table.replies = reply('The speaker over the hatch crackles once.', frame({ question: HOOK }));
-    await narrateLine('I wait in the galley.');
+    await narrateLine(HOOK_LINE);
     for (let i = 0; i < SCENE_QUESTION_BEATS; i += 1) {
       if (i === SCENE_QUESTION_BEATS - 1) await patSpeaks(table);          // the X-Card's beat begins here
       table.replies = reply('The drawer slides open its inch again.', frame({ question: HOOK, situation: BEATS[i % BEATS.length].situation }));
       await narrateLine(BEATS[i % BEATS.length].line);
     }
     expect(stored().sceneFrame).not.toHaveProperty('question');
+    expect(stored().sceneFrame.letGo.map(e => e.text)).toEqual([HOOK]);
     await playXCard(table);
     expect(stored().sceneFrame).toMatchObject({ question: HOOK, questionBeats: SCENE_QUESTION_BEATS - 1 });
+    // …and it is no longer let go: the beat that let it go is gone.
+    expect(stored().sceneFrame).not.toHaveProperty('letGo');
   }, 120_000);
 });

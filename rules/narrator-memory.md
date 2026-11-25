@@ -98,14 +98,20 @@ layers. This file is the never-break list.
    (`secrets.withoutUntoldTruths`, before the ledger and the plans read the
    block — VOW-FULFILLED-WITH-NOBODY-NAMED). It is a floor; the instruction
    (UNREVEALED, THIS BEAT ENDS A VOW) is what asks for the truth to be stated.
+   The scene frame's `question` is the player's (overhaul 2 §7.2): read against
+   the beat's own player words (`ctx.ground`, `provenance.js groundOf`; its
+   `ctx.mode` — `QUESTION_MODES`) by `narrator.js playersFrame` before
+   `applySceneFrame`, and the frame's `letGo` is code-kept — no fact block
+   writes or drops it, the parser has no such key (§7.3).
 
 3. **Required emissions are prompt-enforced, not code-enforced.** NPC
    location/vessel/condition (stateChanges) and intent/stakes (newTruths)
    are REQUIRED in the instruction text. If they stop arriving, fix the
    instruction wording first — do not silently add inference machinery.
 
-4. **Never-dropped tiers.** Scene frame, binding truths, and ship position
-   are never dropped from the ledger block under budget pressure; only
+4. **Never-dropped tiers.** Scene frame, binding truths, PLAY LET THESE GO
+   (the frame's let-go questions, at most four — overhaul 2 §7.3) and ship
+   position are never dropped from the ledger block under budget pressure; only
    state truncates — line by line, every other attribute before a
    character's location / vessel / condition, the oldest first within each
    (issue #286 A6; the block used to drop whole). Do not reorder the drop
@@ -125,13 +131,22 @@ layers. This file is the never-break list.
    question with it (issue #353 R2: never carried into the next scene; no
    narration ends a scene; within its scene it stands until a beat answers
    it or play has left it unanswered for `SCENE_QUESTION_BEATS` beats, when
-   the frame keeps none and the next beat's is the scene's — its count,
-   `questionBeats`, is on the frame beside it and nowhere else, and a session
-   vignette, a bookend, never sets, changes or counts against it:
-   `narrator.js` `countSceneQuestionBeat` / `bookendFrame`, known-issues
-   NARRATOR-REFRAINS), and the
-   scene's unanswered hidden
-   mysteries with their clocks, retired at every scene end (issue #362 D4).
+   it is let go — the frame keeps none, the question goes onto the frame's
+   `letGo` list and the frame's Now line goes with it — and the next beat's
+   is the scene's — its count, `questionBeats`, is on the frame beside it
+   and nowhere else, and a session vignette, a bookend, never sets, changes
+   or counts against it: `narrator.js` `countSceneQuestionBeat` /
+   `bookendFrame`, known-issues NARRATOR-REFRAINS). **The question is the
+   player's** (overhaul 2 §7.2–7.3, REFRAIN-OUTLIVES-THE-QUESTION): set only
+   by a beat of play with the player's words (`QUESTION_MODES` — never a clock
+   vignette, the oath scene or the inciting incident), only when it shares a
+   telling word with them (a PC's or the ship's name is no evidence), and
+   never when it is a let-go question again — one sharing a let-go stem the
+   beat's player words do not hold; a Now line carrying one is stored empty
+   (`playersFrame`, `provenance.js`). The let-go list is code-kept, carried
+   by `applySceneFrame` in the frame's `previous` chain (an X-Card on the beat
+   that let a question go puts it back). The scene's unanswered hidden
+   mysteries, with their clocks, are retired at every scene end (issue #362 D4).
    Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
    migration, not in a lifecycle exemption. Since issue #286 that migration
@@ -385,7 +400,10 @@ layers. This file is the never-break list.
    `round(1.5 × narratorContextCards)` beats, and must never be retained at
    the expense of any §6.5 ledger tier or the never-dropped facts (frame /
    binding truths / ship position) — those defend load-bearing facts; the
-   summary only carries narrative texture. It is kept on its session's page
+   summary only carries narrative texture. Its source tells what play let go
+   (`## LET GO`, from the record's `frame` events — overhaul 2 §7.4) under a
+   rule that nothing there is told at all, and that TOLD AS holds the
+   narrator's own colour, none of it an event. It is kept on its session's page
    (`sessionRecord.views.summary`) and shown only while the span it was made
    from reads the same: a correction — an X-Card, a strike, a changed name,
    an upgrade's supersede — makes it stale, and it is made again; there is no
@@ -412,7 +430,8 @@ layers. This file is the never-break list.
    card as it posts (the flag family above — a new card type needs its mode
    in `record/cards.js`), a sheet change in the update hooks (a module writer
    that knows the cause passes `recordCause` in the update's options), a
-   truth set or struck by diffing the two ledger saves. It is read through
+   truth set or struck by diffing the two ledger saves (and the frame — its
+   `letGo` too, overhaul 2 §7.3). It is read through
    `readRecord` alone, with the corrections applied at read — an X-Carded or
    superseded narration and all it set gone, a strike gone, every changed name
    written as the new one — and nothing stored is rewritten but by the

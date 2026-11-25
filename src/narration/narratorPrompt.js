@@ -10,6 +10,7 @@ import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
+import { normaliseLetGo } from '../factContinuity/provenance.js';
 import { formatNameChangesBlock } from '../factContinuity/nameChanges.js';
 import { resolveEntityById, withSheetNotes } from '../entities/registry.js';
 import { isLoneShipCandidate } from '../entities/ship.js';
@@ -189,20 +190,22 @@ export function appendSidecarInstruction(options = {}) {
       // and nothing ends a scene but the table — a session's opening hook was
       // its question for the whole session, rung at the end of every beat. A
       // question is the player's line's, and one play leaves unanswered is
-      // released (narrator.js SCENE_QUESTION_BEATS; SCENE FRAME then asks
-      // for the next — buildLedgerBlock's `askSceneQuestion`).
+      // let go (narrator.js SCENE_QUESTION_BEATS; SCENE FRAME then asks
+      // for the next — buildLedgerBlock's `askSceneQuestion`). Since overhaul
+      // 2 (§7.2–7.3, REFRAIN-OUTLIVES-THE-QUESTION) the code holds both: a
+      // question that shares no word with the player's line is not set, and a
+      // let-go one — under PLAY LET THESE GO — is not set again in any words.
       '- "question" (inside "sceneFrame") is what this scene is deciding now, in a',
-      '  few words: what the player\'s latest line sets out to settle — on a beat',
-      '  no line prompted, what that beat puts in front of the characters — never',
-      '  a hook of your own that their line did not take up. While SCENE FRAME',
-      '  shows a question, copy it unchanged. When this beat',
-      '  answers it, add "questionAnswered": true and end the beat on a cut',
-      '  forward — to the consequence, the next place or a later hour — not on',
-      '  another exchange in the same room. When SCENE FRAME shows none, or one',
-      '  marked answered, set the one the scene turns on now. A question left',
-      '  unanswered for a few beats is dropped from SCENE FRAME: do not bring it',
-      '  back, in the block or in your prose, unless the player\'s line takes it',
-      '  up. Never end the scene: the table ends scenes.',
+      '  few words, and it is the player\'s: when the player\'s latest line sets out',
+      '  to settle something, set that, in a few words that use the line\'s own;',
+      '  when it does not, or no line prompted this beat, set none — never a hook',
+      '  of your own. While SCENE FRAME shows a question, copy it unchanged. When',
+      '  this beat answers it, add "questionAnswered": true and end the beat on a',
+      '  cut forward — to the consequence, the next place or a later hour — not on',
+      '  another exchange in the same room. A question play left unanswered is',
+      '  listed under PLAY LET THESE GO: do not set it again, in any words, and do',
+      '  not bring it back in your prose, unless the player\'s line takes it up.',
+      '  Never end the scene: the table ends scenes.',
     );
   }
 
@@ -447,6 +450,22 @@ export function buildLedgerBlock(campaignState, options = {}) {
     ? ['SCENE FRAME (the scene as it stands):', ...frameLines].join('\n')
     : '';
 
+  // ── What play let go (overhaul 2 §7.3) ───────────────────────────────────
+  // The questions play left unanswered for SCENE_QUESTION_BEATS beats
+  // (narrator.js countSceneQuestionBeat), at most LET_GO_MAX: told, so the
+  // narration does not end on one or set it again in other words — and in
+  // code a question that is one of them is not set (provenance.js). Never
+  // dropped under the token cap: the fourth live run's "second hail light"
+  // was re-set four times in one session once nothing said it had been let go.
+  const letGoTexts = frame ? normaliseLetGo(frame.letGo).map(e => e.text) : [];
+  const letGoBlock = letGoTexts.length
+    ? [
+        'PLAY LET THESE GO — hooks the narration posed that play did not take up. Do not end on one,',
+        'restate it or bring it back, in the prose or the fact block, unless the player\'s line takes it up:',
+        ...letGoTexts.map(t => `  "${t}"`),
+      ].join('\n')
+    : '';
+
   // ── Ship position (§20) ──────────────────────────────────────────────────
   // The command vehicle's persistent position record is fact-continuity
   // confirmed-lore tier — it is never dropped under budget pressure and
@@ -456,11 +475,11 @@ export function buildLedgerBlock(campaignState, options = {}) {
 
   // ── Empty short-circuit ──────────────────────────────────────────────────
   if (!truthLines.length && !stateLines.length && !shipPositionLine && !frameBlock
-      && !correctionLines.length) {
+      && !correctionLines.length && !letGoBlock) {
     return {
-      header: '', frame: '', truths: '', corrections: '', state: '', shipPosition: '',
+      header: '', frame: '', truths: '', corrections: '', letGo: '', state: '', shipPosition: '',
       combined: '',
-      tokenEstimates: { header: 0, frame: 0, truths: 0, corrections: 0, state: 0, ship: 0 },
+      tokenEstimates: { header: 0, frame: 0, truths: 0, corrections: 0, letGo: 0, state: 0, ship: 0 },
     };
   }
 
@@ -468,7 +487,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // Header only renders when there are truths, state, or a frame to
   // introduce — the SHIP POSITION line stands on its own when it's the only
   // thing in the block (§20).
-  const header = (truthLines.length || stateLines.length || frameBlock || correctionLines.length)
+  const header = (truthLines.length || stateLines.length || frameBlock || correctionLines.length || letGoBlock)
     ? [
         '## ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE',
         '',
@@ -508,11 +527,12 @@ export function buildLedgerBlock(campaignState, options = {}) {
     frame:       estimateTokens(frameBlock),
     truths:      estimateTokens(truthsBlock),
     corrections: estimateTokens(correctionsBlock),
+    letGo:       estimateTokens(letGoBlock),
     state:       estimateTokens(stateBlock),
     ship:        estimateTokens(shipPositionLine),
   };
   const fixedTokens = tokenEstimates.header + tokenEstimates.frame + tokenEstimates.truths
-                    + tokenEstimates.corrections + tokenEstimates.ship;
+                    + tokenEstimates.corrections + tokenEstimates.letGo + tokenEstimates.ship;
   if (fixedTokens + tokenEstimates.state > maxTokens && stateEntries.length) {
     const sheddingOrder = stateEntries.slice().sort((a, b) =>
       (a.keep - b.keep) || (a.updatedAt - b.updatedAt) || (a.order - b.order));
@@ -525,7 +545,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
     tokenEstimates.state = estimateTokens(stateBlock);
   }
 
-  const combined = [header, frameBlock, truthsBlock, correctionsBlock, stateBlock, shipPositionLine]
+  const combined = [header, frameBlock, truthsBlock, correctionsBlock, letGoBlock, stateBlock, shipPositionLine]
     .filter(Boolean)
     .join('\n\n');
 
@@ -534,6 +554,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
     frame:        frameBlock,
     truths:       truthsBlock,
     corrections:  correctionsBlock,
+    letGo:        letGoBlock,
     state:        stateBlock,
     shipPosition: shipPositionLine,
     combined,
@@ -1452,11 +1473,13 @@ const BEAT_ENDING_RULE =
   `a reflective or atmospheric line.\n` +
   `A recurring motif must change, or be dropped: do not repeat an image from the recent ` +
   `scene as it was.\n` +
-  // Known-issues NARRATOR-REFRAINS: 23 narrations of 23 ended on the opening's hook.
-  `A hook the player's line did not take up is not rung again: do not end on it, or ` +
-  `restate the question it posed, a second time.\n` +
-  `The hook is something that happens in the story, never a menu of options — it ` +
-  `follows "depict, do not offer". Keep it within the narrator permissions in this ` +
+  // Known-issues NARRATOR-REFRAINS: 23 narrations of 23 ended on the opening's
+  // hook; REFRAIN-OUTLIVES-THE-QUESTION (overhaul 2 §7.4): the fourth live run's
+  // "second hail light" — a thread of the narrator's own — ended 15 of 17.
+  `The hook is the story's answer to the player's line — a present character's next ` +
+  `word or act, the danger the result left — never a new thread of your own, and never ` +
+  `one under PLAY LET THESE GO. It is something that happens in the story, never a menu ` +
+  `of options — it follows "depict, do not offer". Keep it within the narrator permissions in this ` +
   `prompt: where only embellishment is allowed, the change is small and immediate (a ` +
   `present character's next word or act, a detail already in the scene that shifts), ` +
   `not a new plot element. Where a closing italic move-hint is asked for, it comes ` +
@@ -1838,18 +1861,19 @@ const META_STANDING_ROLE =
  * What SCENE FRAME's Question line says when the frame holds none, by the mode
  * of the narration reading it (known-issues NARRATOR-REFRAINS): the modes
  * whose fact block may set the scene's question are asked for it — from the
- * player's line where one prompted the beat. A session vignette (a bookend:
+ * player's words. Since overhaul 2 (§7.2) only a beat of play the player's
+ * words prompted may set one (provenance.js QUESTION_MODES): a clock vignette,
+ * the oath scene and the inciting incident were asked to "set the one the
+ * scene turns on now" with no line to set it from, and set the narrator's own
+ * hook — they have no entry now. A session vignette (a bookend:
  * BOOKEND_FRAME_RULE), an `@scene` answer (it writes nothing back) and the
- * recap have no entry, and are shown no such line.
+ * recap have none either, and are shown no such line.
  */
 const SCENE_QUESTION_ASK = Object.freeze({
-  move_resolution:   `none stands — set the one the scene turns on now, from the player's latest line.`,
-  paced_narrative:   `none stands — set the one the scene turns on now, from the player's latest line.`,
-  round_resolution:  `none stands — set the one the scene turns on now, from the players' lines this round.`,
-  oracle_followup:   `none stands — set the one the scene turns on now.`,
-  clock_advance:     `none stands — set the one the scene turns on now.`,
-  vow_swearing:      `none stands — set the one the scene turns on now.`,
-  inciting_incident: `none stands — set the one the scene turns on now.`,
+  move_resolution:  `none stands — if the player's latest line sets out to settle something, set that, in a few words that use the line's own; if it does not, set none.`,
+  paced_narrative:  `none stands — if the player's latest line sets out to settle something, set that, in a few words that use the line's own; if it does not, set none.`,
+  round_resolution: `none stands — if the players' lines this round set out to settle something, set that, in a few words that use their own; if they do not, set none.`,
+  oracle_followup:  `none stands — if the question the player put to the oracle sets out to settle something, set that, in a few words that use the question's own; if it does not, set none.`,
 });
 
 /**

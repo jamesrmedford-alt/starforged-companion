@@ -452,8 +452,9 @@ or *"I convince him"*.
 
 **Drop order under budget pressure:** state, line by line — every other
 attribute before a character's location / vessel / condition, the oldest
-first within each (issue #286 A6) → (never) truths → (never) ship
-position → (never) scene frame. Soft cap `factContinuity.maxLedgerTokens`.
+first within each (issue #286 A6) → (never) truths → (never) PLAY LET THESE
+GO (overhaul 2 §7.3) → (never) ship position → (never) scene frame. Soft cap
+`factContinuity.maxLedgerTokens`.
 
 ---
 
@@ -493,23 +494,58 @@ of session 3's prompts, and 23 narrations of 23 ended on it. Two rules:
   and the first line of play replaces it. Its truths and state are recorded
   as before. The vignette's mode block says so (`BOOKEND_FRAME_RULE`); the
   apply drops a question whatever the model sends.
-- **A question play leaves unanswered is released** (`countSceneQuestionBeat`).
+- **A question play leaves unanswered is let go** (`countSceneQuestionBeat`).
   The frame carries `questionBeats` — 0 on the beat that set the question, one
   more for each later beat that left it open — and at `SCENE_QUESTION_BEATS`
   (3) the frame keeps no question. The count is on the frame, beside the
   question it counts: stored and merged with it (it survives a reload) and
   carried in the `previous` chain (an X-Card on a beat puts back the count
   that beat changed). An `@scene` answer writes no frame and is no beat.
+  Since overhaul 2 (§7.3; known-issues REFRAIN-OUTLIVES-THE-QUESTION) the
+  released question is **let go and stays let go**: it goes onto the frame's
+  `letGo` list — `{ text, stems }`, its own telling stems with the PCs' and
+  the ship's names left out, at most four, the newest kept — and the frame's
+  Now line goes with it, in the same write. The list is code-kept like the
+  question (`applySceneFrame` carries it; no fact block writes or drops it;
+  the `previous` chain carries it, so an X-Card on the beat that let it go
+  puts the question back). In the fourth live run the released question came
+  straight back in other words four times in one session — "Will Mira answer
+  the second hail before the pilot's offer lapses?", "Which channel will Mira
+  answer?", "Who will answer the second hail light?", "Who is on the second
+  hail channel?" — the count restarting each time, and the Now line ("…while
+  the pilot's offer and a second hail both wait on the comm") carrying it
+  all along.
+- **The question is the player's** (`narrator.js playersFrame`,
+  `factContinuity/provenance.js`; overhaul 2 §7.2). Every beat's frame is
+  read against the beat's own player words (`ctx.ground` — `groundOf`: the
+  move's written line, the paced line, a round's lines, the oracle's typed
+  question) before `applySceneFrame`. A question the frame does not already
+  hold stands only when its mode may set one (`QUESTION_MODES`: the move,
+  paced, round and oracle follow-up modes — never a clock vignette, the oath
+  scene or the inciting incident, which have no player's words), when it
+  shares a telling word with those words — the stemmed words of a plan's
+  reveal (`world/tellingWords.js tellingStems`), a PC's or the command vehicle's name
+  no evidence (`namesNoEvidence`) — and when it is no let-go question again:
+  one sharing a let-go stem the beat's player words do not hold is the same
+  question and is not set (`playersQuestion`); a line that names the stem
+  takes the hook up, and it stands. A Now line carrying a let-go question is
+  stored empty (`touchesLetGo`). Read so, the run's session 3 set one question
+  of four, for three beats.
 
 A frame with no question asks the next beat for one: SCENE FRAME's last line
-reads `Question: none stands — set the one the scene turns on now, from the
-player's latest line.` (`buildLedgerBlock`'s `askSceneQuestion`, worded per
-mode by `SCENE_QUESTION_ASK`) — in the modes whose fact block may set it, never
-in a vignette's prompt, an `@scene` answer's, the recap's, the consistency
-audit's or the Private Channel's. The sidecar rule says a question is never a
-hook of the narrator's own that the player's line did not take up, and that a
-dropped one is not brought back, in the block or in the prose; HOW A BEAT ENDS
-says such a hook is not rung twice. Rendered at the top of §6.5:
+reads `Question: none stands — if the player's latest line sets out to settle
+something, set that, in a few words that use the line's own; if it does not,
+set none.` (`buildLedgerBlock`'s `askSceneQuestion`, worded per mode by
+`SCENE_QUESTION_ASK` — the move, paced, round and oracle follow-up modes
+alone; the clock, oath-scene and inciting entries are gone with overhaul 2) —
+never in a vignette's prompt, an `@scene` answer's, the recap's, the
+consistency audit's or the Private Channel's. The sidecar rule says the
+question is the player's, from the line's own words, and that one listed
+under PLAY LET THESE GO is not set again, in any words, nor brought back in
+the prose; HOW A BEAT ENDS says the hook is the story's answer to the
+player's line, never a new thread of the narrator's own, and never one under
+PLAY LET THESE GO. The let-go questions render under PLAY LET THESE GO, after
+CORRECTED, never dropped under the cap. Rendered at the top of §6.5:
 
 ```
 SCENE FRAME (the scene as it stands):
@@ -713,7 +749,7 @@ truths alone; backlog §8.8 keeps the elide option if playtests show it.
 | NPC's location / condition drifts | ledger writes | inspect `campaignState.sceneState.bySubject` — if empty, the required-emission rules aren't being honoured by the model; strengthen wording in `appendSidecarInstruction` before adding machinery |
 | Premise / stakes drift | ledger truths | inspect `campaignState.sceneTruths`; if the inciting facts are missing, check the `inciting_incident` addendum fired (mode threading) |
 | Whole-scene wobble: wrong place, wrong cast | frame | inspect `campaignState.sceneFrame`; if stale, the model is omitting the key — tighten the "EVERY response" rule or consider re-asserting the frame in the user message |
-| Every beat ends on the same hook; one question in every prompt | frame question | inspect `campaignState.sceneFrame.question` / `questionBeats`; a question is released after `SCENE_QUESTION_BEATS` (`narrator.js`) — if a refrain still runs longer, the model is re-setting the same hook from a line that did not take it up: tighten the sidecar's `question` rule before lowering the number |
+| Every beat ends on the same hook; one question in every prompt | frame question | inspect `campaignState.sceneFrame.question` / `questionBeats` / `letGo`; a question is let go after `SCENE_QUESTION_BEATS` (`narrator.js`) and a let-go one is refused in code (`provenance.js playersQuestion`) — if a refrain still runs, look for a hook with no question behind it (colour, the ring) before lowering the number |
 | Conversation partner forgotten on short turns | frame `present` + scoping | confirm the name appears in `present`; confirm `resolvePathRelevance` unioned it (matched cards in prompt) |
 | Established entity facts not surfacing | entity records + scoping | is the entity confirmed? are its truths entity-keyed (not text)? did relevance match it? |
 | Prompt too large / cost creep | budgets | lower `narratorContextCards` / `maxLedgerTokens`; frame is ~30–60 tokens and not the culprit |

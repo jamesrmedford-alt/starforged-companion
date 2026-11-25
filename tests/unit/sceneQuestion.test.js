@@ -15,8 +15,13 @@
  *
  * Since known-issues NARRATOR-REFRAINS the question is the player's line's,
  * a session vignette sets none, and one left unanswered is released after a
- * few beats — sceneQuestionNotTheOpeningsHook.test.js. What is here stands:
- * while a question is in the frame, a later snapshot may not reword it.
+ * few beats — sceneQuestionNotTheOpeningsHook.test.js; since overhaul 2 the
+ * code holds it: a question that shares no word with the beat's player words
+ * is not set, and a let-go one is not set again (sceneQuestionIsThePlayers,
+ * letGoStaysLetGo). What is here stands: while a question is in the frame, a
+ * later snapshot may not reword it. The table's beats below are given lines
+ * their questions take their words from ("I slip past the escort." — "Will
+ * the escort let them pass?").
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
@@ -46,8 +51,8 @@ describe('issue #353 R2 — the sidecar\'s scene question', () => {
   it('the narrator is asked for it, told to keep it, to cut forward when it is answered, and never to end the scene', () => {
     const text = appendSidecarInstruction({ mode: 'move_resolution' });
     expect(text).toContain('"question":  "Will Vance let them board?"');
-    expect(text).toContain('While SCENE FRAME\n  shows a question, copy it unchanged.');
-    expect(text).toContain('"questionAnswered": true and end the beat on a cut');
+    expect(text).toContain('While SCENE FRAME shows a question, copy it unchanged.');
+    expect(text).toContain('"questionAnswered": true and end the beat on a');
     expect(text).toContain('Never end the scene: the table ends');
     expect(appendSidecarInstruction({ mode: 'move_resolution', sceneFrameEnabled: false })).not.toContain('"question"');
   });

@@ -102,8 +102,10 @@ export const RECORD_EVENTS = Object.freeze([
   row('session.ended', 1, ['reason', 'focus', 'pcs', 'vows', 'tracks', 'place'], [], ['log']),
   row('scene.started', 2, ['sceneId', 'reason'], [], ['log', 'recap']),
   row('scene.ended', 2, ['sceneId', 'reason'], [], ['log']),
-  row('frame', 2, ['location', 'present', 'situation', 'question', 'questionAnswered'], ['nar'], ['log', 'recap'],
-    { blank: ['location', 'present', 'situation', 'question'] }),
+  // `letGo`: the questions play let go in the scene, as the frame keeps them
+  // (overhaul 2 §7.3) — read by the session summary, which is told LET GO.
+  row('frame', 2, ['location', 'present', 'situation', 'question', 'questionAnswered', 'letGo'], ['nar'], ['log', 'recap', 'summary'],
+    { blank: ['location', 'present', 'situation', 'question', 'letGo'] }),
   // ── A beat of play ────────────────────────────────────────────────────────
   row('line', 1, ['via', 'forcedMoveId', 'repost'], ['line', 'round'], ['log', 'recap'], { text: true }),
   row('question', 2, [], ['nar', 'card'], ['log', 'recap'], { text: true }),

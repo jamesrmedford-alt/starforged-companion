@@ -19,6 +19,7 @@
  */
 
 import { resolveEntityName } from '../context/relevanceResolver.js';
+import { normaliseLetGo } from './provenance.js';
 
 /**
  * Apply a parsed sidecar to the active-scene ledgers. Mutates campaignState
@@ -496,11 +497,16 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
   const samePrior = !!prior && typeof prior === 'object' && (prior.sceneId ?? null) === sceneId;
   const previous = samePrior ? supersededEntry(prior) : null;
   const question = sceneQuestion(frame, samePrior ? prior : null);
+  // What play let go (overhaul 2 §7.3): code-kept, as the question is — no
+  // snapshot writes or drops it; the frame's `previous` chain carries it, so
+  // an X-Card on the beat that let a question go puts that question back.
+  const letGo = samePrior ? normaliseLetGo(prior.letGo) : [];
   campaignState.sceneFrame = {
     location,
     present,
     situation,
     ...question,
+    ...(letGo.length ? { letGo } : {}),
     sceneId,
     updatedAt: Date.now(),
     ...narrationStamp(narrationId),

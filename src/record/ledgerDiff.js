@@ -86,7 +86,9 @@ export function ledgerEvents(before, after) {
   const was = frameOf(before);
   const now = frameOf(after);
   const sameScene = (before?.currentSceneId ?? null) === (after?.currentSceneId ?? null);
-  const shape = (f) => JSON.stringify(f ? [f.location ?? null, f.present ?? [], f.situation ?? null, f.question ?? null, f.questionAnswered === true] : null);
+  // What play let go rides with the frame (overhaul 2 §7.3): the texts alone.
+  const letGoOf = (f) => (Array.isArray(f?.letGo) ? f.letGo.map(e => (typeof e?.text === 'string' ? e.text : '')).filter(Boolean) : []);
+  const shape = (f) => JSON.stringify(f ? [f.location ?? null, f.present ?? [], f.situation ?? null, f.question ?? null, f.questionAnswered === true, letGoOf(f)] : null);
   if (now && (!sameScene || shape(was) !== shape(now))) {
     events.push({
       kind: 'frame',
@@ -96,6 +98,7 @@ export function ledgerEvents(before, after) {
         d: {
           location: now.location ?? null, present: Array.isArray(now.present) ? now.present : [],
           situation: now.situation ?? null, question: now.question ?? null, questionAnswered: now.questionAnswered === true,
+          ...(letGoOf(now).length ? { letGo: letGoOf(now) } : {}),
         },
       },
     });

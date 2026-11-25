@@ -381,9 +381,12 @@ export async function standingLines(campaignState) {
       }
     }
   }
+  // The scene's question is the player's (overhaul 2 §7.2): set only from a
+  // line of theirs, never one of the narration's own hooks — a hook play let
+  // go is no part of where things stand.
   const frame = campaignState?.sceneFrame;
   if (frame && typeof frame === 'object' && clean(frame.question)) {
-    lines.push(`The open scene's question: ${quote(frame.question)} — ${frame.questionAnswered === true ? 'answered' : 'not yet answered'}.`);
+    lines.push(`The open scene's question, from the player's line: ${quote(frame.question)} — ${frame.questionAnswered === true ? 'answered' : 'not yet answered'}.`);
   }
   return lines;
 }

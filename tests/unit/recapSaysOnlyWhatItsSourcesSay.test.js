@@ -113,13 +113,14 @@ describe('a recap is told how things stand now — read live, in its own user me
   it('the open scene\'s state reaches it: the needle rests on north, whatever an earlier beat said of it — and the scene\'s question, unanswered', async () => {
     const lines = await standingLines({ currentSessionId: 's-3', ...SCENE });
     expect(lines).toContain('Ilse\'s brass star-compass — needle: settled on north, no longer leaning toward the dark lane.');
-    expect(lines).toContain('The open scene\'s question: “What is the speaker over the hatch about to say?” — not yet answered.');
+    // The question is the player's (overhaul 2 §7.2), and WHERE THINGS STAND says so.
+    expect(lines).toContain('The open scene\'s question, from the player\'s line: “What is the speaker over the hatch about to say?” — not yet answered.');
     expect(recapSource({ read: { sessions: [] }, standing: lines }).text).toMatch(/## WHERE THINGS STAND — read from the sheets and tracks as play stopped\n\n\[now-1\] Ilse's brass star-compass — needle: settled on north/);
   });
 
   it('a question the scene answered is said answered', async () => {
     const lines = await standingLines({ currentSessionId: 's-3', ...SCENE, sceneFrame: { ...SCENE.sceneFrame, questionAnswered: true } });
-    expect(lines).toContain('The open scene\'s question: “What is the speaker over the hatch about to say?” — answered.');
+    expect(lines).toContain('The open scene\'s question, from the player\'s line: “What is the speaker over the hatch about to say?” — answered.');
   });
 
   it('never as the campaign\'s scene (issue #374 A1 holds): the system prompt has no binding scene and no section of its own on how things stand', () => {

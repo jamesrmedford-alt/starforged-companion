@@ -262,6 +262,7 @@ function sessionBeats(events, { xcarded, superseded }) {
   let lastSheetEdit = null;
   const scenes = [];                   // { sceneId, startedAt, endedAt, reason, where }
   let where = null;                    // the scene frame as of now
+  const letGo = [];                    // the questions play let go this session (overhaul 2 §7.3)
   const seenDid = new Set();
   const questionOf = new Map();        // an @scene answer's narration id → its question's beat
 
@@ -363,6 +364,9 @@ function sessionBeats(events, { xcarded, superseded }) {
           question: d.question ?? null, questionAnswered: d.questionAnswered === true };
         const scene = scenes.findLast(x => x.sceneId === (e.scene ?? null));
         if (scene) scene.where = where;
+        for (const text of Array.isArray(d.letGo) ? d.letGo : []) {
+          if (typeof text === 'string' && text.trim() && !letGo.includes(text)) letGo.push(text);
+        }
         continue;
       }
       case 'question': {
@@ -527,7 +531,7 @@ function sessionBeats(events, { xcarded, superseded }) {
   // A beat with nothing left to say — a table beat whose one truth was struck — is no beat.
   const kept = beats.filter(b => b.removed || b.line || b.move || b.told || b.changes.length || b.established.length
     || b.choices.length || b.did.length);
-  return { begun, ended, beats: kept, strikes, renames, removed, scenes };
+  return { begun, ended, beats: kept, strikes, renames, removed, scenes, letGo };
 }
 
 /** Write a session's names anew: every words, label and prose field, and each actor's current name. */
@@ -563,6 +567,7 @@ function correctNames(session, { names, nameOf, otherNames }) {
     }
     beat.leaveOut = beat.leaveOut.map(fix);
   }
+  session.letGo = (session.letGo ?? []).map(fix);
   for (const s of session.corrections) {
     if (s.kind !== 'strike') continue;
     s.fact = fix(s.fact);
@@ -631,6 +636,9 @@ export function readRecord(scope = {}, source = recordSource()) {
       story: page.story ?? '',
       beats: read.beats,
       scenes: read.scenes,
+      // What play let go: the scenes' released questions, every one the session's
+      // frames recorded — told to the summary under LET GO, never as a hook.
+      letGo: read.letGo,
       corrections: [
         ...read.renames.map(r => ({ kind: 'name', ...r })),
         ...read.strikes.map(s => ({ kind: 'strike', ...s })),
