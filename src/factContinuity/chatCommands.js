@@ -303,7 +303,7 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         : `No matching state entry.`;
     } else {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
-      const result  = setStateValue(subjectKey(subject), parsed.attribute, parsed.value, campaignState);
+      const result  = setStateValue(subjectKey(subject), parsed.attribute, parsed.value, campaignState, permCtx);
       if (result) changed = "sceneState";
       resultLine = result
         ? `State recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.attribute)}: ${escapeHtml(parsed.value)}</em>.`

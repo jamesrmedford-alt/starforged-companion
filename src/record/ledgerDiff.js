@@ -16,7 +16,10 @@
  *     `truth.struck`. One the X-Card or an upgrade retracted is not: that is
  *     `narration.removed`, which takes everything its narration wrote;
  *   - a truth that leaves the ledger without being retracted is not struck: a
- *     scene's end clears the ledger by migrating it.
+ *     scene's end clears the ledger by migrating it;
+ *   - a truth the store held as colour that the save writes binding — a GM's
+ *     Keep, a restatement the table's words bore out — is `truth.confirmed`
+ *     (overhaul 2 §5.7). Every `truth.set` carries the truth's basis.
  *
  * By truth id alone, whichever scene each copy is of: a truth set in the save
  * that opens a scene is still set, and one a stale working copy carries back
@@ -27,6 +30,7 @@
  */
 
 import { recordEvent } from './record.js';
+import { entryBasis, binds } from '../factContinuity/provenance.js';
 
 /** `retractedBy` of a truth a narration's removal retracted, not the table (factContinuity/ledgers.js). */
 const NOT_THE_TABLE = new Set(['xcard', 'superseded']);
@@ -61,11 +65,17 @@ export function ledgerEvents(before, after) {
           session, scene,
           ref: { truth: t.id, nar: t.narrationId ?? null, entity: subject?.kind === 'entity' ? (subject.entityId ?? null) : null },
           d: {
-            subject, fact: String(t.fact ?? ''), by: t.asserter ?? 'narrator',
+            subject, fact: String(t.fact ?? ''), by: t.asserter ?? 'narrator', basis: entryBasis(t),
             ...(t.sceneLocation ? { place: t.sceneLocation } : {}),
             ...(replaces.has(t.id) ? { replaces: replaces.get(t.id) } : {}),
           },
         },
+      });
+    }
+    if (was && !t.retracted && !binds(was) && binds(t)) {
+      events.push({
+        kind: 'truth.confirmed',
+        payload: { session, scene, ref: { truth: t.id }, d: { basis: entryBasis(t), by: entryBasis(t) === 'gm' ? 'gm' : 'narrator' } },
       });
     }
     const newlyStruck = t.retracted === true && was && was.retracted !== true;
@@ -86,7 +96,9 @@ export function ledgerEvents(before, after) {
   const was = frameOf(before);
   const now = frameOf(after);
   const sameScene = (before?.currentSceneId ?? null) === (after?.currentSceneId ?? null);
-  const shape = (f) => JSON.stringify(f ? [f.location ?? null, f.present ?? [], f.situation ?? null, f.question ?? null, f.questionAnswered === true] : null);
+  // What play let go rides with the frame (overhaul 2 §7.3): the texts alone.
+  const letGoOf = (f) => (Array.isArray(f?.letGo) ? f.letGo.map(e => (typeof e?.text === 'string' ? e.text : '')).filter(Boolean) : []);
+  const shape = (f) => JSON.stringify(f ? [f.location ?? null, f.present ?? [], f.situation ?? null, f.question ?? null, f.questionAnswered === true, letGoOf(f)] : null);
   if (now && (!sameScene || shape(was) !== shape(now))) {
     events.push({
       kind: 'frame',
@@ -96,6 +108,7 @@ export function ledgerEvents(before, after) {
         d: {
           location: now.location ?? null, present: Array.isArray(now.present) ? now.present : [],
           situation: now.situation ?? null, question: now.question ?? null, questionAnswered: now.questionAnswered === true,
+          ...(letGoOf(now).length ? { letGo: letGoOf(now) } : {}),
         },
       },
     });

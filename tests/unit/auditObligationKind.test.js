@@ -60,7 +60,8 @@ describe('the audit reads a narration\'s obligations', () => {
     apiPost.mockResolvedValueOnce({ content: [{ type: 'text', text:
       '{"contradictions":[{"subject":"[outcome]","violated":"the weak hit\'s cost","evidence":"without a scratch","kind":"obligation","confidence":"high"}]}' }] });
     const state = campaignState();
-    applySidecar({ newTruths: [{ subject: 'scene', fact: 'the bay doors are sealed' }], stateChanges: [] }, { campaignState: state });
+    // A truth that binds (the player's word — overhaul 2 §5.8 audits what binds alone).
+    applySidecar({ newTruths: [{ subject: 'scene', fact: 'the bay doors are sealed' }], stateChanges: [] }, { campaignState: state, basisOf: () => 'player' });
     const out = await withAuditOn(() => runConsistencyCheck('She is through without a scratch.', state, { obligations: moveLines() }));
     expect(apiPost).toHaveBeenCalledTimes(1);
     const system = apiPost.mock.calls[0][2].system;

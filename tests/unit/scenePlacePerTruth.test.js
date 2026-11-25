@@ -50,7 +50,8 @@ function sessionScene() {
 /** One narration as the narrator applies it: the sidecar (its frame inside) once. */
 function narrate(cs, location, truths = [], narrationId = null) {
   const sidecar = { newTruths: truths, stateChanges: [], sceneFrame: { location, present: [], situation: `At ${location}` } };
-  applySidecar(sidecar, { campaignState: cs, narrationId });
+  // The table's facts (overhaul 2 §5.1): a scene's end files what binds.
+  applySidecar(sidecar, { campaignState: cs, narrationId, basisOf: () => 'player' });
   applySceneFrame(sidecar.sceneFrame, cs, { narrationId });
 }
 
@@ -104,7 +105,7 @@ describe("a scene truth is filed on the place it was asserted at (issue #326 D2)
   it("an older truth with no stamp falls back to the place the scene ended at", async () => {
     const cs = sessionScene();
     narrate(cs, "Ironway", [], "nar-1");
-    cs.sceneTruths.push({ id: "t-old", subject: { kind: "scene", sceneId: "sc-1" }, fact: RUSTY.fact,
+    cs.sceneTruths.push({ id: "t-old", subject: { kind: "scene", sceneId: "sc-1" }, fact: RUSTY.fact, basis: "player",
       sessionId: "sess-1", sceneId: "sc-1", retracted: false, migratedTo: null });   // recorded before stamping
     await endScene(cs, { reason: "session_close" });
     expect(filedOn("act-iron")).toHaveLength(1);

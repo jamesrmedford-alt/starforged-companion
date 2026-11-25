@@ -49,6 +49,10 @@ function makeCampaignState(overrides = {}) {
 // startScene
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The table's facts (overhaul 2 §5.1): what a scene's end files, and the block's
+// WHAT BINDS. The narrator's own colour fades with its scene (colourNotFiled.test.js).
+const BOUND = () => 'player';
+
 describe('startScene', () => {
   beforeEach(() => {
     archiveSceneTruth.mockClear();
@@ -75,7 +79,7 @@ describe('startScene', () => {
     const cs = makeCampaignState({ currentSceneId: 'sc-old' });
     applySidecar(
       { newTruths: [{ subject: 'scene', fact: 'a stale fact' }], stateChanges: [] },
-      { campaignState: cs },
+      { campaignState: cs, basisOf: BOUND },
     );
 
     const id = await startScene(cs, { reason: 'fresh' });
@@ -112,7 +116,7 @@ describe('endScene', () => {
     ];
     applySidecar(
       { newTruths: [{ subject: 'Vance', fact: 'Walks with a limp' }], stateChanges: [] },
-      { campaignState: cs, entities },
+      { campaignState: cs, entities, basisOf: BOUND },
     );
 
     const summary = await endScene(cs, { reason: 'test' });
@@ -138,7 +142,7 @@ describe('endScene', () => {
     const cs = makeCampaignState({ currentSceneId: 'sc-1' });
     applySidecar(
       { newTruths: [{ subject: 'scene', fact: 'The wind has died' }], stateChanges: [] },
-      { campaignState: cs },
+      { campaignState: cs, basisOf: BOUND },
     );
     const summary = await endScene(cs, { reason: 'test' });
     expect(summary.archived).toBe(1);
@@ -152,7 +156,7 @@ describe('endScene', () => {
     const cs = makeCampaignState({ currentSceneId: 'sc-1' });
     applySidecar(
       { newTruths: [{ subject: 'Covenant officer', fact: 'Carries a rusted blade' }], stateChanges: [] },
-      { campaignState: cs },
+      { campaignState: cs, basisOf: BOUND },
     );
     const summary = await endScene(cs, { reason: 'test' });
     expect(summary.archived).toBe(1);
@@ -167,7 +171,7 @@ describe('endScene', () => {
         newTruths: [{ subject: 'scene', fact: 'fact' }],
         stateChanges: [{ subject: 'scene', attribute: 'lighting', value: 'dim' }],
       },
-      { campaignState: cs },
+      { campaignState: cs, basisOf: BOUND },
     );
     await endScene(cs, { reason: 'test' });
     expect(cs.sceneTruths).toEqual([]);
@@ -185,7 +189,7 @@ describe('endScene', () => {
         ],
         stateChanges: [],
       },
-      { campaignState: cs },
+      { campaignState: cs, basisOf: BOUND },
     );
     cs.sceneTruths[1].retracted  = true;
     cs.sceneTruths[2].migratedTo = { kind: 'worldJournalLore', loreEntryId: 'page-old' };
@@ -208,7 +212,7 @@ describe('endScene', () => {
         ],
         stateChanges: [],
       },
-      { campaignState: cs, entities },
+      { campaignState: cs, entities, basisOf: BOUND },
     );
 
     // Snapshot the truths before endScene — endScene clears the array but the
@@ -223,7 +227,7 @@ describe('endScene', () => {
   it('returns zero counts when no truths are present', async () => {
     const cs = makeCampaignState({ currentSceneId: 'sc-1' });
     const summary = await endScene(cs, { reason: 'test' });
-    expect(summary).toEqual({ migrated: 0, archived: 0, skipped: 0 });
+    expect(summary).toEqual({ migrated: 0, archived: 0, skipped: 0, faded: 0 });
     expect(archiveSceneTruth).not.toHaveBeenCalled();
     expect(appendMigratedTruthToTier).not.toHaveBeenCalled();
   });
@@ -240,7 +244,7 @@ describe('endScene', () => {
         ],
         stateChanges: [],
       },
-      { campaignState: cs, entities },
+      { campaignState: cs, entities, basisOf: BOUND },
     );
     const summary = await endScene(cs, { reason: 'test' });
     expect(summary.skipped).toBe(2);
@@ -265,7 +269,7 @@ describe('lifecycle round-trip', () => {
     const id1 = await startScene(cs, { reason: 'first' });
     applySidecar(
       { newTruths: [{ subject: 'scene', fact: 'first scene' }], stateChanges: [] },
-      { campaignState: cs },
+      { campaignState: cs, basisOf: BOUND },
     );
     expect(cs.sceneTruths).toHaveLength(1);
 
@@ -334,7 +338,7 @@ describe('endScene — the scene\'s place and its characters\' whereabouts (issu
     addEntityActor('act-iron',  'settlement', 'Ironway');
     applySidecar(
       { newTruths: [{ subject: 'scene', fact: 'the bar is called the Rusty Lantern' }], stateChanges: [] },
-      { campaignState: cs },
+      { campaignState: cs, basisOf: BOUND },
     );
     return cs;
   }
@@ -386,7 +390,7 @@ describe('endScene — the scene\'s place and its characters\' whereabouts (issu
         { subject: 'Kael Dros', attribute: 'location', value: 'the cargo office' },
         { subject: 'Kael Dros', attribute: 'mood',     value: 'sour' },
       ] },
-      { campaignState: cs, entities: [{ _id: 'rec-act-kael', journalId: 'act-kael', name: 'Kael Dros', entityType: 'connection' }] },
+      { campaignState: cs, entities: [{ _id: 'rec-act-kael', journalId: 'act-kael', name: 'Kael Dros', entityType: 'connection' }], basisOf: BOUND },
     );
 
     await endScene(cs, { reason: 'test' });

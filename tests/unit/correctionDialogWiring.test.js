@@ -77,7 +77,9 @@ describe('the correction dialog wiring', () => {
   it("the row buttons do not submit the dialog's form", async () => {
     await openCorrectionDialog({ flags: { [MODULE_ID]: { matchedEntityIds: [] } } });
     const buttons = DialogV2Double.last.element.querySelectorAll('.sf-correct-btn');
-    expect(buttons.length).toBe(4);   // Strike / Replace for the truth and the state value
+    // Strike / Replace for the truth and the state value, and Keep on the
+    // narration's truth (overhaul 2 §5.3: a GM's Keep makes colour bind).
+    expect(buttons.length).toBe(5);
     for (const b of buttons) expect(b.type, b.dataset.action).toBe('button');
   });
 

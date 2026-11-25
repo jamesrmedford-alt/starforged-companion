@@ -20,7 +20,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn(async () => ({ content: [{ type: 'text', text: '{"contradictions":[]}' }] })) }));
 
-import { applyNarratorSidecar } from '../../src/narration/narrator.js';
+import { applyAsTheTable } from '../helpers/tableFacts.js';
+// The narrations' facts are the table's (overhaul 2 §5.1–5.2): what a scene's end
+// files is what binds; the narrator's own colour has its own tests (colourNotFiled).
 import { endScene } from '../../src/factContinuity/sceneLifecycle.js';
 import { applyFactContinuityCommand } from '../../src/factContinuity/chatCommands.js';
 
@@ -99,7 +101,7 @@ afterEach(() => {
 
 /** The narration: Vex in the interrogation cell, wounded; a lore fact (archived first at scene end). */
 function narrate() {
-  applyNarratorSidecar(
+  applyAsTheTable(
     `Vex leans in the doorway of the cell.\n\`\`\`json\n${JSON.stringify({
       newTruths: [{ subject: 'the prisoner', fact: 'Knows the vault code' }],
       stateChanges: [

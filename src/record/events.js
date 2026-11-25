@@ -100,10 +100,17 @@ export const RECORD_EVENTS = Object.freeze([
   // ── The session ───────────────────────────────────────────────────────────
   row('session.begun', 1, ['number', 'perspective', 'focus', 'pcs', 'vows', 'tracks', 'place', 'resumed'], [], ['log', 'recap', 'sessionCard']),
   row('session.ended', 1, ['reason', 'focus', 'pcs', 'vows', 'tracks', 'place'], [], ['log']),
-  row('scene.started', 2, ['sceneId', 'reason'], [], ['log', 'recap']),
-  row('scene.ended', 2, ['sceneId', 'reason'], [], ['log']),
-  row('frame', 2, ['location', 'present', 'situation', 'question', 'questionAnswered'], ['nar'], ['log', 'recap'],
-    { blank: ['location', 'present', 'situation', 'question'] }),
+  // Why a scene began and where (overhaul 2 §4.6): `cause` (a turn's — place,
+  // ship, fight, expedition, challenge, time — or session, campaign, gm,
+  // cutaway, first), `what` (the cause in words, the Session Log's "A new
+  // scene — …"), `place` ({ id, type, name }) and `ship` (its position line).
+  row('scene.started', 2, ['sceneId', 'reason', 'cause', 'what', 'place', 'ship'], [], ['log', 'recap']),
+  // `turn`: the scene turned (the stores said its place or situation changed).
+  row('scene.ended', 2, ['sceneId', 'reason', 'turn'], [], ['log']),
+  // `letGo`: the questions play let go in the scene, as the frame keeps them
+  // (overhaul 2 §7.3) — read by the session summary, which is told LET GO.
+  row('frame', 2, ['location', 'present', 'situation', 'question', 'questionAnswered', 'letGo'], ['nar'], ['log', 'recap', 'summary'],
+    { blank: ['location', 'present', 'situation', 'question', 'letGo'] }),
   // ── A beat of play ────────────────────────────────────────────────────────
   row('line', 1, ['via', 'forcedMoveId', 'repost'], ['line', 'round'], ['log', 'recap'], { text: true }),
   row('question', 2, [], ['nar', 'card'], ['log', 'recap'], { text: true }),
@@ -138,7 +145,13 @@ export const RECORD_EVENTS = Object.freeze([
   row('clock.advanced', 2, ['name', 'from', 'to', 'segments', 'triggered'], ['clock'], ['log', 'recap']),
   row('reward.granted', 2, ['actorId', 'reward'], ['vow'], ['log', 'recap']),
   // ── What the table established, corrected or removed ──────────────────────
-  row('truth.set', 1, ['subject', 'fact', 'by', 'place', 'replaces'], ['truth', 'nar', 'entity'], ['log', 'recap'], { blank: ['subject', 'fact', 'place'] }),
+  // `basis` (overhaul 2 §5.7): what the truth rests on — the player's line,
+  // the dice, the GM, the premise (they bind) or the narrator's own colour,
+  // which the record keeps and no view tells.
+  row('truth.set', 1, ['subject', 'fact', 'by', 'place', 'replaces', 'basis'], ['truth', 'nar', 'entity'], ['log', 'recap', 'summary', 'chronicle'], { blank: ['subject', 'fact', 'place'] }),
+  // A truth whose basis rose to bind — a GM's Keep, a restatement the table's
+  // words bore out (overhaul 2 §5.3): observed by the ledger differ.
+  row('truth.confirmed', 1, ['basis', 'by'], ['truth'], ['log', 'recap', 'summary', 'chronicle']),
   row('truth.struck', 1, ['by', 'replacedBy'], ['truth'], ['log', 'recap']),
   row('name.changed', 1, ['from', 'to', 'how', 'about'], ['entity'], ['log', 'recap']),
   row('narration.removed', 1, ['narrationIds', 'by'], ['res'], ['log', 'recap']),

@@ -33,8 +33,9 @@ vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
 }));
 vi.mock('../../src/moves/interpreter.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  interpretMove: vi.fn(async () => ({
+  interpretMove: vi.fn(async (narration) => ({
     moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'iron', adds: 0, rationale: 'test', mischiefApplied: false,
+    playerNarration: narration,   // as the interpreter hands it on: the narration's ground (overhaul 2 §5.2)
   })),
 }));
 vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
@@ -66,6 +67,8 @@ const MODULE_ID = 'starforged-companion';
 const SESSION = 'sess-1';
 const NARRATION_MODEL = 'claude-sonnet-5-5';
 const LINE = 'I brace against the hull and push through the breach.';
+// What the narration established, borne out by the player's line (overhaul 2 §5.2): it binds, and the page lists it.
+const FACT = 'gives way to a push through the hull';
 const PROSE = 'The hull plate buckles under your shoulder and the breach yawns open.';
 
 let table;
@@ -103,7 +106,7 @@ beforeEach(async () => {
   table.addActor({ id: 'pc-pat', name: 'Kira', type: 'character', ownership: { 'pl-1': 3 },
     system: { momentum: { value: 2, max: 10 }, health: { value: 5 }, spirit: { value: 5 }, supply: { value: 5 } } });
   table.claude.respond((call) => (call.model === NARRATION_MODEL
-    ? `${PROSE}\n\`\`\`json\n{"newTruths":[{"subject":"the breach","fact":"opens onto the cargo spine"}],"stateChanges":[]}\n\`\`\``
+    ? `${PROSE}\n\`\`\`json\n${JSON.stringify({ newTruths: [{ subject: 'the breach', fact: FACT, from: 'line' }], stateChanges: [] })}\n\`\`\``
     : undefined));
 });
 
@@ -125,7 +128,7 @@ describe('a player\'s line, its move and its telling reach the Session Log page 
     expect(body).toContain(LINE);
     expect(body).toMatch(/Face Danger \(\+iron\), strong hit/);
     expect(body).toMatch(/Momentum 2 → 3/);
-    expect(body).toContain('opens onto the cargo spine');                 // established and standing
+    expect(body).toContain(FACT);                                         // established and standing
     expect(body).not.toContain('buckles under your shoulder');            // the chat has the narration
     // Nothing the record writes touches campaignState.
     expect(world()).not.toHaveProperty('sessionRecord');
@@ -168,12 +171,12 @@ describe('the X-Card reaches the page and the stored record (decision D3)', () =
 
     const flag = JSON.stringify(sessionLogPage()?.flags?.[MODULE_ID]?.sessionRecord);
     expect(flag).not.toContain('buckles under your shoulder');
-    expect(flag).not.toContain('cargo spine');
+    expect(flag).not.toContain(FACT);
     expect(storedEvents().find(e => e.k === 'narration.removed')?.d).toMatchObject({ by: 'xcard' });
     expect(body).toMatch(/Face Danger \(\+iron\), strong hit/);
     expect(body).toMatch(/Momentum 2 → 3/);
     expect(body).toMatch(/removed by the table/);
-    expect(body).not.toContain('cargo spine');
+    expect(body).not.toContain(FACT);
     expect(body).not.toContain(LINE);                                    // its line left with its telling
   });
 });

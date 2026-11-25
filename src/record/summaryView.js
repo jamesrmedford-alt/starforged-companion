@@ -19,6 +19,9 @@
  *                         (nothing happened because a question was asked, and
  *                         none is a beat to cite).
  *   ## STRUCK BY THE TABLE — did not happen
+ *   ## LET GO             the questions play let go (the scenes' frames,
+ *                         overhaul 2 §7.4): never told, as an event or as
+ *                         something still waiting.
  *   ## EARLIER THIS SESSION (written before the record) — for a session the
  *                         record opened in the middle of (a world upgraded
  *                         mid-session), the summary it had before.
@@ -120,6 +123,11 @@ export function summarySource(session) {
   if (told.length) out.push(`## THE SESSION (oldest first)\n\n${told.join('\n\n')}`);
   if (asked.length) out.push(`## QUESTIONS — asked of the narrator; nothing happened because one was asked\n\n${asked.join('\n\n')}`);
   if (struck.length) out.push(`## STRUCK BY THE TABLE — did not happen\n\n${struck.join('\n')}`);
+  // What play let go (overhaul 2 §7.4): the hooks the narration posed that play
+  // never took up. The fourth live run's session 1 summary opened on a3's
+  // untaken hail light, and the next two sessions' openings rang it again.
+  const letGo = (session.letGo ?? []).map(clean).filter(Boolean);
+  if (letGo.length) out.push(`## LET GO — the narration posed these; play never took them up\n\n${letGo.map(t => `- ${quote(t)}`).join('\n')}`);
   const text = out.join('\n\n');
   return { text, ids, lasting, hash: recordHash(text), empty: !ids.length && !earlier, through: session.through ?? -1 };
 }
@@ -366,6 +374,9 @@ export const SESSION_SUMMARY_SYSTEM_PROMPT =
   `QUESTIONS are no beats: never cite one, and never tell what an answer said as something that ` +
   `happened.\n` +
   `- What is STRUCK BY THE TABLE did not happen: never tell it.\n` +
+  `- TOLD AS is the narrator's telling and holds its own colour — the look of a place, a prop, ` +
+  `the hook a beat ends on. None of it is an event, and nothing under LET GO is told at all, as ` +
+  `an event or as something still waiting.\n` +
   `- Keep whose things are whose, and use each name as the record writes it — and no other.\n` +
   `- This is narrative memory, not a recap card: do not address the player, do not propose ` +
   `actions, and do not mention dice, moves, momentum or any game mechanic.\n\n` +

@@ -83,6 +83,34 @@ function recordBondRoll(message) {
 }
 
 /**
+ * Stamp every narrator card with the scene it is told in (overhaul 2 §8 — the
+ * flag family's `sceneId`, rules/narrator-memory.md invariant 1): one
+ * `preCreateChatMessage` hook, on whichever client creates the card, reads the
+ * campaign's open scene and writes it onto the card as it is created
+ * (`updateSource`), when the card's module flags carry `narratorCard: true`
+ * and no `sceneId` of their own. The post sites are untouched, and a new card
+ * type is stamped with no code of its own. Its readers: the colour window and
+ * the scene's beats in the ACTIVE SCENE block (narrator.js sceneNarrationsOf).
+ * It writes no world state — it sets a flag on the message being created.
+ * Once, at load.
+ */
+export function registerSceneStampHook() {
+  if (registerSceneStampHook._installed || typeof Hooks === 'undefined') return;
+  registerSceneStampHook._installed = true;
+  Hooks.on('preCreateChatMessage', (message, data) => {
+    try {
+      const flags = data?.flags?.[MODULE_ID] ?? message?.flags?.[MODULE_ID];
+      if (flags?.narratorCard !== true || flags.sceneId) return;
+      const sceneId = game.settings.get(MODULE_ID, 'campaignState')?.currentSceneId;
+      if (typeof sceneId !== 'string' || !sceneId) return;
+      message?.updateSource?.({ [`flags.${MODULE_ID}.sceneId`]: sceneId });
+    } catch (err) {
+      console.debug?.(`${MODULE_ID} | a narrator card was not stamped with its scene:`, err?.message ?? err);
+    }
+  });
+}
+
+/**
  * Register the hook. `inMemory(message)` is narrator memory's own rule for
  * one card of its own session (narrator.js `narratorMemoryCard`), handed in so
  * the rule lives in one place. Once, at `ready`.

@@ -934,16 +934,28 @@ last narration quoted word for word — that this note does not tell, or whose
 short form there its line does not name, is added at that message's end,
 `narrator.js callNarratorAPI` → `withNameChangesNoted` (known-issues
 NAME-NOTE-MISSES-THE-USER-MESSAGE: it added nothing once this note was
-there at all)) · [6.5] active-scene ledger
-(SCENE FRAME — with the scene's question, shown while it stands, marked
-when answered (issue #353 R2), released when play has left it unanswered for
+there at all)) · [6.5] active-scene ledger — ACTIVE SCENE — WHAT BINDS,
+AND WHAT THE NARRATION DESCRIBED (overhaul 2 §5.5): THE SCENE (why it began
+and how many beats ago — its anchor; Place and Ship by the table's record;
+Where / Present / Now "as the narration has it"; Turns on — the scene's
+question, from the player's line, shown while it stands, marked when
+answered (issue #353 R2), let go when play has left it unanswered for
 `SCENE_QUESTION_BEATS` beats, and — with none — a line asking this beat for
-the one the scene turns on now, from the player's latest line
-(`askSceneQuestion`; never in a vignette's, an `@scene` answer's or the
-recap's prompt — known-issues NARRATOR-REFRAINS) → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
-`maxLedgerTokens` sheds state only, line by line with location / vessel /
-condition last — frame/truths/corrections/ship are
-never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
+one from the player's words, or none if they set out to settle nothing
+(`askSceneQuestion`; only the move, paced, round and oracle follow-up modes —
+overhaul 2 §7.2: never in a vignette's, a clock vignette's, the oath scene's,
+the inciting incident's, an `@scene` answer's or the recap's prompt —
+known-issues NARRATOR-REFRAINS)) → WHAT BINDS (the player's, the dice's, the
+GM's and the premise's truths, each labelled) → **CORRECTED** → STANDING NOW
+(binding state) → WHAT THE NARRATION HAS DESCRIBED (its colour, while one of
+the scene's latest `COLOUR_BEATS` narrations said it) → **PLAY LET THESE
+GO** (the frame's `letGo`, at most four: hooks the narration posed that play
+did not take up — not to end on, restate or set again; REFRAIN-OUTLIVES-THE-QUESTION)
+→ COMMAND VEHICLE; `maxLedgerTokens` sheds the described colour first —
+state, then truths, the oldest first — then standing state, line by line
+with location / vessel / condition last (overhaul 2 D8) — THE SCENE, WHAT
+BINDS, CORRECTED, PLAY LET THESE GO and the command vehicle are never
+dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
 `buildNarratorExtras` → `extras.unrevealed`, the active plans of the GM-only
 Secrets journal whose subject is in play — made in this scene, its entity
 matched or in the frame's cast, its name in the frame or the player's line,
@@ -1631,14 +1643,35 @@ through in its own shape — `entityId` is the host document id; entity state
 keys are `entity:<id>`; issue #286 A1 — a name several entities share led by
 the active sector's, as `!at` resolves it: the older sector's "Derelict
 Starship" took the facts, the scene's place and relevance, issue #345 AA06), ship
-`position` stateChanges routed to the §20 ship record, `applySceneFrame`
+`position` stateChanges routed to the §20 ship record — a beat of play's only
+(overhaul 2 §6.3: a move's, a paced line's, a round's, an oracle follow-up's,
+and the inciting incident's starting position; a bookend's, a clock
+vignette's and the oath scene's are dropped and logged) — `applySceneFrame`
 full-replacement snapshot — a session vignette's with its question taken off
 (`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
-play — it sets no question and changes none), every other beat's then counted
+play — it sets no question and changes none); every beat's frame is first
+read against the beat's player words (`playersFrame`, overhaul 2 §7.2–7.3:
+`ctx.ground` — `provenance.js groundOf`, the move's written line, the paced
+line, a round's lines, the oracle's typed question — and `ctx.mode`): a
+question the frame does not already hold stands only when the mode may set
+one (`QUESTION_MODES`), it shares a telling word with those words (the PCs'
+and the command vehicle's names are no evidence — `namesNoEvidence`) and it
+is no let-go question again (`playersQuestion`); a Now line that carries a
+let-go question is stored empty (`touchesLetGo`). A beat of play whose frame
+names exactly one recorded place that is not the current location, and whose
+player words name it too, walks the characters there: the current location
+moves in the frame's persist (`persistSceneLedgerFields`' `onto`, while the
+store is on the scene it was read in) and on the caller's copy, the arrival is
+recorded (`place.arrived`, `how: "line"`), and the next beat turns the scene
+(`sceneLifecycle.js placeWalkedTo` — overhaul 2 §6.4; the ship stays, D17).
+Every beat is then counted
 against the question the frame keeps (`countSceneQuestionBeat` →
-`sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the frame keeps none —
-known-issues NARRATOR-REFRAINS: an opening vignette's hook was its session's
-question in 22 prompts) — each truth, state value and the frame stamped
+`sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the question is let go:
+onto the frame's code-kept `letGo` list — its text and telling stems — and
+the frame's Now line with it — known-issues NARRATOR-REFRAINS: an opening
+vignette's hook was its session's question in 22 prompts;
+REFRAIN-OUTLIVES-THE-QUESTION: a released question was set again in other
+words four times in one session) — each truth, state value and the frame stamped
 with the narration's `narrationId` (`newNarrationId`; issue #321 U07, for the
 X-Card) — the consistency check (on by default), then the
 card posts with the flag family (`narratorCard`/`narrationText`/`sessionId`,
@@ -1838,7 +1871,7 @@ an X-Card on the narration that told it drops it too (issue #345 AA01) — for s
 — issue #271).
 
 **Scene lifecycle** (`src/factContinuity/sceneLifecycle.js`): scenes start on
-`!scene start`, `ensureSceneStarted` on the first move/@scene/paced
+`!scene start`, `ensureCurrentScene` on the first move/@scene/paced
 narration, **or the inciting incident** (so the premise sidecar writes into a
 real scene the first move then *continues* — the opening NPC state and frame
 survive), and since issue #321 U34 on an oracle follow-up, a session or clock
@@ -1864,9 +1897,29 @@ used to call `startScene`, which ended the scene it was asked about and wrote
 the answer without the frame, truths, state or CORRECTED list. It still
 starts one when none is open, so the question is asked of a scene; the answer
 adds nothing to it.
-`ensureSceneStarted` starts a scene on the **canonical GM only** — a scene
+`ensureCurrentScene` starts a scene on the **canonical GM only** — a scene
 boundary is a world write, so a keyed player's client narrating `@scene` /
-`!incite` with no keyed GM online leaves it to the GM (debug-logged). `startScene` implicitly ends a prior
+`!incite` with no keyed GM online leaves it to the GM (debug-logged).
+**Scenes turn** (overhaul 2 slice 2, D1 — reverses issue #353 R2's "scenes
+stay manual"): every start writes the scene's anchor (`sceneBegan`: `cause`,
+`what`, the place, the ship's line and place key, the open combat /
+expedition / scene-challenge tracks — `sceneTurns.js sceneAnchorOf`, from the
+stores as `sceneStoresNow` reads them), and at a beat of play
+(`ensureCurrentScene`'s move, paced, round and oracle follow-up sites)
+`turnSceneIfDue` turns the scene when the stores moved off it
+(`sceneTurnDue`: place → ship → fight → expedition → challenge → time;
+begun before the narration, ended after the beat whose `endingTrackIds`
+name the track) — `endScene({ turn: true })`, which keeps the unanswered
+mysteries (carried by `secrets.js carrySceneMysteries`) and the `!pace`
+override (D16, amending #362 D4), then a start with the cause in words and
+the frame's cast, let-go questions and the spotlight's last actor carried
+(`carriedFrame`); the summary is made (fire-and-forget), no snapshot taken.
+A copy on another scene than the store's turns nothing. The scene's opening
+beat is told so in overhaul 4's obligations block of its user message — TELL
+[scene] (`sceneTurns.js sceneObligations` → `sceneOpeningOf`: the anchor's
+`what`, while no narration has written in the scene), beside NOT SO [letgo]
+for each question play let go — rendered by `moves/contracts/obligations.js
+formatObligationsBlock`, which this slice does not edit. `startScene` implicitly ends a prior
 scene when truths/state exist. `endScene` migrates entity-kind truths →
 generative tiers (deduped against existing tier details — live capture +
 migration no longer double-lands); scene-kind truths → the tier of the
@@ -1908,12 +1961,13 @@ still this scene, migrates the truths and keeps the whereabouts that a
 narration persisted during its awaits (`migrateLateSceneFacts`, a few
 passes) — the final write used to clear them unmigrated (issue #325 W24).
 Both persist only their scene fields
-(`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
+(`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`,
+`sceneBegan`)
 onto the latest stored campaignState (`persistCampaignStateFields`;
 `endScene`'s own `persistEndedScene`, on the same write chain; a scene the
 store holds that is not the one ended — started on another client during its
 awaits — is left open, its fields and pacing standing: END-SCENE-NEXT-SCENE) — when
-`ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
+`ensureCurrentScene` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. `endScene`'s write also keeps the scene's strikes,
 X-Card retractions, Replace originals and live narration truths for the session (B6;
 `sessionRetractions` — below), added at that write's turn onto the session's

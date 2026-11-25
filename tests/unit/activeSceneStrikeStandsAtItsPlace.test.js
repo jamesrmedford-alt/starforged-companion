@@ -97,7 +97,7 @@ describe('ACTIVE-SCENE-STRIKE-PLACE-BLIND — the active scene\'s strike of a sc
     await strikeAtBleakholdThenTravel();
     await narrateAt('Vantage Station', DARK, 'nar-3');
     const block = ledger();
-    expect(block.truths).toContain(`scene — ${DARK}`);
+    expect(block.described).toContain(`scene — ${DARK}`);
     expect(block.corrections).not.toContain(DARK);
   });
 

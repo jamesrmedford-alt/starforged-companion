@@ -25,12 +25,12 @@ describe('a state change supersedes the same attribute whatever its case (issue 
     expect(cs.sceneState.bySubject['the dockmaster']).toHaveLength(1);
   });
 
-  it('"Location" supersedes "location" — CURRENT STATE holds one location for the dockmaster', () => {
+  it('"Location" supersedes "location" — the block holds one location for the dockmaster', () => {
     const cs = scene();
     turn(cs, 'location', 'the cargo bay');
     turn(cs, 'Location', 'the customs office');
 
-    const lines = buildLedgerBlock(cs, {}).state.split('\n').filter(l => /the dockmaster — location/i.test(l));
+    const lines = buildLedgerBlock(cs, {}).described.split('\n').filter(l => /the dockmaster — location/i.test(l));
     // There were two lines — "location: the cargo bay" and "Location: the customs office".
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/the customs office/);

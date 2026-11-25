@@ -33,8 +33,9 @@ function makeCampaignState(overrides = {}) {
   };
 }
 
+// The GM's facts — they bind (overhaul 2 §5.1): WHAT BINDS and STANDING NOW.
 function seed(cs, { truths = [], stateChanges = [] } = {}) {
-  applySidecar({ newTruths: truths, stateChanges }, { campaignState: cs });
+  applySidecar({ newTruths: truths, stateChanges }, { campaignState: cs, asserter: 'gm' });
   return cs;
 }
 
@@ -47,8 +48,8 @@ describe('buildLedgerBlock — basic rendering', () => {
   it('returns empty when both ledgers are empty', () => {
     const out = buildLedgerBlock(makeCampaignState());
     expect(out.combined).toBe('');
-    expect(out.truths).toBe('');
-    expect(out.state).toBe('');
+    expect(out.binds).toBe('');
+    expect(out.standing).toBe('');
   });
 
   it('renders scene-kind truths with the standard header (always in scope)', () => {
@@ -56,13 +57,13 @@ describe('buildLedgerBlock — basic rendering', () => {
       truths: [{ subject: 'scene', fact: 'The wind has died' }],
     });
     const out = buildLedgerBlock(cs);
-    expect(out.header).toMatch(/ACTIVE SCENE — BINDING TRUTHS AND CURRENT STATE/);
-    expect(out.truths).toMatch(/TRUTHS:\n {2}scene — The wind has died/);
-    expect(out.state).toBe('');
+    expect(out.header).toMatch(/ACTIVE SCENE — WHAT BINDS, AND WHAT THE NARRATION DESCRIBED/);
+    expect(out.binds).toMatch(/WHAT BINDS[^\n]*\n {2}scene — The wind has died \(the GM\)/);
+    expect(out.standing).toBe('');
     expect(out.combined).toMatch(/scene — The wind has died/);
   });
 
-  it('renders scene-kind state under CURRENT STATE', () => {
+  it('renders scene-kind state under STANDING NOW', () => {
     const cs = seed(makeCampaignState(), {
       stateChanges: [
         { subject: 'scene', attribute: 'lighting', value: 'dim'    },
@@ -70,9 +71,9 @@ describe('buildLedgerBlock — basic rendering', () => {
       ],
     });
     const out = buildLedgerBlock(cs);
-    expect(out.state).toMatch(/CURRENT STATE \(right now in this scene\):/);
-    expect(out.state).toMatch(/scene — lighting: dim/);
-    expect(out.state).toMatch(/scene — weather: still/);
+    expect(out.standing).toMatch(/STANDING NOW:/);
+    expect(out.standing).toMatch(/scene — lighting: dim \(the GM\)/);
+    expect(out.standing).toMatch(/scene — weather: still/);
   });
 
   it('renders both subsections when both ledgers have content', () => {
@@ -81,14 +82,14 @@ describe('buildLedgerBlock — basic rendering', () => {
       stateChanges: [{ subject: 'scene', attribute: 'lighting', value: 'red' }],
     });
     const out = buildLedgerBlock(cs);
-    expect(out.combined).toMatch(/TRUTHS:/);
-    expect(out.combined).toMatch(/CURRENT STATE/);
+    expect(out.combined).toMatch(/WHAT BINDS/);
+    expect(out.combined).toMatch(/STANDING NOW/);
     // Truths come before state.
-    expect(out.combined.indexOf('TRUTHS:'))
-      .toBeLessThan(out.combined.indexOf('CURRENT STATE (right now in this scene):'));
+    expect(out.combined.indexOf('WHAT BINDS'))
+      .toBeLessThan(out.combined.indexOf('STANDING NOW:'));
   });
 
-  it('moves retracted truths out of TRUTHS and into the CORRECTED block', () => {
+  it('moves retracted truths out of WHAT BINDS and into the CORRECTED block', () => {
     // NARR-RETRACT-PASSIVE: a bare strike used to just disappear from the
     // prompt — now it renders as an explicit do-not-re-assert line.
     const cs = seed(makeCampaignState(), {
@@ -96,7 +97,7 @@ describe('buildLedgerBlock — basic rendering', () => {
     });
     cs.sceneTruths[0].retracted = true;
     const out = buildLedgerBlock(cs);
-    expect(out.truths).toBe('');
+    expect(out.binds).toBe('');
     expect(out.corrections).toMatch(/do NOT re-assert/);
     expect(out.corrections).toMatch(/scene — The wind has died/);
     expect(out.combined).toMatch(/CORRECTED/);
@@ -120,7 +121,7 @@ describe('buildLedgerBlock — retraction defense', () => {
     cs.sceneTruths[0].correctedTo = cs.sceneTruths[1].id;
     const out = buildLedgerBlock(cs);
     expect(out.corrections).toBe('');
-    expect(out.truths).toMatch(/The relay is damaged/);
+    expect(out.binds).toMatch(/The relay is damaged/);
     expect(out.combined).not.toMatch(/The relay is dead/);
   });
 
@@ -144,7 +145,7 @@ describe('buildLedgerBlock — retraction defense', () => {
     });
     cs.sceneTruths[0].retracted = true;
     const out = buildLedgerBlock(cs, { maxTokens: 1 });
-    expect(out.state).toBe('');
+    expect(out.standing).toBe('');
     expect(out.corrections).toMatch(/Load-bearing struck fact/);
   });
 });
@@ -168,7 +169,7 @@ describe('buildLedgerBlock — filtering', () => {
         ],
         stateChanges: [],
       },
-      { campaignState: cs, entities },
+      { campaignState: cs, entities, asserter: 'gm' },
     );
     const out = buildLedgerBlock(cs, {
       matchedEntityIds: ['JE.x7'],
@@ -208,7 +209,7 @@ describe('buildLedgerBlock — filtering', () => {
     const cs = makeCampaignState();
     applySidecar(
       { newTruths: [{ subject: 'Bleakhold', fact: 'Run by the Covenant' }], stateChanges: [] },
-      { campaignState: cs, entities },
+      { campaignState: cs, entities, asserter: 'gm' },
     );
     const out = buildLedgerBlock(cs, {
       currentLocationId: 'JE.loc1',
@@ -222,7 +223,7 @@ describe('buildLedgerBlock — filtering', () => {
     const cs = makeCampaignState();
     applySidecar(
       { newTruths: [{ subject: 'Vance', fact: 'a' }], stateChanges: [] },
-      { campaignState: cs, entities },
+      { campaignState: cs, entities, asserter: 'gm' },
     );
     const withName = buildLedgerBlock(cs, {
       matchedEntityIds: ['JE.x7'],
@@ -243,7 +244,7 @@ describe('buildLedgerBlock — filtering', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('buildLedgerBlock — maxTokens', () => {
-  it('drops the state block when total tokens exceed the cap; truths remain', () => {
+  it('drops the standing state when total tokens exceed the cap; what binds remains', () => {
     const cs = makeCampaignState();
     // Push enough state to blow past 50 tokens (well below normal usage).
     const stateChanges = [];
@@ -252,12 +253,12 @@ describe('buildLedgerBlock — maxTokens', () => {
     }
     applySidecar(
       { newTruths: [{ subject: 'scene', fact: 'It is raining' }], stateChanges },
-      { campaignState: cs },
+      { campaignState: cs, asserter: 'gm' },
     );
     const out = buildLedgerBlock(cs, { maxTokens: 50 });
-    expect(out.truths).toMatch(/scene — It is raining/);
-    expect(out.state).toBe('');
-    expect(out.tokenEstimates.state).toBe(0);
+    expect(out.binds).toMatch(/scene — It is raining/);
+    expect(out.standing).toBe('');
+    expect(out.tokenEstimates.standing).toBe(0);
   });
 
   it('keeps both blocks when total tokens fit under the cap', () => {
@@ -266,8 +267,8 @@ describe('buildLedgerBlock — maxTokens', () => {
       stateChanges: [{ subject: 'scene', attribute: 'a', value: 'b' }],
     });
     const out = buildLedgerBlock(cs, { maxTokens: 1000 });
-    expect(out.truths).not.toBe('');
-    expect(out.state).not.toBe('');
+    expect(out.binds).not.toBe('');
+    expect(out.standing).not.toBe('');
   });
 
   // Issue #286 A6: the whole state block used to drop at once, REQUIRED
@@ -292,11 +293,11 @@ describe('buildLedgerBlock — maxTokens', () => {
     const out = buildLedgerBlock(cs, { maxTokens: budget });
     // (A text subject's state key is lowercased; its label keeps the case
     // the narrator wrote — TEXT-SUBJECT-LOWERCASE.)
-    expect(out.state).toContain('Vance — location: aboard his shuttle');
-    expect(out.state).toContain('Vance — condition: bleeding from the shoulder');
-    expect(out.state).not.toContain('mood');
-    expect(out.state).not.toContain('lighting');
-    expect(out.truths.split('\n')).toHaveLength(8);
+    expect(out.standing).toContain('Vance — location: aboard his shuttle');
+    expect(out.standing).toContain('Vance — condition: bleeding from the shoulder');
+    expect(out.standing).not.toContain('mood');
+    expect(out.standing).not.toContain('lighting');
+    expect(out.binds.split('\n')).toHaveLength(8);
     expect(total(out)).toBeLessThanOrEqual(budget);
   });
 
@@ -309,8 +310,8 @@ describe('buildLedgerBlock — maxTokens', () => {
     lighting.updatedAt -= 10_000;
     const full = buildLedgerBlock(cs, { maxTokens: Infinity });
     const out = buildLedgerBlock(cs, { maxTokens: total(full) - 3 });
-    expect(out.state).toContain('scene — sound: a slow metallic ticking');
-    expect(out.state).not.toContain('lighting');
+    expect(out.standing).toContain('scene — sound: a slow metallic ticking');
+    expect(out.standing).not.toContain('lighting');
   });
 });
 
@@ -336,7 +337,7 @@ describe('fact-continuity gating in buildNarratorSystemPrompt', () => {
     });
     const prompt = buildNarratorSystemPrompt(cs, settings(), null, '', {});
     expect(prompt).toMatch(/RESPONSE FORMAT — MANDATORY SIDECAR/);
-    expect(prompt).toMatch(/ACTIVE SCENE — BINDING TRUTHS/);
+    expect(prompt).toMatch(/ACTIVE SCENE — WHAT BINDS/);
   });
 
   it('omits sidecar instruction and ledger block when factContinuityEnabled is false', () => {
@@ -347,7 +348,7 @@ describe('fact-continuity gating in buildNarratorSystemPrompt', () => {
       cs, settings({ factContinuityEnabled: false }), null, '', {},
     );
     expect(prompt).not.toMatch(/RESPONSE FORMAT — MANDATORY SIDECAR/);
-    expect(prompt).not.toMatch(/ACTIVE SCENE — BINDING TRUTHS/);
+    expect(prompt).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
   });
 
   it('omits the ledger block when factContinuityLedgerInContext is false but keeps sidecar', () => {
@@ -359,7 +360,7 @@ describe('fact-continuity gating in buildNarratorSystemPrompt', () => {
       null, '', {},
     );
     expect(prompt).toMatch(/RESPONSE FORMAT — MANDATORY SIDECAR/);
-    expect(prompt).not.toMatch(/ACTIVE SCENE — BINDING TRUTHS/);
+    expect(prompt).not.toMatch(/ACTIVE SCENE — WHAT BINDS/);
   });
 });
 
@@ -381,13 +382,13 @@ describe('buildLedgerBlock — scene frame', () => {
     });
   }
 
-  it('renders the SCENE FRAME segment from campaignState.sceneFrame', () => {
+  it('renders THE SCENE\'s frame lines from campaignState.sceneFrame — the narration\'s', () => {
     const out = buildLedgerBlock(frameState(), {});
-    expect(out.frame).toContain('SCENE FRAME');
-    expect(out.frame).toContain("Where:   Lyra's graveyard");
-    expect(out.frame).toContain('Present: Venri Quint, Vance');
-    expect(out.frame).toContain('Now:     Hailing Vance across the debris field');
-    expect(out.combined).toContain('SCENE FRAME');
+    expect(out.scene).toContain('THE SCENE');
+    expect(out.scene).toContain("Where:    Lyra's graveyard — as the narration has it");
+    expect(out.scene).toContain('Present:  Venri Quint, Vance');
+    expect(out.scene).toContain('Now:      Hailing Vance across the debris field — as the narration has it');
+    expect(out.combined).toContain('THE SCENE');
     expect(out.combined).toContain('## ACTIVE SCENE');
   });
 
@@ -399,28 +400,28 @@ describe('buildLedgerBlock — scene frame', () => {
     });
     // Player message does NOT name Vance — a text subject of this scene stays in scope.
     const out = buildLedgerBlock(cs, {});
-    expect(out.truths).toContain('Life support failing');
-    expect(out.state).toContain('aboard his shuttle');
+    expect(out.binds).toContain('Life support failing');
+    expect(out.standing).toContain('aboard his shuttle');
   });
 
   it('keeps an unmatched recorded entity\'s entries out of scope', () => {
     const cs = makeCampaignState();
     applySidecar(
       { newTruths: [{ subject: 'Vance', fact: 'Life support failing' }], stateChanges: [] },
-      { campaignState: cs, entities: [{ _id: 'rec-v', journalId: 'act-v', entityType: 'connection', name: 'Vance' }] },
+      { campaignState: cs, entities: [{ _id: 'rec-v', journalId: 'act-v', entityType: 'connection', name: 'Vance' }], asserter: 'gm' },
     );
-    expect(buildLedgerBlock(cs, {}).truths).not.toContain('Life support failing');
-    expect(buildLedgerBlock(cs, { matchedEntityIds: ['act-v'] }).truths).toContain('Life support failing');
+    expect(buildLedgerBlock(cs, {}).binds).not.toContain('Life support failing');
+    expect(buildLedgerBlock(cs, { matchedEntityIds: ['act-v'] }).binds).toContain('Life support failing');
   });
 
   it('omits the frame when sceneFrameEnabled is false', () => {
     const cs = frameState();
     seed(cs, { truths: [{ subject: 'Vance', fact: 'Life support failing' }] });
     const out = buildLedgerBlock(cs, { sceneFrameEnabled: false });
-    expect(out.frame).toBe('');
-    expect(out.combined).not.toContain('SCENE FRAME');
+    expect(out.scene).not.toContain('Where:');
+    expect(out.combined).not.toContain("Lyra's graveyard");
     // A text subject of this scene renders without the frame (B4).
-    expect(out.truths).toContain('Life support failing');
+    expect(out.binds).toContain('Life support failing');
   });
 
   it('never drops the frame under budget pressure (state drops first)', () => {
@@ -430,12 +431,12 @@ describe('buildLedgerBlock — scene frame', () => {
       stateChanges: [{ subject: 'scene', attribute: 'lighting', value: 'flickering red emergency strips' }],
     });
     const out = buildLedgerBlock(cs, { maxTokens: 1 });
-    expect(out.frame).toContain('SCENE FRAME');
-    expect(out.state).toBe('');
+    expect(out.scene).toContain("Where:    Lyra's graveyard");
+    expect(out.standing).toBe('');
   });
 
   it('renders the frame even when both ledgers are empty', () => {
     const out = buildLedgerBlock(frameState(), {});
-    expect(out.combined).toContain('SCENE FRAME');
+    expect(out.combined).toContain("THE SCENE\n  Where:    Lyra's graveyard");
   });
 });

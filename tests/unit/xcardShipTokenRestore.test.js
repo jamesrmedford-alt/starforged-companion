@@ -66,7 +66,7 @@ let prevScenes;
 /** A move narration as the narrator makes one: the sidecar applied with its id, then its card. */
 async function narrate(narrationId, prose, sidecar) {
   const raw = `${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
-  const text = applyNarratorSidecar(raw, stored(), { narrationId });
+  const text = applyNarratorSidecar(raw, stored(), { narrationId, mode: 'move_resolution' });   // a move's narration: a beat of play moves the ship (overhaul 2 §6.3)
   await postNarrationCard(text, { moveId: 'set_a_course', outcome: 'strong_hit', _id: `res-${narrationId}` },
     stored(), { playerText: 'We burn for the outpost.', playerName: 'Kira', narrationId });
 }

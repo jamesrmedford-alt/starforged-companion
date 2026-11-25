@@ -48,23 +48,30 @@ their own key — runs off the canonical GM; there `applyNarratorSidecar`
 applies no side-data and fires no audit (the skip is debug-logged), and the
 prose is unaudited. See `narrator-context-flow.md` → "Where each call runs".
 
-The audit prompt (`buildAuditPrompt`) compares prose against the FULL
-ledger block (`buildLedgerBlock` at `maxTokens: Infinity`) — SCENE FRAME,
-RECORDED IDENTITIES (PC + matched-NPC pronouns, 2026-07), TRUTHS, RETRACTED
-FACTS (this scene's strikes and, since issue #286 B6, the session's earlier
-scenes' — never a truth the X-Card retracted, which `sessionRetractedFacts`
-leaves out so the removed content is not handed back; issue #321 U07), STATE, SHIP POSITION, and WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND
-MUST NOT (overhaul 4, D9's logged class — the narration's obligation lines,
-one a line with its list and tag, handed in by the narrator through
-`applyNarratorSidecar`'s `obligations`: the move's, the paced line's, the
-round's, the oracle follow-up's; they ride an audit the ledger calls for and
-make no call of their own) — via one Haiku call (`claude-haiku-4-5`,
-`max_tokens: 1000` since 2026-07, with a `stop_reason` truncation warning,
-through `api-proxy.js`). Response kinds: `truth | state
-| frame | ship | retraction | identity | obligation` (a TELL line left
-untold, a NOT YET told as done, a NOT SO told as true — its subject the
-line's tag), each with confidence high/medium/
-low; parsing is fence-and-preamble tolerant and never throws.
+The audit prompt (`buildAuditPrompt`) compares prose against what binds in
+the ledger block (`buildLedgerBlock` at `maxTokens: Infinity`; overhaul 2
+§5.8, D15) — THE PLACE (THE SCENE's Place and Ship lines: where the
+characters and their ship are by the table's record), RECORDED IDENTITIES
+(PC + matched-NPC pronouns, 2026-07), WHAT BINDS (the player's, the dice's,
+the GM's, the premise's truths), RETRACTED FACTS (this scene's strikes and,
+since issue #286 B6, the session's earlier scenes' — never a truth the
+X-Card retracted, which `sessionRetractedFacts` leaves out so the removed
+content is not handed back; issue #321 U07), STANDING NOW (binding state),
+and WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND MUST NOT (overhaul 4,
+D9's logged class — the narration's obligation lines, one a line with its
+list and tag, handed in by the narrator through `applyNarratorSidecar`'s
+`obligations`: the move's, the paced line's, the round's, the oracle
+follow-up's; they ride an audit the ledger calls for and make no call of
+their own) —
+via one Haiku call (`claude-haiku-4-5`, `max_tokens: 1000` since 2026-07,
+with a `stop_reason` truncation warning, through `api-proxy.js`). What the
+narration described — its colour, and the frame's Where and Now — is not
+audited: a narration that changes it is no contradiction. Response kinds:
+`truth | state | place | retraction | identity | obligation` (a `frame` or
+`ship` reply reads as `place`; `obligation`: a TELL line left untold, a NOT
+YET told as done, a NOT SO told as true — its subject the line's tag), each
+with confidence high/medium/low; parsing is
+fence-and-preamble tolerant and never throws.
 
 **Who passes matched entities:** the move path, `@scene`, and paced all
 pass `relevance/extras.matchedEntityIds` into the apply ctx, so the audit's
@@ -85,9 +92,12 @@ longer special-cases them).
   given, the subject by its proper name; it showed a pointer to the fact —
   issue #354 P2-19), on the card and in the World Journal panel's row.
   Truth/state kinds carry the "Retract the offending fact" button;
-  frame / ship / identity / retraction / obligation kinds carry a **targeted remedy
-  hint** instead (the dialog cannot address them — NARRCHK-REMEDY-MISMATCH
-  fix). A standing contradiction posts **once per scene** (in-memory dedup
+  place / identity / retraction / obligation kinds carry a **targeted remedy hint**
+  instead (the dialog cannot address them — NARRCHK-REMEDY-MISMATCH fix; a
+  place catch points at `!at` or the command-vehicle token, overhaul 2
+  §5.8). The correction dialog marks each truth with what it rests on, and a
+  GM may **Keep** a colour truth — it binds from then on (`confirmTruth`,
+  overhaul 2 §5.3; the record sees `truth.confirmed`). A standing contradiction posts **once per scene** (in-memory dedup
   on scene + subject + violated fact; telemetry still logs every audit). The card carries
   `contradictedTruthId` (the scene truth the catch names, matched from its
   violated text — `resolveContradictedTruthId`; the audit returns no id, so

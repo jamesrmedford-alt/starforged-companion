@@ -179,9 +179,10 @@ export function renderSessionLogBody(session, { story = '', enabled = true } = {
   const lines = [`<h2>${escapeHtml(session?.name || 'Session')}</h2>`];
   if (!enabled || !session) return lines.join('');
 
-  // A new scene where one began this session, before its first beat, named
-  // where it began; a move of place within a scene, a line of its own before
-  // the first beat set there (known-issues RECORD-VIEW-SMALLER: a scene was
+  // A new scene where one began this session, before its first beat — why it
+  // began (overhaul 2 §4.6: its `scene.started` `what`) and where (its first
+  // frame); a move of place within a scene, a line of its own before the
+  // first beat set there (known-issues RECORD-VIEW-SMALLER: a scene was
   // labelled where it ended, and its move of place said nowhere).
   const begun = new Map((session.scenes ?? []).map(sc => [sc.sceneId, sc]));
   const beats = [];
@@ -194,7 +195,9 @@ export function renderSessionLogBody(session, { story = '', enabled = true } = {
     if (beat.scene !== scene) {
       const opened = begun.has(beat.scene);
       at = opened ? (placeOf(begun.get(beat.scene)?.where?.location) ?? place) : place;
-      if (opened) beats.push(`<li><em>A new scene${at ? ` — ${escapeHtml(at)}` : ''}.</em></li>`);
+      const why = opened ? String(begun.get(beat.scene)?.what ?? '').trim() : '';
+      const head = why && at ? `${why} (${at})` : (why || at);
+      if (opened) beats.push(`<li><em>A new scene${head ? ` — ${escapeHtml(head)}` : ''}.</em></li>`);
     } else if (place && at && !samePlace(place, at)) {
       beats.push(`<li><em>The scene moves — ${escapeHtml(place)}.</em></li>`);
     }
