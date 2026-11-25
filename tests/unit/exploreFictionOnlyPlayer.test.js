@@ -246,7 +246,7 @@ describe('what each line of play became — from the readers\' own replies', () 
     const text = scorecard({ charter: CHARTER, run: { id: 'r', mode: 'live' }, beats, freeform: freeformOf({ messages, exchanges, beats, charter: CHARTER }) });
     expect(text).toContain('| Plain lines | 2 line(s) where a move was wanted: 1 rolled, 0 offered it, 0 read as another move, 1 narrated with nothing offered; 1 line(s) named a move (plain lines alone: 0 of 1 read); 1 beat(s) at last resort; 0 memory question(s) asked as play, 0 as @scene |');
     expect(text).toContain('## What each line of play became');
-    expect(text).toContain('| a1 | 21 | I treat my wounds with the ship\'s medkit. |  | narrated — **not what was wanted** |  | heal / resupply / sojourn / hearten |');
+    expect(text).toContain('| a1 | 21 | I treat my wounds with the ship\'s medkit. |  | narrated — **not what was wanted** |  | heal / resupply / sojourn / hearten / repair |');
     expect(text).toContain('Beats that came to their last resort (the move named, after plain lines brought nothing): 21.');
   });
 });

@@ -210,6 +210,12 @@ function readTableOnPage(gm) {
     const legacyOf = (t) => ({ ticks: num(cs.legacyTracks?.[t]?.ticks) ?? 0, cleared: cs.legacyTracks?.[t]?.cleared === true, cycles: num(cs.legacyTracks?.[t]?.cycles) ?? 0 });
     const sectorScene = game.scenes.contents.find(sc => flagsOf(sc).sectorScene);
     const shipToken = sectorScene?.tokens.find(t => flagsOf(t).commandVehicle) ?? null;
+    // The command vehicle's record, as the readers' SITUATION block reads it
+    // (src/entities/ship.js getCommandVehicle: the ship flagged so, else the
+    // one tracked ship that is not someone else's): its integrity and whether
+    // it is battered — what a Repair has to mend (lib/beats.mjs sheetSpent).
+    const shipRecords = (cs.shipIds ?? []).map(id => flagsOf(game.actors.get(id)).ship ?? null).filter(Boolean);
+    const vehicle = shipRecords.find(s => s.isCommandVehicle) ?? (shipRecords.filter(s => s.npcShip !== true).length === 1 ? shipRecords.find(s => s.npcShip !== true) : null);
     const notes = (sectorScene?.notes.contents ?? []).map(n => ({ name: n.text, x: n.x, y: n.y }));
     const at = shipToken ? notes.find(n => n.x === shipToken.x && n.y === shipToken.y) ?? null : null;
     const here = cs.currentLocationId ? game.actors.get(cs.currentLocationId) : null;
@@ -275,7 +281,10 @@ function readTableOnPage(gm) {
         xCardActive: cs.xCardActive === true, questFocus: cs.questFocus ?? "", connectionFocus: cs.connectionFocus ?? "",
       },
       location: { id: cs.currentLocationId ?? null, type: cs.currentLocationType ?? null, name: here?.name ?? null },
-      ship: { token: shipToken ? { x: shipToken.x, y: shipToken.y } : null, tokenAt: at?.name ?? null },
+      ship: {
+        token: shipToken ? { x: shipToken.x, y: shipToken.y } : null, tokenAt: at?.name ?? null,
+        ...(vehicle ? { name: vehicle.name ?? null, integrity: num(vehicle.integrity), integrityMax: num(vehicle.integrityMax), battered: vehicle.battered === true } : {}),
+      },
       pcs, connections, entityCards, tracks,
       legacy: { quests: legacyOf("quests"), bonds: legacyOf("bonds"), discoveries: legacyOf("discoveries") },
       scene: { id: cs.currentSceneId ?? null, frame: cs.sceneFrame ?? null, truths },

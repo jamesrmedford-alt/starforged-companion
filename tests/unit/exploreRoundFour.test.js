@@ -16,6 +16,12 @@
  *      that need the connection ask the world for it, not for beat 2's roll;
  *      and the rehearsal can walk either road (CONNECTION-MADE-BY-CONFIRMING-
  *      A-DRAFT, #1 a and b).
+ *   2. the recovery beat is aimed at what the sheet holds spent, Repair among
+ *      what it wants (NOTHING-TO-RECOVER-UNTOLD, #2 d);
+ *   3. the vow beat's proof is said only once the story has shown it
+ *      (CLAIMED-PROOF-OFFERED-A-MILESTONE, #3 c);
+ *   4. the fight is fought where the ship lies, in her berth at Bleakhold's
+ *      ring (SHIP-POSITION-AND-FRAME-DISAGREE, #8);
  *   6. the observer tells the last resort once, and the line that names the
  *      move spends it; it sees a move made with no roll as a move; and it
  *      names the cards that wait on the player — a held result's "Keep the
@@ -28,12 +34,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DRAFT_HOLDERS, draftConfirmSelectors, draftHolderFor, draftToConfirm } from '../../test/ci/playwright/lib/gm.mjs';
 import { castMembers } from '../../test/ci/playwright/lib/cast.mjs';
-import { BEAT_CHECKS, LAST_RESORT_AFTER, STALL_ACTIONS, beatView, createPointer, unmetRequirements } from '../../test/ci/playwright/lib/beats.mjs';
+import { BEAT_CHECKS, LAST_RESORT_AFTER, RECOVER_MOVES, STALL_ACTIONS, beatView, createPointer, sheetSpent, unmetRequirements } from '../../test/ci/playwright/lib/beats.mjs';
 import { recheckBeats } from '../../test/ci/playwright/lib/longrun.mjs';
 import { charterProblem } from '../../test/ci/playwright/lib/charter.mjs';
 import { createRehearsal } from '../../test/ci/playwright/lib/rehearsal.mjs';
 import { playerTurnPrompt } from '../../test/ci/playwright/lib/player.mjs';
-import { readCards } from '../../test/ci/playwright/lib/table.mjs';
+import { readCards, readTable } from '../../test/ci/playwright/lib/table.mjs';
 import { movesNamedIn } from '../../test/ci/playwright/lib/moveNames.mjs';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -418,5 +424,129 @@ describe('a card that waits on the player is said on a line of its own (the four
     expect(cards[0]).toMatchObject({ id: 'mp', milestonePicker: { resolved: false, choices: [{ vowId: 'v1', actorId: 'pc', marks: 1 }] } });
     expect(cards[1]).toMatchObject({ id: 'cp', picker: { pickAction: 'develop', resolved: true } });
     expect(cards[1].milestonePicker).toBeUndefined();
+  });
+});
+
+// ── 2. the recovery beat, aimed at what the sheet holds spent ────────────────
+
+/** One beat, checked against the marks so far: the pointer's state for it. */
+const checked = (beat, marks, { charter = CHARTER, messages = [] } = {}) => {
+  const pointer = createPointer([{ id: 'b', n: 1, session: 1, title: beat.check.type, ...beat }]);
+  pointer.advance({ marks: marks.slice(0, 1), messages: [], actions: [], charter }, marks[0].step);
+  pointer.advance({ marks, messages, actions: [], charter }, marks.at(-1).step);
+  return pointer.state[0];
+};
+const SHIP = (over = {}) => ({ token: null, tokenAt: null, name: 'Kobayashi IV', integrity: 5, integrityMax: 5, battered: false, ...over });
+
+describe('the recovery beat is aimed at what the sheet holds spent (the fourth live run, beat 22: a62–a69)', () => {
+  const b21 = CHARTER.beats.find(b => b.id === 'b21');
+  // The sheet the readers were shown at a62, from the run's own request.
+  const shown = RUN_4.recording.exchanges.find(x => x.step === 'a62' && /classifyInput/.test(x.kind)).user;
+
+  it('the run came to it with spirit and the hull spent, health and supply full — and its lines tended wounds the sheet did not hold', () => {
+    expect(shown).toContain('- Meters: Health 5 of 5 (full, not wounded); Spirit 1 of 5 (not shaken); Supply 5 of 5 (full, not unprepared).');
+    expect(shown).toContain('- Command vehicle: "Kobayashi IV", integrity 4 of 5 (not battered).');
+    expect(RUN_4.actions[61].text).toContain('cleaning the cuts and binding up the worst of them');
+    expect(RUN_4.charter.beats.find(b => b.id === 'b21').tell).toContain('say you treat your wounds with the ship\'s medkit, or that you restock the ship');
+  });
+
+  it('what of the sheet is spent: each meter below its maximum or its impact marked, and the ship\'s integrity', () => {
+    const run4 = tableOf({ pc: { spirit: 1 }, ship: SHIP({ integrity: 4 }) });
+    expect(sheetSpent(run4)).toEqual({ spent: ['spirit', 'integrity'], text: 'Mira Kestrel\'s health 5 of 5, spirit 1 of 5, supply 5 of 5; the Kobayashi IV\'s integrity 4 of 5 — spent: spirit, the ship\'s integrity' });
+    expect(sheetSpent(tableOf({ ship: SHIP() })).text).toBe('Mira Kestrel\'s health 5 of 5, spirit 5 of 5, supply 5 of 5; the Kobayashi IV\'s integrity 5 of 5 — nothing on the sheet is spent');
+    expect(sheetSpent(tableOf({ pc: { debilities: ['wounded'] } })), 'an impact marked at a full meter').toMatchObject({ spent: ['health'] });
+    expect(sheetSpent(tableOf({ ship: SHIP({ battered: true }) })).spent, 'a battered hull at full integrity').toEqual(['integrity']);
+    expect(sheetSpent(tableOf()).text, 'no ship recorded: the meters alone').toBe('Mira Kestrel\'s health 5 of 5, spirit 5 of 5, supply 5 of 5 — nothing on the sheet is spent');
+    expect(sheetSpent(null)).toEqual({ text: '', spent: [] });
+  });
+
+  it('until a recover move comes, the observer says what is spent — and a Repair counts, by the beat\'s wants', () => {
+    const run4 = tableOf({ pc: { spirit: 1 }, ship: SHIP({ integrity: 4 }) });
+    const setup = markOf('a61', run4);
+    expect(checked(b21, [setup, markOf('a62', run4)]).detail).toBe('no recover move yet — Mira Kestrel\'s health 5 of 5, spirit 1 of 5, supply 5 of 5; the Kobayashi IV\'s integrity 4 of 5 — spent: spirit, the ship\'s integrity');
+    const repair = [moveCard('r1', 'Repair', 'Action: 5 + 3 = 8 | Challenge: 2, 6', 'strong_hit'), narratedAs('n1', 'r1', 'repair', 'strong_hit')];
+    expect(checked(b21, [setup, markOf('a63', run4, repair)])).toMatchObject({ status: 'done', detail: 'repair came up strong_hit at a63' });
+    // The check is the kept runs' own; Repair is the beat's, not the check's.
+    expect(b21.check).toEqual({ type: 'recovered', moves: ['heal', 'resupply', 'sojourn', 'hearten'] });
+    expect(checked({ ...b21, wants: undefined }, [setup, markOf('a63', run4, repair)]), 'a beat that does not want it').toMatchObject({ status: 'current' });
+    expect(RECOVER_MOVES).toEqual(['sojourn', 'heal', 'hearten', 'resupply', 'repair']);
+  });
+
+  it('the charter: every recover move wanted; the tell aims at what is spent and invents nothing; the last resort names each', () => {
+    expect([...b21.wants].sort()).toEqual([...RECOVER_MOVES].sort());
+    expect(b21.tell).toContain('The observer\'s note below names what of your sheet is spent');
+    expect(b21.tell).toContain('Never tend a wound you do not have, or restock what is full');
+    expect(b21.tell).toContain('type !repair and spend its points');
+    expect(b21.tell).not.toMatch(/say you treat your wounds/);
+    expect(movesNamedIn(b21.lastResort)).toEqual(['Heal', 'Hearten', 'Resupply', 'Repair']);
+    expect(CHARTER.playerNotes.join('\n')).toContain('never tend a wound she does not have');
+  });
+
+  it('the table read keeps the command vehicle\'s integrity, as the readers\' SITUATION block reads it', async () => {
+    const MODULE = 'starforged-companion';
+    const ship = { id: 'S1', type: 'starship', name: 'Kobayashi IV', flags: { [MODULE]: { entityType: 'ship', ship: { name: 'Kobayashi IV', isCommandVehicle: true, integrity: 4, integrityMax: 5, battered: false } } }, items: { contents: [] }, system: {} };
+    const pc = { id: 'pc', type: 'character', name: 'Mira Kestrel', flags: {}, items: { contents: [] }, system: { health: { value: 5 }, spirit: { value: 1 }, supply: { value: 5 }, momentum: { value: 2 }, debility: {} } };
+    const actors = [pc, ship];
+    const game = {
+      settings: { get: (_m, key) => (key === 'campaignState' ? { shipIds: ['S1'], connectionIds: [] } : undefined) },
+      actors: { contents: actors, get: (id) => actors.find(a => a.id === id) },
+      journal: { contents: [] }, scenes: { contents: [] },
+    };
+    const table = await withPage({ game }, () => readTable({ page: { evaluate: async (fn, arg) => fn(arg) } }));
+    expect(table.ship).toEqual({ token: null, tokenAt: null, name: 'Kobayashi IV', integrity: 4, integrityMax: 5, battered: false });
+    expect(sheetSpent(table).spent).toEqual(['spirit', 'integrity']);
+  });
+});
+
+// ── 3. the vow's proof, only once the story has shown it ─────────────────────
+
+describe('the vow beat states a proof only once the story has shown it (the fourth live run, beat 25: a70–a75)', () => {
+  const b24 = CHARTER.beats.find(b => b.id === 'b24');
+
+  it('the run\'s player claimed a proof nothing had found, as its beat asked — and the narration refuted it', () => {
+    expect(RUN_4.charter.beats.find(b => b.id === 'b24').tell).toContain('Play a line that says what you have now proved about the raids');
+    expect(RUN_4.actions[69].text).toContain('I\'ve traced her orders back to the broker who sold the lane schedules. That\'s the proof I came for.');
+    expect(said('a70', /narrate/)).toContain('"Tamsin Vey sold nothing," she says.');
+  });
+
+  it('its tell: find it out first; say as proof only what the story has told; never a proof refuted — the check is the kept runs\' own', () => {
+    expect(b24.tell).toMatch(/^Bring your vow to its end — on what the story has shown you, and on nothing more\. First find it out/);
+    expect(b24.tell).toContain('Only once the narrator\'s answer has shown you something, say in a line of play what that proves');
+    expect(b24.tell).toContain('Never claim a proof the story has not given you, nor one someone in the scene has just denied');
+    expect(b24.tell).toContain('If a card asks which vow, choose the one about the raids');
+    expect(b24.tell).not.toContain('what you have now proved');
+    expect(b24.check).toEqual({ type: 'vowFulfilled' });
+    // The search is the beat's own: a roll of it is no stray.
+    expect(b24.wants).toEqual(['reach_a_milestone', 'fulfill_your_vow', 'gather_information']);
+    // The rehearsal searches before it claims.
+    expect(CHARTER.rehearsal.filter(e => e.beat === 25 && e.move).map(e => e.move.id)).toEqual(['gather_information', 'reach_a_milestone', 'fulfill_your_vow']);
+  });
+});
+
+// ── 4. the fight, fought where the ship lies ─────────────────────────────────
+
+describe('the fight is fought where the ship lies — in her berth at Bleakhold\'s ring (the fourth live run, a34–a38)', () => {
+  const [b8, b9, b10, b11] = ['b8', 'b9', 'b10', 'b11'].map(id => CHARTER.beats.find(b => b.id === id));
+  const AWAY = /off Bleakhold|drops? out of the dark|jumps you|my bow|come about/;
+
+  it('the run docked her at a34, and the charter\'s next line had the cutter jump her off the station', () => {
+    expect(said('a34', /narrate/)).toContain('the station takes hold of her with a hard clunk');
+    expect(RUN_4.charter.beats.find(b => b.id === 'b9').tell).toContain('jumps you off Bleakhold');
+    expect(RUN_4.actions[37].text).toContain('The Ashen Wake drops out of the dark off Bleakhold\'s ring.');
+    expect(b8.check).toEqual({ type: 'arrived', settlement: 'Bleakhold Station' });
+  });
+
+  it('now the cutter comes to the ring and the ship stays in her berth through the fight — in its tells and in the rehearsal\'s lines', () => {
+    expect(b9.tell).toContain('comes in along Bleakhold\'s docking ring while the Kobayashi IV lies in her berth there');
+    expect(b9.tell).toContain('your ship stays in her berth through it');
+    expect(b10.tell).toContain('from the Kobayashi IV\'s berth on the ring');
+    expect(b11.tell).toContain('still from the berth');
+    for (const b of [b9, b10, b11]) expect(b.tell, b.id).not.toMatch(AWAY);
+    const lines = CHARTER.rehearsal.filter(e => [10, 11, 12, 16].includes(e.beat) && e.action === 'say' && !e.text.startsWith('!')).map(e => e.text);
+    expect(lines).toHaveLength(4);
+    for (const text of lines) expect(text).not.toMatch(AWAY);
+    // What the round before held of the fight's tell still holds.
+    expect(b9.tell).toContain('choose your vow about the raids');
+    expect(b9.tell).toContain('!truth set "raider cutter" is named the Ashen Wake');
   });
 });

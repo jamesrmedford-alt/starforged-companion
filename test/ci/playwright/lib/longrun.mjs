@@ -92,7 +92,7 @@ export function recheckBeats({ charter, beats, marks, messages, actions }) {
     const to = index.get(was.doneAt) ?? marks.length - 1;
     // What it needs of the world (`requires`), as the world stood when it came
     // — as the pointer asks it (lib/beats.mjs createPointer).
-    const unmet = unmetRequirements(beat, beatView({ marks: marks.slice(0, from + 1), messages: upTo(messages, from), actions: upTo(actions, from), charter, from: was.enteredAt }));
+    const unmet = unmetRequirements(beat, beatView({ marks: marks.slice(0, from + 1), messages: upTo(messages, from), actions: upTo(actions, from), charter, from: was.enteredAt, beat }));
     if (unmet.length) {
       Object.assign(next, { status: "not-exercised", detail: `it needs ${unmet.join("; and ")}` });
       continue;
@@ -103,7 +103,7 @@ export function recheckBeats({ charter, beats, marks, messages, actions }) {
       // An interruption is checked once, at the step the runner made it.
       if (beat.interruption && marks[i].step !== `x${beat.n}`) continue;
       if (!beat.interruption && i === from && to > from) continue;
-      result = check(beatView({ marks: marks.slice(0, i + 1), messages: upTo(messages, i), actions: upTo(actions, i), charter, from: was.enteredAt }), beat.check);
+      result = check(beatView({ marks: marks.slice(0, i + 1), messages: upTo(messages, i), actions: upTo(actions, i), charter, from: was.enteredAt, beat }), beat.check);
       at = marks[i].step;
       if (result.done) break;
     }

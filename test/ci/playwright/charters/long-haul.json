@@ -14,6 +14,7 @@
     "When a roll goes badly and a card asks how you pay, choose one of its buttons before anything else — and answer any card that follows from it.",
     "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
     "What you type is in the fiction: what Mira does or says, and nothing else. Never write a move's name, a stat or a rule word in it — no \"Face Danger\", no \"roll\", no \"milestone\", no \"mark progress\" — and never say what move a line is. The table reads your line and decides. This run measures what becomes of plain lines: a line that names a move spoils it.",
+    "What you say of Mira is what her sheet bears out: never tend a wound she does not have, nurse a hurt she has not taken, or restock what is full. Where a beat turns on the sheet, the observer's note says what of it is spent.",
     "A beat that needs a roll gets it from a plain line. If the narrator answers without a roll and a card offers a \"Roll …\" button for what you were doing, press it — buttons may name moves. If nothing is offered, say what Mira does once more, in other words, still in the fiction.",
     "Only when the observer's note for the beat says LAST RESORT may you name the move, in the words the note gives, in one line. The next time the beat needs a roll, start from a plain line again.",
     "A question about what is already established — who holds something, where the ship is, what was promised — is not a line of play. Where a beat writes a question with @scene in front, type it exactly so: the narrator answers it plainly, with no roll. Where a beat calls a question plain, type it without @scene.",
@@ -527,7 +528,7 @@
       "needs": [
         "b1"
       ],
-      "tell": "A raider cutter, the Ashen Wake, jumps you off Bleakhold. First type exactly: !truth set \"raider cutter\" is named the Ashen Wake — then, in a line of play, turn and fight her: say what you do as the fight opens. When a card offers the fight (\"A fight looms\"), choose your vow about the raids in its vow dropdown (not the old one about the colony ship) and press \"⚔ Begin the fight\" — the roll alone does not begin the fight.",
+      "tell": "A raider cutter, the Ashen Wake, comes in along Bleakhold's docking ring while the Kobayashi IV lies in her berth there, and opens fire on her: the fight is at the ring, and your ship stays in her berth through it. First type exactly: !truth set \"raider cutter\" is named the Ashen Wake — then, in a line of play, fight back from where she is docked: say what you do as the fight opens. When a card offers the fight (\"A fight looms\"), choose your vow about the raids in its vow dropdown (not the old one about the colony ship) and press \"⚔ Begin the fight\" — the roll alone does not begin the fight.",
       "check": {
         "type": "fightBegun"
       },
@@ -545,7 +546,7 @@
       "needs": [
         "b9"
       ],
-      "tell": "Attack the cutter, in a line of play: press your advantage if you are in control, fight back hard if you are in a bad spot — say what you do. The dice will miss. If its card offers to burn momentum, do not: press \"Keep the result\". If a card then asks how you pay, choose a cost on it — one that is not momentum if you can (Endure Harm or Endure Stress) — and answer every card that follows from it. If the price is paid for you, or told in the story with nothing to choose, there is nothing more to do: the observer moves you on.",
+      "tell": "Attack the cutter, in a line of play, from the Kobayashi IV's berth on the ring: press your advantage if you are in control, fight back hard if you are in a bad spot — say what you do. The dice will miss. If its card offers to burn momentum, do not: press \"Keep the result\". If a card then asks how you pay, choose a cost on it — one that is not momentum if you can (Endure Harm or Endure Stress) — and answer every card that follows from it. If the price is paid for you, or told in the story with nothing to choose, there is nothing more to do: the observer moves you on.",
       "check": {
         "type": "sufferPaid",
         "moves": [
@@ -579,7 +580,7 @@
       "needs": [
         "b9"
       ],
-      "tell": "Attack again, in a line of play. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more.)",
+      "tell": "Attack again, in a line of play — still from the berth. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more.)",
       "check": {
         "type": "burned",
         "moves": [
@@ -735,7 +736,7 @@
       "n": 22,
       "session": 3,
       "title": "Recover",
-      "tell": "Recover what the fight cost: say you treat your wounds with the ship's medkit, or that you restock the ship at Bleakhold's market. If the narrator answers without a roll and a card offers one, press it. When its card offers what you regain, take it.",
+      "tell": "Recover what the fight cost you — and only what it cost. The observer's note below names what of your sheet is spent: health, spirit, supply, the ship's integrity. In a line of play, mend one of those: tend a wound you have taken (health), take time to steady yourself — a quiet hour, a meal in company (spirit), restock at Bleakhold's market (supply), or see to the hull and the systems the fight damaged (the ship). Never tend a wound you do not have, or restock what is full: the observer's note says what is spent, and only that has anything to mend. If the narrator answers without a roll and a card offers one, press it. When its card offers what you regain, take it; after a hit on the ship's repairs, type !repair and spend its points in the window that opens.",
       "check": {
         "type": "recovered",
         "moves": [
@@ -745,12 +746,13 @@
           "hearten"
         ]
       },
-      "lastResort": "say that you Heal your wounds with the medkit, or that you Resupply at the market",
+      "lastResort": "name the move for what the observer's note says is spent — say that you Heal your wounds with the medkit, that you Hearten yourself over a quiet hour, that you Resupply at the market, or that you Repair the ship",
       "wants": [
         "heal",
         "resupply",
         "sojourn",
-        "hearten"
+        "hearten",
+        "repair"
       ]
     },
     {
@@ -809,7 +811,7 @@
       "needs": [
         "b1"
       ],
-      "tell": "Bring your vow to its end. Play a line that says what you have now proved about the raids — a real step toward keeping your word. If a card offers \"⚑ Mark Progress on Vow\", press it; if the narrator answers and nothing is offered, say in other words what the proof changes. Do that until the vow holds three boxes or more; then press \"🏁 Attempt to Fulfill Vow\" where a card offers it, or say, in a line of play, that your word is kept — you have found who is raiding the lanes. If a card asks which vow, choose the one about the raids. Leave any card it offers afterwards.",
+      "tell": "Bring your vow to its end — on what the story has shown you, and on nothing more. First find it out: in a line of play, go after who is behind the raids where the story has left it open — search the cutter's wreck or the station's records for who sent her, with something at stake — and take what its card offers. Only once the narrator's answer has shown you something, say in a line of play what that proves: what the story has told you, in your own words. Never claim a proof the story has not given you, nor one someone in the scene has just denied — if the answer shows nothing, or tells against what you thought, go after it again another way. If a card offers \"⚑ Mark Progress on Vow\", press it; if one asks \"Which vow advances?\", press the one about the raids. Do that until the vow holds three boxes or more; then press \"🏁 Attempt to Fulfill Vow\" where a card offers it, or say, in a line of play, that your word is kept — naming only who the story has shown you. If a card asks which vow, choose the one about the raids. Leave any card it offers afterwards.",
       "check": {
         "type": "vowFulfilled"
       },
@@ -824,7 +826,8 @@
       "lastResort": "say that you mark progress on your vow, that this is a milestone — or, once it holds three boxes, that you fulfil your vow",
       "wants": [
         "reach_a_milestone",
-        "fulfill_your_vow"
+        "fulfill_your_vow",
+        "gather_information"
       ]
     },
     {
@@ -1175,7 +1178,7 @@
     {
       "beat": 10,
       "action": "say",
-      "text": "The raider cutter Ashen Wake cuts across my bow off Bleakhold — I bring the Kobayashi IV about and open up with the forward guns.",
+      "text": "The raider cutter Ashen Wake slides in along Bleakhold's docking ring and opens fire on my berth — I bring the Kobayashi IV's guns to bear from where she lies docked.",
       "move": {
         "id": "enter_the_fray",
         "stat": "edge",
@@ -1231,7 +1234,7 @@
     {
       "beat": 12,
       "action": "say",
-      "text": "I come about and rake her flank while her guns are cycling.",
+      "text": "I swing the dorsal turret round and rake her flank while her guns are cycling.",
       "move": {
         "id": "strike",
         "stat": "edge",
@@ -1259,7 +1262,7 @@
     {
       "beat": 16,
       "action": "say",
-      "text": "I look over the wreckage drifting off my bow."
+      "text": "I look over the wreckage drifting off the ring."
     },
     {
       "beat": 17,
@@ -1457,7 +1460,16 @@
     {
       "beat": 25,
       "action": "say",
-      "text": "I lay out what I have proved: the raids trace back to one buyer.",
+      "text": "I go through the cutter's salvaged nav logs for whoever sent her out, before the station's guards can take them.",
+      "move": {
+        "id": "gather_information",
+        "stat": "wits"
+      }
+    },
+    {
+      "beat": 25,
+      "action": "say",
+      "text": "I lay out what the logs showed: the raids trace back to one buyer.",
       "move": {
         "id": "reach_a_milestone",
         "target": "Find who is raiding the Cinder Expanse lanes"

@@ -27,7 +27,7 @@ import { cardsAt } from "./mechanics.mjs";
 import { parseDiceLine, parsePriceLine } from "./table.mjs";
 import { castMembers, castMemberFor } from "./cast.mjs";
 import { movesNamedIn } from "./moveNames.mjs";
-import { TICKS_PER_BOX, rankOf } from "../../../../tests/helpers/sequence/rules.js";
+import { METER_MAX, TICKS_PER_BOX, rankOf } from "../../../../tests/helpers/sequence/rules.js";
 
 /** Actions on a beat with no progress before it is given up as not exercised. */
 export const STALL_ACTIONS = 8;
@@ -68,9 +68,10 @@ export function castCardId(marks, cast, name) {
 
 /**
  * What a check sees: the marks from the step the beat became current at
- * (`from`) to now, and the run so far.
+ * (`from`) to now, and the run so far — and, where it is given, the beat
+ * itself (`wants`: the moves it wants, wantsOf).
  */
-export function beatView({ marks, messages, actions, charter, from }) {
+export function beatView({ marks, messages, actions, charter, from, beat = null }) {
   // `from` is the step the beat became current at: the world as that step
   // left it is where the beat starts (`entered`), and what happened in that
   // step belongs to the beat before — a roll that finished one beat is not
@@ -106,6 +107,7 @@ export function beatView({ marks, messages, actions, charter, from }) {
   const questVows = () => (pc?.vows ?? []).filter(x => !seeded.has(String(x.name ?? "").trim().toLowerCase()));
   return {
     marks, window, steps, now, entered, allCards, inWindow, firstSeen, rolls, pc, charter, actions, from,
+    wants: beat ? wantsOf(beat) : [],
     lines, linesInWindow: lines.filter(m => steps.has(m.step)),
     messagesInWindow: messages.filter(m => steps.has(m.step)),
     cast: charter.cast ?? {},
@@ -151,6 +153,48 @@ const attacks = (moves) => (moves.some(m => m === "strike" || m === "clash") ? [
 
 /** The moves a beat wants rolled: its `wants`, and the moves its check names. */
 export const wantsOf = (beat) => attacks([...new Set([...(beat?.wants ?? []), ...(beat?.check?.moves ?? []), ...(beat?.check?.move ? [beat.check.move] : [])])]);
+
+/** The game's recover moves (the play kit: Sojourn, Heal, Hearten, Resupply, Repair). */
+export const RECOVER_MOVES = ["sojourn", "heal", "hearten", "resupply", "repair"];
+/** The impact each meter's recovery clears. */
+const IMPACT_OF = { health: "wounded", spirit: "shaken", supply: "unprepared" };
+
+/**
+ * The sheet as a recovery beat's player is told it: each meter with the
+ * impact its recovery clears, the command vehicle's integrity — and what of
+ * it is spent, which is all a recover move has to mend. The fourth live run's
+ * beat 22 asked for the medkit or the market with spirit at 1 of 5 and the
+ * hull at 4 of 5 and nothing else spent: eight lines tended wounds the sheet
+ * did not hold, and the narrator wrote the wounds in (known-issues
+ * NOTHING-TO-RECOVER-UNTOLD). Pure.
+ *
+ * @param {object|null} table — a mark's table (lib/table.mjs readTable)
+ * @returns {{ text: string, spent: string[] }} `spent`: "health", "spirit",
+ *   "supply", "integrity" — each below its maximum or its impact marked
+ */
+export function sheetSpent(table) {
+  const pc = table?.pcs?.[0] ?? null;
+  if (!pc) return { text: "", spent: [] };
+  const marked = new Set(pc.debilities ?? []);
+  const spent = [];
+  const meters = ["health", "spirit", "supply"].map((m) => {
+    if (!Number.isFinite(pc[m])) return `${m} unknown`;
+    if (pc[m] < METER_MAX || marked.has(IMPACT_OF[m])) spent.push(m);
+    return `${m} ${pc[m]} of ${METER_MAX}${marked.has(IMPACT_OF[m]) ? ` (${IMPACT_OF[m]})` : ""}`;
+  });
+  const ship = table?.ship ?? {};
+  let hull = "";
+  if (Number.isFinite(ship.integrity)) {
+    const max = Number.isFinite(ship.integrityMax) ? ship.integrityMax : METER_MAX;
+    if (ship.integrity < max || ship.battered === true) spent.push("integrity");
+    hull = `; ${ship.name ? `the ${ship.name}'s` : "the ship's"} integrity ${ship.integrity} of ${max}${ship.battered === true ? " (battered)" : ""}`;
+  }
+  const said = { health: "health", spirit: "spirit", supply: "supply", integrity: "the ship's integrity" };
+  return {
+    spent,
+    text: `${pc.name}'s ${meters.join(", ")}${hull} — ${spent.length ? `spent: ${spent.map(s => said[s]).join(", ")}` : "nothing on the sheet is spent"}`,
+  };
+}
 
 /**
  * What of the world a beat needs that is not another beat — `requires`: the
@@ -473,13 +517,21 @@ export const BEAT_CHECKS = {
     return done(`the oracle answered ${cards[0].oracle.answer ?? "?"}`);
   },
 
-  /** A recover move was made and what it offers was taken. */
+  /**
+   * A recover move was made and what it offers was taken. The moves are the
+   * check's and any recover move the beat's `wants` adds: the fourth live
+   * run's beat 22 came with spirit and the hull spent, and its list had no
+   * Repair. Until one is made the player is told what the sheet holds spent
+   * — the only things a recover move can mend.
+   */
   recovered(v, c) {
+    const moves = [...new Set([...(c.moves ?? ["heal", "resupply", "sojourn", "hearten"]), ...(v.wants ?? []).filter(m => RECOVER_MOVES.includes(m))])];
     // Any recover move's hit, not the first roll's: the second live run's Heal
     // missed and its Resupply came up a strong hit, and the beat was read off
     // the miss alone (issue #377 round 2).
-    const rolls = v.rolls.filter(r => (c.moves ?? ["heal", "resupply", "sojourn", "hearten"]).includes(r.moveId) && r.rolled);
-    if (!rolls.length) return notYet("no recover move yet");
+    const rolls = v.rolls.filter(r => moves.includes(r.moveId) && r.rolled);
+    const sheet = sheetSpent(v.now).text;
+    if (!rolls.length) return notYet(`no recover move yet${sheet ? ` — ${sheet}` : ""}`);
     const roll = [...rolls].reverse().find(r => r.outcome !== "miss") ?? rolls[rolls.length - 1];
     if (roll.outcome === "miss") return notYet(`${roll.moveId} missed`, 1);
     const offered = v.allCards.filter(k => k.suffer && v.inWindow(k) && k.suffer.moveId === roll.moveId);
@@ -764,7 +816,7 @@ export function createPointer(beats) {
             continue;
           }
           // What it needs of the world, whichever beat brought it about.
-          const unmet = unmetRequirements(beat, beatView({ ...run, from: step }));
+          const unmet = unmetRequirements(beat, beatView({ ...run, from: step, beat }));
           if (unmet.length) {
             Object.assign(cur, { status: "not-exercised", doneAt: step, detail: `it needs ${unmet.join("; and ")}` });
             changes.push({ ...cur });
@@ -776,7 +828,7 @@ export function createPointer(beats) {
         if (beat.interruption && !cur.interrupted) return changes;
         const check = BEAT_CHECKS[beat.check?.type];
         if (!check) throw new Error(`beat ${beat.n} has no check the observer knows (${beat.check?.type})`);
-        const view = beatView({ ...run, from: cur.enteredAt });
+        const view = beatView({ ...run, from: cur.enteredAt, beat });
         const result = check(view, beat.check);
         cur.detail = result.detail;
         const lines = view.linesInWindow.filter(m => !isSceneQuestion(m.text));
