@@ -927,15 +927,18 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
       };
     } else if (moveId === "forge_a_bond" && (hostId || target)) {
       // A forge naming a connection already bonded (by its picker's id or by
-      // name) resolves nothing: rollMove's "not rolled" card says it was
-      // bonded (FORGE-NAMED-BONDED-SCORED — a typed name scored the bond's
-      // own track, then the forge skipped it).
+      // name) resolves nothing — never the bond's own track
+      // (FORGE-NAMED-BONDED-SCORED: a typed name scored it, then the forge
+      // skipped it). The move gate refuses such a forge before the dice
+      // (contracts/predicates.js NOT_BONDED, overhaul 4 — the "not rolled"
+      // guard that read an `alreadyBonded` mark here went with it); this
+      // keeps the score at nothing where the gate could not read the sheet.
       const named = selectConnection(connections, target, { hostId, strict: true });
       if (named?.bonded) {
         console.warn(`${MODULE_ID} | enrichProgressTicks: ${named.name ?? "that connection"} is already bonded — Forge a Bond scores nothing.`);
         interpretation.statValue     = 0;
         interpretation.progressTicks = 0;
-        return { ticks: 0, source, label: named.name ?? null, trackId: null, combatState: null, alreadyBonded: true };
+        return { ticks: 0, source, label: named.name ?? null, trackId: null, combatState: null };
       }
     }
   }

@@ -95,13 +95,15 @@ describe("applyCombatProgress", () => {
     };
   }
 
-  it("creates track when none exists, marks once (markCount=1)", async () => {
+  // Overhaul 4 (D6): only Enter the Fray's commit begins a fight
+  // (`beginsFight`, the threshold card's ⚔ Begin the fight). A move's marks
+  // with no fight open made one, whose rank, vow and objective nothing asked.
+  it("a mark with no fight open begins none and marks nothing (D6)", async () => {
     const deps = makeDeps();
     const r = await applyCombatProgress({ moveTarget: "Corsair Captain", combatRank: "formidable", markCount: 1 }, deps);
-    expect(deps.createTrack).toHaveBeenCalledWith(expect.objectContaining({ label: "Corsair Captain", type: "combat", rank: "formidable" }));
-    expect(deps.markProgress).toHaveBeenCalledTimes(1);
-    expect(r.created).toBe(true);
-    expect(r.marksApplied).toBe(1);
+    expect(deps.createTrack).not.toHaveBeenCalled();
+    expect(deps.markProgress).not.toHaveBeenCalled();
+    expect(r).toEqual({ track: null, created: false, marksApplied: 0, reason: "none" });
   });
 
   it("reuses existing open combat track, marks twice", async () => {
@@ -114,24 +116,24 @@ describe("applyCombatProgress", () => {
     expect(r.marksApplied).toBe(2);
   });
 
-  it("creates track with default rank when combatRank is null", async () => {
+  it("begun by Enter the Fray: creates the track with the default rank when combatRank is null", async () => {
     const deps = makeDeps();
-    await applyCombatProgress({ moveTarget: "Unknown Foe", combatRank: null, markCount: 0 }, deps);
+    await applyCombatProgress({ moveTarget: "Unknown Foe", combatRank: null, markCount: 0, beginsFight: true }, deps);
     expect(deps.createTrack).toHaveBeenCalledWith(expect.objectContaining({ label: "Unknown Foe", type: "combat", rank: DEFAULT_COMBAT_RANK }));
   });
 
-  it("markCount=0 creates track without marking (Enter the Fray path)", async () => {
+  it("markCount=0 with beginsFight creates track without marking (Enter the Fray path)", async () => {
     const deps = makeDeps();
-    const r = await applyCombatProgress({ moveTarget: "Enemy Ship", markCount: 0 }, deps);
+    const r = await applyCombatProgress({ moveTarget: "Enemy Ship", markCount: 0, beginsFight: true }, deps);
     expect(deps.createTrack).toHaveBeenCalled();
     expect(deps.markProgress).not.toHaveBeenCalled();
     expect(r.created).toBe(true);
     expect(r.marksApplied).toBe(0);
   });
 
-  it("uses 'Combat' label when moveTarget is null/empty", async () => {
+  it("begun with no foe named: the 'Combat' label", async () => {
     const deps = makeDeps();
-    await applyCombatProgress({ moveTarget: null, markCount: 1 }, deps);
+    await applyCombatProgress({ moveTarget: null, markCount: 0, beginsFight: true }, deps);
     expect(deps.createTrack).toHaveBeenCalledWith(expect.objectContaining({ label: "Combat" }));
   });
 

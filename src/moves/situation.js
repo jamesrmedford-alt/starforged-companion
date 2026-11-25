@@ -35,15 +35,18 @@
  * no model call, and it never throws: what cannot be read is said to be
  * unknown, and an unknown is never "nothing to recover".
  *
- * Where code decides instead of a reader (nothingToRecover): a recovery move
- * the sheet has nothing for is not offered by the pacing router
- * (src/pacing/router.js decidePacing) and is not rolled or offered by the
- * move pipeline (src/moves/movePipeline.js readMove). The readers' rules say
- * the same of the same block.
+ * Where code decides instead of a reader: the move contracts' gate
+ * (src/moves/contracts/gate.js checkMove) — a move the sheet, the tracks or
+ * the table say cannot be made is not offered by the pacing router, not
+ * rolled or offered by the move pipeline's reading, and not rolled at the
+ * dice. It reads readMoveSituation below: this block's sheet, read the same
+ * live way, with the open tracks, the scene and the table beside it. The
+ * readers' rules say the same of the same block.
  */
 
 import {
   isPlayerCharacterActor, getPlayerActors, readMeters, readDebilities, readVows, readConnections, listCompanionAssets,
+  readMomentumState, listSupportVehicleAssets, readAssetIntegrity, readVehicleAssetBattered, companionGivenName,
 } from "../character/actorBridge.js";
 import { getCommandVehicle } from "../entities/ship.js";
 
@@ -79,10 +82,7 @@ const ticksOf = (value) => Math.max(0, Math.min(TRACK_TICKS, whole(value) ?? 0))
  *   vehicle: { name: string, integrity: number|null, max: number, battered: boolean }|null,
  *   vows: Array<{ name: string, rank: string, ticks: number, swornTo: string|null }>,
  *   connections: Array<{ name: string, rank: string, ticks: number, bonded: boolean, full: boolean }>,
- *   othersToTreat: number|null,
- * }|null} `othersToTreat`: the other player characters and the speaker's
- *   companions — who else a Heal of theirs could be for. Not in the block:
- *   it is for nothingToRecover.
+ * }|null}
  */
 export function readSituation(actor, { campaignState = null } = {}) {
   let isPc = false;
@@ -96,7 +96,6 @@ export function readSituation(actor, { campaignState = null } = {}) {
     vehicle: null,
     vows: [],
     connections: [],
-    othersToTreat: null,
   };
   const unread = (what, err) =>
     console.warn(`${MODULE_ID} | situation: ${situation.name}'s ${what} could not be read — told to the readers as unknown:`, err?.message ?? err);
@@ -139,10 +138,6 @@ export function readSituation(actor, { campaignState = null } = {}) {
         return { name: clean(c.name), rank: clean(c.rank), ticks, bonded, full: !bonded && ticks >= TRACK_TICKS };
       });
   } catch (err) { unread("connections", err); }
-
-  try {
-    situation.othersToTreat = getPlayerActors().filter(a => a?.id !== actor.id).length + listCompanionAssets(actor).length;
-  } catch (err) { unread("allies and companions", err); }
 
   return situation;
 }
@@ -215,73 +210,218 @@ export function buildSituationBlock(actor, opts = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Where code decides: a recovery move with nothing to recover
+// The situation a move's contract reads (overhaul 4, "moves as contracts")
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The moves that restore a meter or clear its impact — the ones nothingToRecover answers for. */
-const RECOVERY_MOVES = new Set(["heal", "hearten", "resupply", "repair"]);
+/** A fight's stored position for a character: their own, else the fight's last-set one (moves/combat.js combatPositionFor's rule). */
+const POSITIONS = new Set(["in_control", "bad_spot"]);
+function positionFor(track, actorId) {
+  const own = actorId ? track?.positions?.[actorId] : null;
+  if (POSITIONS.has(own)) return own;
+  return POSITIONS.has(track?.combatState) ? track.combatState : null;
+}
 
-const isFull = (value, max = METER_MAX) => Number.isFinite(value) && value >= max;
+/** A companion that is a machine — what Repair mends ("+1 mechanical companion health"). The asset carries no such field; its name says so. */
+const MECHANICAL = /\b(bot|drone|droid|robot|automaton|android|mech|construct|probe|sentinel)\b/i;
 
-/** Whether `moveId` is one of the recovery moves nothingToRecover answers for. */
-export function isRecoveryMove(moveId) {
-  return RECOVERY_MOVES.has(moveId);
+/**
+ * A player character's sheet as the contracts read it: meters, impacts,
+ * companions, vehicles, vows and connections — every list as read, null when
+ * it could not be (unknown is never nothing). Vows and connections keep the
+ * closed and the severed ones, with their ids: a reason names a vow "already
+ * fulfilled", and a move names its target by id. `own`: the roller — the
+ * others at the table are read for their meters, impacts and vows alone.
+ *
+ * @param {Actor} actor — a player character
+ * @param {{ campaignState: Object|null, people: Array<Object>|null, own: boolean }} opts
+ */
+function readRoller(actor, { campaignState, people, own }) {
+  const name = clean(actor?.name) || "The character";
+  const roller = {
+    actorId: actor?.id ?? null, name,
+    meters: { health: null, spirit: null, supply: null, momentum: null },
+    impacts: { wounded: null, shaken: null, unprepared: null },
+    companions: null, vehicles: null, vows: null, connections: null,
+  };
+  const unread = (what, err) =>
+    console.warn(`${MODULE_ID} | move situation: ${name}'s ${what} could not be read — taken as unknown:`, err?.message ?? err);
+  try {
+    const meters = readMeters(actor);
+    for (const key of ["health", "spirit", "supply"]) roller.meters[key] = whole(meters?.[key]);
+  } catch (err) { unread("meters", err); }
+  try { roller.meters.momentum = whole(readMomentumState(actor)?.value); } catch (err) { unread("momentum", err); }
+  try {
+    const impacts = readDebilities(actor);
+    roller.impacts = Object.fromEntries(Object.entries(impacts ?? {}).map(([k, v]) => [k, v === true]));
+  } catch (err) { unread("impacts", err); }
+  try {
+    roller.vows = readVows(actor).map(v => ({
+      vowId: v.vowId ?? null, itemId: v.id ?? null, name: clean(v.name), rank: clean(v.rank), ticks: ticksOf(v.ticks),
+      completed: v.completed === true, forsaken: v.forsaken === true, shared: v.shared === true,
+      linkedConnectionName: clean(v.linkedConnectionName) || null,
+    }));
+  } catch (err) { unread("vows", err); }
+  if (!own) return roller;
+  try {
+    roller.companions = listCompanionAssets(actor).map(item => ({
+      itemId: item.id ?? null,
+      name: clean(companionGivenName(item) ?? item.name) || "the companion",
+      health: whole(item.system?.track?.value),
+      max: whole(item.system?.track?.max) ?? METER_MAX,
+      mechanical: MECHANICAL.test(`${item.name ?? ""} ${companionGivenName(item) ?? ""}`),
+    }));
+  } catch (err) { unread("companions", err); }
+  try {
+    const vehicles = [];
+    const ship = getCommandVehicle(campaignState ?? {});
+    if (ship) {
+      vehicles.push({ id: ship._id ?? null, itemId: null, name: clean(ship.name), kind: "command",
+        integrity: whole(ship.integrity), max: whole(ship.integrityMax) ?? METER_MAX, battered: ship.battered === true });
+    }
+    for (const item of listSupportVehicleAssets(actor)) {
+      vehicles.push({ id: item.id ?? null, itemId: item.id ?? null, name: clean(item.name), kind: "support",
+        integrity: whole(readAssetIntegrity(actor, item.id)), max: whole(item.system?.track?.max) ?? METER_MAX,
+        battered: readVehicleAssetBattered(actor, item.id) === true });
+    }
+    roller.vehicles = vehicles;
+  } catch (err) { unread("vehicles", err); }
+  try {
+    const hostOf = new Map((people ?? []).filter(p => p.connectionId).map(p => [p.connectionId, p.hostId]));
+    roller.connections = readConnections(actor).map((c) => {
+      const ticks  = ticksOf(c.ticks);
+      const bonded = c.completed === true;
+      return {
+        hostId: (c.connectionId && hostOf.get(c.connectionId)) ?? null,
+        connectionId: c.connectionId ?? null, itemId: c.id ?? null,
+        name: clean(c.name), rank: clean(c.rank), ticks, bonded, lost: c.lost === true,
+        full: !bonded && ticks >= TRACK_TICKS,
+      };
+    });
+  } catch (err) { unread("connections", err); }
+  return roller;
 }
 
 /**
- * Whether `moveId` is a recovery move the sheet shows nothing for: Heal with
- * health full and not wounded, Hearten with spirit full and not shaken,
- * Resupply with supply full and not unprepared, Repair with the command
- * vehicle's integrity full and it not battered. In live play a Heal at 5
- * health of 5 was offered, pressed and rolled — "0 health (now 5)" for 2
- * supply — twice (known-issues HEAL-ROLLED-AT-FULL-HEALTH).
+ * The people the table has recorded: every NPC card in `connectionIds` — a
+ * person, not a connection (FOLDER-002: every named individual has one) —
+ * with the record's own id, which a PC's bond Item is keyed to.
  *
- * The readers are told the same in their rules; this is for the places code
- * decides. Anything unknown is not "nothing": an unread meter, no command
- * vehicle, no sheet. Any other move: false.
- *
- * `sheetAlone` — only the sheet speaks for it: no reader has read the line as
- * no move. Then it answers only where the sheet settles the question:
- * Hearten (the character's own spirit), and Heal when there is nobody else
- * the care could be for — no other player character, no companion. A
- * Resupply can still be after one particular item, and a Repair for a
- * support vehicle, a module, a companion or a device; the meters show none of
- * those, so they are left to the readers.
- *
- * @param {string|null} moveId
- * @param {ReturnType<typeof readSituation>} situation
- * @param {{ sheetAlone?: boolean }} [opts]
- * @returns {boolean}
+ * @param {Object|null} campaignState
+ * @returns {Promise<Array<{ hostId: string, connectionId: string|null, name: string }>|null>}
  */
-export function nothingToRecover(moveId, situation, { sheetAlone = false } = {}) {
-  if (!situation || !RECOVERY_MOVES.has(moveId)) return false;
-  const { meters, impacts, vehicle } = situation;
-  switch (moveId) {
-    case "heal":
-      return isFull(meters.health) && impacts.wounded === false && (!sheetAlone || situation.othersToTreat === 0);
-    case "hearten":
-      return isFull(meters.spirit) && impacts.shaken === false;
-    case "resupply":
-      return !sheetAlone && isFull(meters.supply) && impacts.unprepared === false;
-    case "repair":
-      return !sheetAlone && !!vehicle && isFull(vehicle.integrity, vehicle.max) && vehicle.battered === false;
-    default:
-      return false;
+async function readPeople(campaignState) {
+  try {
+    const { getConnection } = await import("../entities/connection.js");
+    const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+    const ids = [...new Set([...(campaignState?.connectionIds ?? []), ...(stored?.connectionIds ?? [])])];
+    return ids.map((hostId) => {
+      const record = getConnection(hostId);
+      return record ? { hostId, connectionId: record._id ?? null, name: clean(record.name) } : null;
+    }).filter(Boolean);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | move situation: the recorded people could not be read — taken as unknown:`, err?.message ?? err);
+    return null;
   }
 }
 
 /**
- * Why there is nothing to recover, for a rationale or a telemetry line —
- * "health is full and no wound is marked".
+ * The open tracks, as the contracts read them: fights (with the roller's
+ * position in each), expeditions, scene challenges, and the fights an Enter
+ * the Fray offered that no one has begun (its threshold card, unanswered).
+ * Null when the tracks cannot be read.
  *
- * @param {string} moveId — a recovery move nothingToRecover answered true for
- * @returns {string}
+ * @param {string|null} actorId — the roller
+ * @returns {Promise<Object|null>}
  */
-export function nothingToRecoverReason(moveId) {
-  return ({
-    heal:     "health is full and no wound is marked",
-    hearten:  "spirit is full and the character is not shaken",
-    resupply: "supply is full and the character is not unprepared",
-    repair:   "the command vehicle's integrity is full and it is not battered",
-  })[moveId] ?? "there is nothing to recover";
+async function readTracks(actorId) {
+  let all;
+  try {
+    const { listProgressTracks } = await import("../ui/progressTracks.js");
+    all = await listProgressTracks();
+    if (!Array.isArray(all)) return null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | move situation: the progress tracks could not be read — taken as unknown:`, err?.message ?? err);
+    return null;
+  }
+  const open = all.filter(t => t && !t.completed);
+  const openFights = open.filter(t => t.type === "combat");
+  const base = (t) => ({ id: t.id ?? null, label: clean(t.label) || null, rank: clean(t.rank) || null, ticks: ticksOf(t.ticks) });
+  const fights = openFights.map(t => ({
+    ...base(t), position: positionFor(t, actorId), objective: clean(t.objective) || null, linkedVowName: clean(t.linkedVowName) || null,
+  }));
+  // The roller's position as getActiveCombatPosition reads it: their own
+  // across the open fights when it is one, else the sole fight's.
+  const own = new Set(actorId ? openFights.map(t => t.positions?.[actorId]).filter(p => POSITIONS.has(p)) : []);
+  const rollerPosition = own.size === 1 ? [...own][0]
+    : (openFights.length === 1 && POSITIONS.has(openFights[0].combatState) ? openFights[0].combatState : null);
+  let fightsOffered = [];
+  try {
+    fightsOffered = (globalThis.game?.messages?.contents ?? [])
+      .filter(m => m?.flags?.[MODULE_ID]?.combatThresholdCard === true && !m.flags[MODULE_ID].thresholdTaken)
+      .map(m => ({ resolutionId: m.flags[MODULE_ID].resolutionId ?? null, label: clean(m.flags[MODULE_ID].label) || null,
+        actorId: m.flags[MODULE_ID].actorId ?? null, cardId: m.id ?? null }));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | move situation: the offered fights could not be read:`, err?.message ?? err);
+  }
+  return {
+    fights, rollerPosition, fightsOffered,
+    expeditions: open.filter(t => t.type === "expedition").map(t => ({ ...base(t), siteId: t.siteId ?? null })),
+    sceneChallenges: open.filter(t => t.type === "scene_challenge").map(base),
+  };
 }
+
+/**
+ * Everything a move's contract reads, as plain data — the roller's sheet, the
+ * other player characters, the recorded people, the open tracks, the scene
+ * and the table — read live, never from a cached snapshot (a recovery move is
+ * refused on what this says, and a sheet edited a moment ago must be what it
+ * says). Never throws: what cannot be read is null, and the gate holds on an
+ * unknown (moves/contracts/gate.js checkMove).
+ *
+ * @param {Actor|string|null} actorOrId — the roller's PC, or its id
+ * @param {{ campaignState?: Object|null }} [opts]
+ * @returns {Promise<{
+ *   roller: Object|null, party: Array<Object>|null, people: Array<Object>|null,
+ *   tracks: Object|null,
+ *   scene: { sceneId: string|null, placeId: string|null, atSite: boolean|null, siteKind: string|null, combatActive: boolean|null },
+ *   table: { pcCount: number|null },
+ * }>}
+ */
+export async function readMoveSituation(actorOrId, { campaignState = null } = {}) {
+  let actor = null;
+  try {
+    actor = typeof actorOrId === "string" ? (globalThis.game?.actors?.get?.(actorOrId) ?? null) : (actorOrId ?? null);
+  } catch { actor = null; }
+  const people = await readPeople(campaignState);
+  let isPc = false;
+  try { isPc = isPlayerCharacterActor(actor); } catch { isPc = false; }
+  const roller = isPc ? readRoller(actor, { campaignState, people, own: true }) : null;
+
+  let party = null;
+  let pcCount = null;
+  try {
+    const pcs = getPlayerActors();
+    pcCount = pcs.length;
+    party = pcs.filter(a => a?.id !== roller?.actorId).map(a => readRoller(a, { campaignState, people, own: false }));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | move situation: the other player characters could not be read — taken as unknown:`, err?.message ?? err);
+  }
+
+  const tracks = await readTracks(roller?.actorId ?? null);
+
+  const scene = { sceneId: campaignState?.currentSceneId ?? null, placeId: campaignState?.currentLocationId ?? null,
+    atSite: null, siteKind: null, combatActive: tracks ? tracks.fights.length > 0 : null };
+  if (campaignState) {
+    try {
+      const { getCurrentSiteKind } = await import("../entities/location.js");
+      const site = getCurrentSiteKind(campaignState);
+      scene.atSite = !!site;
+      scene.siteKind = site?.kind ?? null;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | move situation: the current site could not be read — taken as unknown:`, err?.message ?? err);
+    }
+  }
+
+  return { roller, party, people, tracks, scene, table: { pcCount } };
+}
+

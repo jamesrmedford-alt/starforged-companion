@@ -60,7 +60,11 @@ async function setLegacy(legacyTracks) {
 
 async function discover() {
   control.dice = [0.15, 0.25, 0.99];
-  await table.client("pl-1").chat("I follow the signal to its source.", { speaker: { actor: pc.id } });
+  // Made as the game makes it — from an Explore a Waypoint match, its card's
+  // 🔭 alternative (overhaul 4: the move gate's FROM_A_WAYPOINT; typed alone,
+  // a discovery is refused soft).
+  await table.client("pl-1").chat("I follow the signal to its source.", { speaker: { actor: pc.id },
+    flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "make_a_discovery", fromWaypoint: true } } });
   await table.settle(); await table.drain();
 }
 

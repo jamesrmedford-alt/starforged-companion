@@ -256,6 +256,8 @@ export const GM_ACTIONS = Object.freeze({
   "paced.roll":                { load: () => import("../moves/cardActions.js"),                      fn: "applyPacedRoll", record: true },
   // Issue #354 P2-01 — a "Not rolled" notice's "Narrate it — no move", claimed once on the notice
   "notRolled.narrate":         { load: () => import("../moves/cardActions.js"),                      fn: "applyNotRolledNarrate", record: true },
+  // Overhaul 4 (D2) — a "Not rolled" notice's GM "Roll anyway" on a soft refusal, claimed once
+  "notRolled.rollAnyway":      { load: () => import("../moves/cardActions.js"),                      fn: "applyNotRolledRollAnyway", record: true },
   "whichFight.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWhichFightPick", record: true },
   "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer", record: true },
   // Issue #330 D1 — a Fulfill Your Vow's / Forge a Bond's miss "🔁 Recommit", claimed once on the card

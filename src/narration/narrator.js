@@ -44,6 +44,7 @@ import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../fact
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES } from '../factContinuity/provenance.js';
+import { refusalNote } from '../moves/contracts/obligations.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -4822,6 +4823,11 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
  * @param {Object} [options]
  * @param {string|null} [options.suggestedMove] — when set, the narrator is
  *   instructed to end with an italicized inline hint nominating this move
+ * @param {Object|null} [options.refusal] — the move the line was read as
+ *   could not be made (moves/contracts/gate.js refusalOf; the pacing router's
+ *   or readMove's): the narration is told its premise is not so, and the card
+ *   says why in one line (`cannotMake` — NOTHING-TO-RECOVER-UNTOLD). Its
+ *   button is never the refused move, whatever the closing hint names.
  * Never throws: a throw outside its own guarded steps — before the prompt
  * is built (the X-Card watch, the key, the speaker's character) — told
  * nobody; the pacing router only logged it (known-issues PACED-ROUTER-THROW).
@@ -4904,7 +4910,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       const sentenceTarget = settings.narrationLength ?? 3;
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
-        { audio: extras.audioMarkupEnabled === true },
+        { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null },
       );
     } catch (err) {
       console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
@@ -4936,8 +4942,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         return null;
       }
 
-      const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
+      const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
+      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null);
       schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
       schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
       // Its Chronicle entry is written from the session record's beat (record/chronicleView.js).
@@ -4962,8 +4968,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
             mode: 'paced_narrative', ground: groundOf({ line: playerText }),
           });
           if (text?.trim()) {
-            const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null);
+            const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
+            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null);
             schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
             schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
             return text;
@@ -5156,16 +5162,38 @@ export async function runNarrationTierUpdate(narrationText, campaignState, { nar
   }
 }
 
-async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null, beatShape = null) {
+/**
+ * The paced card's Roll button: the move the closing hint invites, else the
+ * one offered (reconcileSuggestedMove) — never a move the gate refused for
+ * this line, whatever the hint names: its Roll would only be refused again.
+ *
+ * @param {string} text — the narration
+ * @param {string|null} suggestedMove — the offer (a refusal's own offer, when it has one)
+ * @param {{ playerText: string, speakerName: string|null, refusal: Object|null }} opts
+ * @returns {string|null}
+ */
+function pacedButtonMove(text, suggestedMove, { playerText, speakerName, refusal }) {
+  const move = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName });
+  return refusal?.moveId && move === refusal.moveId ? (suggestedMove === refusal.moveId ? null : suggestedMove) : move;
+}
+
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null, beatShape = null, refusal = null) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(moveDisplayName(suggestedMove))}</button></div>`
+    : '';
+  // A move the line was read as that could not be made: one line on the card
+  // it already gets, above its buttons (overhaul 4, D3 —
+  // NOTHING-TO-RECOVER-UNTOLD: nobody was told).
+  const cannotMake = refusal?.moveId
+    ? `<p class="sf-cannot-make">${escapeChatHtml(refusalNote(refusal))}</p>`
     : '';
   return ChatMessage.create({
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${proseToHtml(narrationText)}</div>
+        ${cannotMake}
         ${buttonRow}
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
@@ -5203,6 +5231,9 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         matchedEntityIds: Array.isArray(matchedEntityIds) ? [...matchedEntityIds] : [],
         narrationId:      narrationId ?? null,   // for the X-Card (issue #321 U07)
         ...beatShapeFlag(beatShape),             // the shape this beat was written in (beatVariety)
+        // The move the line could not make, and why — what the card's note
+        // says, for the playtest runner's `refused-not-rolled` check.
+        ...(refusal?.moveId ? { cannotMake: { moveId: refusal.moveId, code: refusal.code ?? null, why: refusal.why ?? '', hard: refusal.hard === true } } : {}),
         timestamp:        new Date().toISOString(),
       },
     },

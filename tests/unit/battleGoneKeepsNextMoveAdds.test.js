@@ -105,8 +105,8 @@ describe('X17 — a forced Battle naming a finished fight is not rolled, and tak
 
     await forcedBattle();
 
-    // Sanity: the pipeline took the fight-over branch — "not rolled", no move card.
-    expect(table.cards(f => f.trackGoneCard)).toHaveLength(1);
+    // Sanity: the move gate refused it — "not rolled", no move card (overhaul 4).
+    expect(table.cards(f => f.moveNotRolledNotice === 'cannot')).toHaveLength(1);
     expect(table.cards(f => f.moveResolution)).toHaveLength(0);
 
     // Both +1s are still pending in the world, for the next action roll made.
@@ -120,7 +120,7 @@ describe('X17 — a forced Battle naming a finished fight is not rolled, and tak
 
     await forcedBattle();
 
-    expect(table.cards(f => f.trackGoneCard)).toHaveLength(1);
+    expect(table.cards(f => f.moveNotRolledNotice === 'cannot')).toHaveLength(1);
     expect(table.cards(f => f.moveResolution)).toHaveLength(0);
     expect(world().nextMoveAdd?.value ?? null).toBe(1);
     expect(world().nextMoveBonuses?.['pc-kira']?.value ?? null).toBe(1);

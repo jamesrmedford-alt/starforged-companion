@@ -376,7 +376,7 @@ describe('a track the round ends', () => {
     const refused = table.cards(f => f.roundRefusedCard);
     expect(refused).toHaveLength(1);
     expect(refused[0].content).toMatch(/Ren — Strike: not rolled/);
-    expect(refused[0].content).toMatch(/Archive guards ended earlier in this round/);
+    expect(refused[0].content).toMatch(/(&quot;|")Archive guards(&quot;|") was finished or deleted before the roll/);
     expect(table.cards(f => f.moveResolution && f.roundId).map(c => c.flags[MODULE_ID].roundUserId)).toEqual(['pl-1']);
     const user = narrations()[0].userText;
     expect(user).toContain('### 2. Ren — Strike: not rolled');

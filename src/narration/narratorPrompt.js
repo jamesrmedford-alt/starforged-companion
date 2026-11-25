@@ -16,6 +16,7 @@ import { resolveEntityById, withSheetNotes } from '../entities/registry.js';
 import { isLoneShipCandidate } from '../entities/ship.js';
 import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
 import { lengthPhrase, sentenceRule } from './proseVariety.js';
+import { obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -3308,12 +3309,20 @@ export function buildSceneUserMessage(question, recentContext, sentenceTarget, s
  * single italicized line inviting that move. The narrator may decline if the
  * fiction wouldn't carry it.
  *
+ * What the narration must tell and must not (overhaul 4, slice 1) is one
+ * block, last before the instruction (moves/contracts/obligations.js): the
+ * offered move NOT YET made, no sheet changing, no apparatus — and, when the
+ * line's move could not be made (`refusal`, the gate's), its premise NOT SO,
+ * so a Heal refused at full health is not narrated as a wound dressed
+ * (NOTHING-TO-RECOVER-UNTOLD).
+ *
  * @param {string} playerText      — raw player narration
  * @param {string} recentContext   — recent narration cards joined as text (may be empty)
  * @param {number} sentenceTarget  — the Length setting: a word budget (proseVariety.js lengthBudget)
  * @param {string|null} suggestedMove
  * @param {string|null} [speakerName]
- * @param {{ audio?: boolean }} [opts] — `audio`: the narration is read aloud (shorter sentences)
+ * @param {{ audio?: boolean, refusal?: Object|null }} [opts] — `audio`: the narration is read aloud (shorter
+ *   sentences); `refusal`: the move the line was read as could not be made (contracts/gate.js refusalOf)
  * @returns {string}
  */
 export function buildPacedNarrativeUserMessage(playerText, recentContext, sentenceTarget, suggestedMove, speakerName = null, opts = {}) {
@@ -3342,11 +3351,7 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     parts.push(
       `## SUGGESTED MOVE\n\n` +
       `The pacing classifier nominated ${suggestedMove} as a move the player could ` +
-      `make if they want to push this moment. It has not been made, and nothing it ` +
-      `would decide has happened: narrate up to the point where it would begin and stop ` +
-      `there — a course laid in is not yet flown, a wound bared is not yet treated, a ` +
-      `question put is not yet answered. The prose never performs the move; the closing ` +
-      `sentence offers it. End your narration with ONE italicized ` +
+      `make if they want to push this moment. End your narration with ONE italicized ` +
       `sentence inviting this move, in the narrator's voice. Do not announce it ` +
       `mechanically. Examples:\n\n` +
       `  *If you want to read him for tells, this could be a Gather Information.*\n` +
@@ -3361,6 +3366,14 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     );
   }
 
+  // What the narration must tell and must not, last before the instruction:
+  // the offer not yet made, the sheet unchanged, no apparatus — and a refused
+  // move's premise told as not so (overhaul 4).
+  const block = formatObligationsBlock(obligationsFor({
+    mode: 'paced', offer: suggestedMove ?? null, refusal: opts?.refusal ?? null,
+  }));
+  if (block) parts.push(block);
+
   const target = Math.max(1, Number(sentenceTarget) || 3);
   // Issue #348 PT01: "continuing the scene, not advancing it" held the story
   // still — "not yet", "twenty minutes out", an arrival pushed back on every
@@ -3374,10 +3387,8 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
     `${sentenceRule(target, lengthOpts)} ` +
     `No move was rolled — stay in narration. Do not announce mechanics. Do not decide ` +
     `what a move would decide: no risky action succeeds or fails, no fight is won, no ` +
-    `danger is escaped. Nor does anything on a character's sheet change — no wound is ` +
-    `treated or healed, no harm taken, no supplies gained or spent, no damage repaired, ` +
-    `no bond or progress made: a line that sets about one of those has begun it, and the ` +
-    `move that decides it is still to be made. Within that, let the scene move: small developments, and the ` +
+    `danger is escaped. Keep to the block above: what it says is not yet decided stays undecided, and what it says is not so is never told as so. ` +
+    `Within that, let the scene move: small developments, and the ` +
     `time the player's line implies passing, are yours to narrate. When the player skips ` +
     `time ("wake me when we get there", "we wait for nightfall"), cut to the next moment ` +
     `that needs them, not to the middle of the wait.`
@@ -3450,6 +3461,12 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
       `${speaker ? `${speaker}: ` : ''}"${cleanedPlayerNarration}"`,
     );
   }
+
+  // What the narration must tell and must not, last before the instruction
+  // (overhaul 4): a move the sheet said would change nothing, rolled at the
+  // GM's word, is told as the GM ruled it (TELL [overridden]).
+  const obligations = formatObligationsBlock(obligationsFor({ mode: 'move', note: resolution?.gateNote ?? null }));
+  if (obligations) parts.push(obligations);
 
   // Issue #354 P2-20: a word budget, in short sentences — not a sentence count.
   const lengthOpts = { audio: opts?.audio === true };
@@ -3604,6 +3621,12 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       lines.push(`${input.reason ?? 'It could not be rolled.'} Narrate this as an action with no roll: no success or failure is decided for it.`);
     } else {
       lines.push(`### ${i + 1}. ${name} — no roll`);
+    }
+    // A move it could not make (the move gate, overhaul 4): its premise is
+    // not so — the round tells it as the paced narration does.
+    if (input.kind !== 'move' && input.refusal?.premise) {
+      const block = formatObligationsBlock(obligationsFor({ mode: 'round-entry', refusal: input.refusal }), { heading: '####' });
+      if (block) lines.push(block);
     }
     const said = sanitizePlayerText(e.text ?? '');
     if (said) lines.push(`${name}: "${said}"`);

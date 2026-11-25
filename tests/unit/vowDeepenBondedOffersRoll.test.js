@@ -55,6 +55,7 @@ vi.mock("../../src/moves/resolver.js", async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
+import { bondItemFor } from '../helpers/fullStateFixture.js';
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 import { resolveMove } from "../../src/moves/resolver.js";
@@ -87,7 +88,9 @@ async function seed({ bonded = true, link } = {}) {
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: "sess-1", sessionNumber: 2, connectionIds: ["conn-sable"] },
   } } });
   vow = makeVow("v-crew", "Free Sable's crew", "vid-crew", link);
-  table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 }, items: { contents: [vow] } });
+  // Sable is Kira's connection: the bond Item on her sheet, keyed to the record (overhaul 4).
+  table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 }, items: { contents: [vow,
+    bondItemFor({ _id: "rec-sable", name: "Sable", rank: "dangerous", relationshipTicks: bonded ? BOND_TICKS : 0, bonded })] } });
   sable = table.addActor({
     id: "conn-sable", name: "Sable", type: "character",
     flags: { [MODULE_ID]: { entityType: "connection", connection: {

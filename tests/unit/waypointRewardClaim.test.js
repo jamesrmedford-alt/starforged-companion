@@ -47,6 +47,7 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
+import { progressTracksJournal } from '../helpers/fullStateFixture.js';
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 
@@ -85,6 +86,8 @@ beforeEach(async () => {
       lastSessionTimestamp: new Date().toISOString(), currentSceneId: "wp-scene", sceneTruths: [], clocks: [], legacyTracks: {} },
   } } });
   await table.setClaudeKey("gm-1", "sk-ant-test");
+  // a waypoint is explored on an expedition (the move gate's EXPEDITION_OR_SITE) — overhaul 4.
+  table.journal._set(progressTracksJournal([{ id: 'ex-1', label: 'To the Drift', type: 'expedition', rank: 'dangerous', ticks: 8, completed: false }]));
   pc = table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 }, system: { momentum: { value: 2 } } });
   table.addActor({ id: "pc-ren", name: "Ren", ownership: { "pl-2": 3 } });
   scriptClaude(table, { fallback: () => 'The hold yawns open.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });

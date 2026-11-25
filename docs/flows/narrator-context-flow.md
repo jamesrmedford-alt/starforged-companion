@@ -1107,21 +1107,70 @@ vehicle's integrity full and it not battered are plain NARRATIVE with nothing
 offered, and the interpreter's rule 10 answers NO MOVE for them — each unless
 the line is plainly about something the meters do not show (care for an ally
 or a companion; one particular item; a support vehicle, a module, a companion
-or a device). Where the sheet settles it the code decides
-(`moves/situation.js nothingToRecover`, from the same `readSituation` the
-block is rendered from), outside a fight:
-- `router.decidePacing` turns the classifier's MOVE or offer of Hearten — or
-  of Heal when there is nobody else the care could be for (no other player
-  character, no companion) — into NARRATIVE with no move, and its reasoning
-  says why (`[nothing to recover: …]`, in the Pacing Telemetry journal);
-- `movePipeline.readMove` narrates the interpreter's own reading of such a
-  move instead of rolling it, and never offers a recovery move with nothing to
-  recover on the card of a line read as no move — the classifier's nominated
-  Heal was what that card carried. With the interpreter's "no move" beside
-  the sheet that holds for all four; on the sheet alone, for the two above.
-A forced move (a card's button) and a roll that was asked for (`!roll`, a
-round's "Roll a move instead") are made as they always were: a player who
-means it can still roll it. Sojourn is not held to one meter.
+or a device).
+
+**What the sheet settles, the move gate decides** (overhaul 4, "moves as
+contracts"). Every move has a row (`moves/contracts/table.js`
+`MOVE_CONTRACTS`: its trigger, its target, its preconditions —
+`moves/contracts/predicates.js`), and one gate (`moves/contracts/gate.js`
+`checkMove`) runs them over the situation read live
+(`moves/situation.js readMoveSituation`: the roller's sheet, the other PCs,
+the recorded people, the open tracks, the scene's site), where a move is
+offered and where it is made — the roll is the authority:
+- `router.decidePacing` asks it of the classifier's MOVE or offer: a move that
+  cannot be made — a recovery move with nothing to recover (`RECOVERABLE`,
+  `PARTY_HAS_SOMETHING_TO_RECOVER`), a social move spoken to a fellow player
+  character (`NOT_AT_A_PC`), a combat move with no fight (`OPEN_FIGHT`), a
+  connection's move with someone who is no connection of the speaker's
+  (`THEIR_CONNECTION`) — is NARRATIVE, or an offer of the move the refusal
+  names (Enter the Fray for a Strike with no fight; Make a Connection for a
+  Develop with a stranger); its reasoning says why (`[cannot be made: <code>
+  — <why>]`, in the Pacing Telemetry journal), and the decision carries the
+  refusal to the narration (`refused` → `narratePacedInput`'s `refusal`);
+- `movePipeline.readMove` asks it of the line's reading: a typed line whose
+  move cannot be made is narrated as a paced line, told why (`noMove.refused`
+  → `index.js narrateLineWithoutMove`), and nothing the gate refuses is offered
+  on that card; a forced move's or an asked-for roll's hard refusal is not
+  rolled (`refused` → the not-rolled notice, "No Strike — no fight is under
+  way. Nothing was rolled.", flag `cannotMake`), and a soft one goes to the
+  confirm dialog with the sheet's words (`interpretation.softRefusal`), whose
+  Accept rolls it at the GM's word;
+- `rollAndApply` asks it again before the dice (the forced moves, a card's
+  button, a Batch Mode round's entry — `driver.refusalFor` at resolution):
+  refused, nothing is rolled and the notice says why — a soft refusal of a
+  forced move with a **Roll anyway (GM)** button (`notRolled.rollAnyway` →
+  `cardActions.applyNotRolledRollAnyway`, the move re-posted with
+  `gateOverride`); rolled at the GM's word, the move card says "⚖ rolled at
+  the GM's word: …" and its narration is told so (`resolution.gateNote`).
+A hard refusal (nothing for the move to act on — no fight, no vow, no
+connection) is never overridden; a soft one (the sheet says the move would
+change nothing) is told on a typed line and rolled at a GM's word on a
+pressed one. Soft ones are not applied in a fight — there the dice decide —
+and the ones the sheet cannot see whole (Resupply's one particular item,
+Repair's device: `readerSettled`) only where no reader read the line as the
+move. An unknown is never a refusal: a meter or a list not read holds. Sojourn
+is held to the party as a whole, not one meter.
+
+**The refusal is told** — in the user message, never the system prompt
+(`rules/narrator-memory.md` invariant 7b): the paced message ends with a
+**WHAT THIS NARRATION MUST TELL, AND MUST NOT** block
+(`moves/contracts/obligations.js` `obligationsFor` /
+`formatObligationsBlock`) before its instruction — NOT SO `[premise]`: what
+the line took for granted is not so, with the refusal's reason ("A fight under
+way is not so — no fight is under way. The line sets about it: narrate the
+attempt meeting the facts, never the premise as real: never a blow struck, a
+shot fired or a foe engaged in a fight."); NOT YET `[offer]`: the move offered
+is only offered (SUGGESTED MOVE's "It has not been made…" half, moved here);
+NOT SO `[sheet]`: no sheet changes in narration (the instruction's "Nor does
+anything…" sentence, moved here — for a refused line, "No move was rolled for
+this line, and none will be"); NOT SO `[apparatus]`: no dice, no sheet number,
+no outcome's or move's name. A move rolled at the GM's word carries TELL
+`[overridden]` in its move message; a
+round's entry refused at the roll carries its `[premise]` block in the
+round's message (`####`, under the entry). The paced card says it too
+(`<p class="sf-cannot-make">`, flag `cannotMake` — the runner's check reads
+it), and a round's window shows the refused entry's note
+(`roundView.cannotMake`).
 
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A

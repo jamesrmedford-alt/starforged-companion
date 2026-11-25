@@ -353,9 +353,10 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
         + (r.outcome ? `: ${escapeHtml(r.outcome)}` : "") + `. The round narrates it with the others' actions.</p></div>`;
     }
     if (r.kind === READING_KIND.NARRATIVE) {
+      // A move the line was read as that cannot be made says why (overhaul 4, D3).
       return `<div class="sf-round-reading"><p><strong>No roll needed.</strong>`
         + (r.suggestedMoveName ? ` ${escapeHtml(r.suggestedMoveName)} is available if you want to push it.` : " It is narrated as you wrote it.")
-        + `</p></div>`;
+        + `</p>${r.cannotMake ? `<p class="sf-cannot-make">${escapeHtml(r.cannotMake)}</p>` : ""}</div>`;
     }
     const ready = own.status === ENTRY_STATUS.READY;
     // Keyed by its submission, so a re-render carries the picks of this reading only (readingPicks).
