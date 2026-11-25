@@ -3665,8 +3665,8 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     // A move pressed on a card or a panel (issue #388 #10): its line is the
     // card's words for the move, never the character's — [unsaid] says so.
     parts.push(
-      `## THE MOVE — pressed on a card; the player wrote no line\n\n` +
-      `The card's words for it: "${cleanedPlayerNarration}"`,
+      `## THE MOVE — made from a button or the map; the player wrote no line\n\n` +
+      `Its words on the table: "${cleanedPlayerNarration}"`,
     );
   } else if (cleanedPlayerNarration) {
     parts.push(

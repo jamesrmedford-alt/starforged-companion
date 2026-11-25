@@ -49,7 +49,7 @@ describe('a move pressed on a card gives the character no words (issue #388 #10)
     const made = obligationsFor({ mode: 'move', resolution: RESOLUTION, madeLine: true });
     const unsaid = made.find(o => o.kind === 'unsaid');
     expect(unsaid).toMatchObject({ list: 'NOT SO', judge: expect.stringContaining('The player\'s character ("you") speaks') });
-    expect(formatObligationsBlock(made)).toContain('- [unsaid] No line of the player\'s made this move — it was pressed on a card.');
+    expect(formatObligationsBlock(made)).toContain('- [unsaid] No line of the player\'s made this move — it was made from a button or the map.');
     expect(trippedLines(A82, made).map(o => o.kind)).toContain('unsaid');
     // A typed line's move has no such line.
     expect(obligationsFor({ mode: 'move', resolution: RESOLUTION }).map(o => o.kind)).not.toContain('unsaid');
@@ -57,7 +57,7 @@ describe('a move pressed on a card gives the character no words (issue #388 #10)
 
   it('its prompt shows the card\'s words as the card\'s — never as the character\'s line', () => {
     const user = buildNarratorUserMessage(RESOLUTION, CARD_LINE, 3, 'Mira Kestrel', '', { madeLine: true });
-    expect(user).toContain(`## THE MOVE — pressed on a card; the player wrote no line\n\nThe card's words for it: "${CARD_LINE}"`);
+    expect(user).toContain(`## THE MOVE — made from a button or the map; the player wrote no line\n\nIts words on the table: "${CARD_LINE}"`);
     expect(user).not.toContain('## PLAYER NARRATION');
     expect(user).toContain('- [unsaid]');
     const typed = buildNarratorUserMessage(RESOLUTION, 'I sit with Tamsin while she counts the ledger.', 3, 'Mira Kestrel');
@@ -96,9 +96,9 @@ describe('the card\'s move, end to end', () => {
     }));
     await table.settle(); await table.drain();
 
-    const [narration] = table.claude.calls.filter(c => /## THE MOVE — pressed on a card/.test(c.userText));
+    const [narration] = table.claude.calls.filter(c => /## THE MOVE — made from a button or the map/.test(c.userText));
     expect(narration, 'the move was narrated as pressed on a card').toBeTruthy();
-    expect(narration.userText).toContain(`The card's words for it: "${CARD_LINE}"`);
+    expect(narration.userText).toContain(`Its words on the table: "${CARD_LINE}"`);
     expect(narration.userText).not.toContain('Mira Kestrel: "Develop my relationship');
     expect(narration.userText).toContain('- [unsaid]');
     const [card] = table.cards(f => f.narratorCard && !f.pacedNarrative && typeof f.narrationText === 'string');

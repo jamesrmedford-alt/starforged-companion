@@ -24,7 +24,8 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { formatMaterial, markSeedsUsed, rollOpeningSeeds, rollSpotlightSeeds } from '../../src/session/sceneSeeds.js';
+import { formatMaterial, markSeedsUsed, rollOpeningSeeds, rollSpotlightSeeds, rolledWordsOf } from '../../src/session/sceneSeeds.js';
+import { materialViolations } from '../../src/moves/contracts/checks.js';
 import { createRehearsal } from '../../test/ci/playwright/lib/rehearsal.mjs';
 import { materialOf, scorecard, setPieceKindOf, setPiecesOf } from '../../test/ci/playwright/lib/review.mjs';
 import { installDiceScript } from '../../test/ci/playwright/lib/world.mjs';
@@ -64,12 +65,15 @@ describe('the rehearsal\'s stand-in, at a session set-piece', () => {
     const r = createRehearsal({ charter: CHARTER });
     r.reply(playerTurn);
     const { prose, block } = split(replyOf(r, OPENING(seeds)));
-    expect(prose).toContain('Bolster Debt.');
-    expect(prose).toContain('Makeshift Container.');
-    expect(block.builtFrom).toEqual([{ n: 1, words: 'Bolster Debt' }, { n: 2, words: 'Makeshift Container' }]);
+    // In words of its own — never the pair as rolled (the module's [material] check, issue #388 #11).
+    expect(prose).toContain('Something of bolster, something of debt.');
+    expect(prose).toContain('Something of makeshift, something of container.');
+    expect(block.builtFrom).toEqual([{ n: 1, words: 'Something of bolster, something of debt' }, { n: 2, words: 'Something of makeshift, something of container' }]);
     // The module's own reading of that account (narrator.js applies it so).
     markSeedsUsed(seeds, block.builtFrom, prose);
-    expect(seeds.map(s => s.used)).toEqual(['Bolster Debt', 'Makeshift Container']);
+    expect(seeds.map(s => s.used)).toEqual(['Something of bolster, something of debt', 'Something of makeshift, something of container']);
+    // And the module's own check passes it: no set-piece of the rehearsal is asked again.
+    expect(materialViolations(prose, rolledWordsOf(seeds))).toEqual([]);
   });
 
   it('the forgetful stand-in uses none and accounts for none — the module finds none used', () => {
@@ -78,6 +82,7 @@ describe('the rehearsal\'s stand-in, at a session set-piece', () => {
     r.reply(playerTurn);
     const { prose, block } = split(replyOf(r, OPENING(seeds)));
     expect(prose).not.toContain('Bolster Debt');
+    expect(prose).not.toContain('bolster');
     expect(block.builtFrom).toBeUndefined();
     markSeedsUsed(seeds, block.builtFrom ?? [], prose);
     expect(seeds.map(s => s.used)).toEqual([false, false]);

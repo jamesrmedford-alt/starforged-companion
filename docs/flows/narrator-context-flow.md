@@ -1272,9 +1272,9 @@ together — `materialViolations`, issue #388 #11; label
 (logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
 in the prose ([premise] by its refusal's code — "starts on the cuts" under
 a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
-[oracle], [state]; [unsaid] by speech words, on a move pressed on a card —
-its line the card's `madeLine`, shown as "THE MOVE — pressed on a card; the
-player wrote no line", issue #388 #10) sends one Haiku call (`api-proxy.js`, label
+[oracle], [state]; [unsaid] by speech words, on a move made from a button or
+the map — its line the table's own (`madeLine`), shown as "THE MOVE — made
+from a button or the map; the player wrote no line", issue #388 #10) sends one Haiku call (`api-proxy.js`, label
 `obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
 consistency check on). A failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels

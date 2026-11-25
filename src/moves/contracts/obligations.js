@@ -359,7 +359,7 @@ export const OBLIGATION_KINDS = Object.freeze({
   // Chronicle filed it, and a85's answer quoted it as Mira's words.
   unsaid: Object.freeze({
     list: "NOT SO", check: "judge",
-    text: () => "No line of the player's made this move — it was pressed on a card. The character says, asks, promises " +
+    text: () => "No line of the player's made this move — it was made from a button or the map. The character says, asks, promises " +
       "and confesses nothing in this narration, in quotes or told (\"you tell her that …\"): what they say is the player's. " +
       "Tell what the move does, and what the others do and say.",
     judge: () => "The player's character (\"you\") speaks — says, asks, promises or confesses something, in quotes or told (\"you tell her that …\").",
