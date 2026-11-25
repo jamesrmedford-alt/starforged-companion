@@ -64,7 +64,13 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
-import { stakesShown, sufferRouteLabel, statedTargetLands, formatStakesBlock } from "../../src/moves/stakes.js";
+import { stakesShown, sufferRouteLabel, statedTargetLands } from "../../src/moves/stakes.js";
+import { obligationsFor } from "../../src/moves/contracts/obligations.js";
+// The STAKES / PRICE / COST / FIGHT blocks are lines of the narration's one
+// obligations block now (overhaul 4, slice 2 — contracts/obligations.js, their
+// words kept): each stand-in below is that line, tagged, as the block carries it.
+const lineFor = (kind, resolution) => { const o = obligationsFor({ mode: "move", resolution }).find(x => x.kind === kind); return o ? `- [${o.kind}] ${o.text}` : ""; };
+const formatStakesBlock = (stakes, outcome, extra = {}) => lineFor("stakes", { stakes, outcome, ...extra });
 import { nameStatedSufferTarget } from "../../src/moves/statEnrichment.js";
 
 const isInterpreter = (call) => /You are the move interpreter/.test(call.system ?? "");
@@ -137,7 +143,7 @@ describe("the Confirm Move dialog names the vehicle or companion a stated miss d
     expect(bike.system.track.value).toBe(2);
     expect(shipIntegrity()).toBe(5);
     // The narrator is told what the player saw.
-    const narration = table.claude.calls.filter(c => /STAKES STATED BEFORE THE ROLL/.test(c.userText ?? "")).at(-1);
+    const narration = table.claude.calls.filter(c => /\[stakes\] The player saw these before rolling:/.test(c.userText ?? "")).at(-1);
     expect(narration.userText).toContain(`- On a miss: ${MISS_LINE} (Withstand Damage −1 · Hoverbike)`);
   }, 60_000);
 

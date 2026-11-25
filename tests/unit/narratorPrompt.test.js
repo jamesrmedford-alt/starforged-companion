@@ -1696,7 +1696,8 @@ describe('clocks, vow progress, rewards, connection standing and the session foc
     });
     expect(prompt).toContain('Background vow: Avenge my sister (extreme, progress 3/10, clock 2/6)');
     expect(prompt).toContain('Other vows: Find the relay (dangerous, progress 8/10)');
-    expect(prompt).toContain('Connections: Dr Chen (dangerous, progress 4/10)');
+    // In the situation's words (moves/situation.js connectionStanding — overhaul 4, TRACK-TOLD-AS-A-BOND).
+    expect(prompt).toContain('Connections: Dr Chen (dangerous, relationship 4 of 10 boxes)');
     expect(prompt).toContain('Rewards received: a Hegemony access key (gear); the dockmaster owes us (contact)');
   });
 

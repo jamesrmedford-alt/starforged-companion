@@ -43,7 +43,8 @@ import { inferShipPosition }  from '../factContinuity/shipPosition.js';
 import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
-import { refusalNote } from '../moves/contracts/obligations.js';
+import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
+import { readMoveSituation } from '../moves/situation.js';
 import {
   runCombinedDetectionPass,
   routeEntityDrafts,
@@ -85,9 +86,7 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
-import { priceChoiceStatus, withUnansweredCards } from '../moves/resultUpgrade.js';
-// What the long haul's third live run turned up (a line of its own, apart from the block above).
-import { formatOracleAnswerRule } from './narratorPrompt.js';
+import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { withoutUntoldTruths } from '../world/secrets.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
@@ -1367,6 +1366,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );
+  const touched = await beatSituation(character?.actorId ?? null, campaignState);
   const userMessage  = buildNarratorUserMessage(
     resolution,
     resolution.playerNarration ?? '',
@@ -1376,7 +1376,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
     ),
-    { audio: extras.audioMarkupEnabled === true },
+    { audio: extras.audioMarkupEnabled === true, situation: touched.situation, cast: touched.cast },
   );
   // The card keeps the line the player wrote (B5) — not the marker a burn /
   // improve re-narration carries in its place.
@@ -1479,6 +1479,42 @@ export async function narrateResolution(resolution, campaignState, options = {},
 
 
 /**
+ * A result, or a round entry's narration input, with what its cards say
+ * (contracts/obligations.js unansweredCardsFor) — `openChoice`, `chosen`,
+ * `fightOffer` — for its obligations block. Fresh each narration: what a card
+ * said when an earlier narration was written is not carried.
+ *
+ * @param {Object|null} input
+ * @returns {Object|null}
+ */
+function withCardsAnswered(input) {
+  if (!input || typeof input !== 'object') return input;
+  const rest = { ...input };
+  delete rest.openChoice; delete rest.chosen; delete rest.fightOffer;
+  return { ...rest, ...unansweredCardsFor(input) };
+}
+
+/**
+ * The situation a narration's [state] lines read (moves/situation.js
+ * readMoveSituation), and the scene's cast — what the beat touches. Null when
+ * it cannot be read: then no [state] line is told.
+ *
+ * @param {string|null} actorId
+ * @param {Object|null} campaignState
+ * @returns {Promise<{ situation: Object|null, cast: string[] }>}
+ */
+async function beatSituation(actorId, campaignState) {
+  const cast = Array.isArray(campaignState?.sceneFrame?.present)
+    ? campaignState.sceneFrame.present.filter(n => typeof n === 'string' && n.trim()) : [];
+  try {
+    return { situation: actorId ? await readMoveSituation(actorId, { campaignState }) : null, cast };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the sheet could not be read for what the beat touches:`, err?.message ?? err);
+    return { situation: null, cast };
+  }
+}
+
+/**
  * A move as its narration takes it, and the plans it asks that narration to
  * decide — narrateResolution's, and the same for a move whose narration the
  * X-Card pauses before it is asked for (issue #364
@@ -1519,9 +1555,12 @@ export async function narrateResolution(resolution, campaignState, options = {},
 function movePlanRequests(resolution, campaignState, refBase) {
   let move = resolution;
   if (move?.priceChoice) move = settlePriceChoice(move, priceChoiceStatus(move._id ?? null));
-  // What the table has still to answer about the result — a cost that is the
-  // player's choice, not yet chosen: its narration stops short of it.
-  move = withUnansweredCards(move);
+  // What the table has answered, and has still to answer, about the result —
+  // a cost that is the player's choice (open: its narration stops short of
+  // it; chosen before it: told), an Enter the Fray's fight not begun — read
+  // from its cards for its obligations block (overhaul 4,
+  // contracts/obligations.js unansweredCardsFor).
+  move = withCardsAnswered(move);
   if (globalThis.game?.user?.isGM === true) move = withHiddenRolls(move, campaignState);
   if (!skeletonsEnabled()) return { resolution: move, planRequests: [], planIds: [] };
   const asked = forResolution([move?.upgradeOf, move?._id].find(id => typeof id === 'string' && id) ?? null,
@@ -1736,8 +1775,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   const entries = roundNarrationEntries(round)
     .map(e => (e.input?.priceChoice
       ? { ...e, input: settlePriceChoice(e.input, priceChoiceStatus(e.input.resolutionId ?? null)) } : e))
-    // …and so is a cost still its player's to choose (narrateResolution's rule).
-    .map(e => (e.input?.kind === 'move' ? { ...e, input: withUnansweredCards(e.input) } : e))
+    // …and so are its cards — a cost still its player's to choose, or chosen
+    // before the round is narrated (narrateResolution's rule).
+    .map(e => (e.input?.kind === 'move' ? { ...e, input: withCardsAnswered(e.input) } : e))
     .map(e => (globalThis.game?.user?.isGM === true
       ? { ...e, input: withHiddenRolls(e.input, campaignState) } : e));
   if (!entries.length) return { posted: null };
@@ -4236,8 +4276,12 @@ function buildOracleUserMessage({
     );
   }
   // A yes/no answer binds the narration of it (ORACLE-NO-NARRATED-AS-YES): said
-  // back after the recent scene, which may say otherwise, and before the ask.
-  const binds = formatOracleAnswerRule({ kind, question, rolledLine });
+  // back after the recent scene, which may say otherwise, and before the ask
+  // — its obligations block, TELL [oracle] the answer, NOT SO its opposite
+  // (overhaul 4).
+  const binds = formatObligationsBlock(obligationsFor({
+    mode: 'oracle', oracle: { kind, question: sanitizePlayerText(question ?? ''), rolledLine },
+  }));
   return (
     `The player invoked the oracle:\n` +
     `Oracle: ${oracleName}\n` +
@@ -4900,9 +4944,11 @@ export async function narratePacedInput(playerText, campaignState, options = {},
 
       const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
       const sentenceTarget = settings.narrationLength ?? 3;
+      const touched = await beatSituation(character?.actorId ?? null, campaignState);
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
-        { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null },
+        { audio: extras.audioMarkupEnabled === true, refusal: options.refusal ?? null,
+          situation: touched.situation, cast: touched.cast },
       );
     } catch (err) {
       console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);

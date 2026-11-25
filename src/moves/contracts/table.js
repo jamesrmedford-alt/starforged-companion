@@ -22,8 +22,14 @@
  *             "expedition" · "scene-challenge" · "progress:fight" · "progress:expedition"
  *   ends      move-only state its result ends: "vow" · "fight" · "expedition" · "scene-challenge"
  *   obliges   the obligation kinds its result carries beyond the generic ones
- *             (obligations.js OBLIGATION_KINDS) — slice 2 builds a result's
- *             kinds, and names them here
+ *             (obligations.js OBLIGATION_KINDS — resultObligations reads it):
+ *             "vow" (a fulfilment's hit says what the vow asked for),
+ *             "milestone", "recommit" (a progress move's miss leaves the
+ *             recommit to the player), "fight" (an Enter the Fray's fight
+ *             still only offered). The generic kinds — [outcome], [stakes],
+ *             [price], [cost], [chosen], [match], [overridden], [state],
+ *             [sheet], [apparatus] — every move's result may carry, by what
+ *             the resolution and its cards say
  *   gated     "never" — safety and the table's own tools (Set a Flag, Change
  *             Your Fate, Take a Break, Ask the Oracle, Pay the Price): the
  *             gate passes them unread · "table" — made by the table's own
@@ -58,7 +64,7 @@ const OPEN_VOW_OWN = OPEN_VOW({ own: true });
 /** A row, frozen, its lists defaulted. */
 function row(spec) {
   return Object.freeze({
-    group: null, trigger: "", target: null, requires: [], makes: [], ends: [], gated: null, instead: [],
+    group: null, trigger: "", target: null, requires: [], makes: [], ends: [], obliges: [], gated: null, instead: [],
     ...spec,
   });
 }
@@ -97,9 +103,9 @@ export const MOVE_CONTRACTS = Object.freeze({
   // ── Quest ───────────────────────────────────────────────────────────────
   swear_an_iron_vow: row({ group: "quest", target: "vow",
     trigger: "When you swear upon iron to complete a quest, write your vow and give it a rank." }),
-  reach_a_milestone: row({ group: "quest", target: "vow", requires: [OPEN_VOW_ANY, ROOM_ON_VOW], makes: ["vow-progress"],
+  reach_a_milestone: row({ group: "quest", target: "vow", requires: [OPEN_VOW_ANY, ROOM_ON_VOW], makes: ["vow-progress"], obliges: ["milestone"],
     trigger: "When you make headway in your quest by doing any of the following: overcoming a critical obstacle; gaining meaningful insight; completing a perilous expedition; acquiring a crucial item or resource; earning vital support; defeating a notable foe — you may mark progress per the rank of the vow." }),
-  fulfill_your_vow: row({ group: "quest", target: "vow", requires: [OPEN_VOW_ANY], ends: ["vow"],
+  fulfill_your_vow: row({ group: "quest", target: "vow", requires: [OPEN_VOW_ANY], ends: ["vow"], obliges: ["vow", "recommit"],
     trigger: "When you reach the end of your quest, roll the challenge dice and compare to your progress." }),
   forsake_your_vow: row({ group: "quest", target: "vow", requires: [OPEN_VOW_OWN], ends: ["vow"],
     trigger: "When you renounce your quest, betray your promise, or the goal is lost to you, clear the vow." }),
@@ -111,7 +117,7 @@ export const MOVE_CONTRACTS = Object.freeze({
     trigger: "When you reinforce your relationship with a connection by doing any of the following: swearing a vow to undertake a perilous quest in their service; completing a quest to their benefit; leveraging their help in desperate circumstances; giving them something of worth; sharing a profound moment; standing with them against hardship; overcoming a test of your relationship — you may mark progress per the rank of the connection." }),
   test_your_relationship: row({ group: "connection", target: "connection", requires: [NOT_AT_A_PC, THEIR_CONNECTION],
     trigger: "When your relationship with a connection is tested through conflict, betrayal, or circumstance, roll +heart." }),
-  forge_a_bond: row({ group: "connection", target: "connection", requires: [NOT_AT_A_PC, THEIR_CONNECTION, NOT_BONDED], makes: ["bond"],
+  forge_a_bond: row({ group: "connection", target: "connection", requires: [NOT_AT_A_PC, THEIR_CONNECTION, NOT_BONDED], makes: ["bond"], obliges: ["recommit"],
     trigger: "When your relationship with a connection is ready to evolve, roll the challenge dice and compare to your progress." }),
 
   // ── Exploration ─────────────────────────────────────────────────────────
@@ -119,7 +125,7 @@ export const MOVE_CONTRACTS = Object.freeze({
     trigger: "When you trailblaze a route through perilous space, journey over hazardous terrain, or survey a mysterious site, give the expedition a name and rank." }),
   explore_a_waypoint: row({ group: "exploration", target: "expedition", requires: [EXPEDITION_OR_SITE], makes: ["progress:expedition"],
     trigger: "When you divert from an expedition to examine a notable location, roll +wits." }),
-  finish_an_expedition: row({ group: "exploration", target: "expedition", requires: [OPEN_TRACK("expedition")], ends: ["expedition"],
+  finish_an_expedition: row({ group: "exploration", target: "expedition", requires: [OPEN_TRACK("expedition")], ends: ["expedition"], obliges: ["recommit"],
     trigger: "When your expedition comes to an end, roll the challenge dice and compare to your progress." }),
   set_a_course: row({ group: "exploration", target: "place",
     instead: [{ to: "undertake_an_expedition", when: "the destination is no charted, known place" }],
@@ -140,7 +146,7 @@ export const MOVE_CONTRACTS = Object.freeze({
     trigger: "When you face an extended or complex challenge, name your objective and choose a rank as appropriate to the situation." }),
 
   // ── Combat ──────────────────────────────────────────────────────────────
-  enter_the_fray: row({ group: "combat", target: "fight", makes: ["fight"],
+  enter_the_fray: row({ group: "combat", target: "fight", makes: ["fight"], obliges: ["fight"],
     trigger: "When you initiate combat or are forced into a fight, envision your objective and give it a rank." }),
   gain_ground: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("in_control", { instead: "react_under_fire" })], makes: ["progress:fight"],
     trigger: "When you are in control and take action in a fight to reinforce your position or move toward an objective, envision your approach and roll." }),

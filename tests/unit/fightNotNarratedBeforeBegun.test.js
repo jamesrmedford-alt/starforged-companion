@@ -58,8 +58,14 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
-import { withUnansweredCards } from '../../src/moves/resultUpgrade.js';
-import { formatFightOfferBlock, formatStakesBlock } from '../../src/moves/stakes.js';
+import { obligationsFor, unansweredCardsFor } from "../../src/moves/contracts/obligations.js";
+// The STAKES / PRICE / COST / FIGHT blocks are lines of the narration's one
+// obligations block now (overhaul 4, slice 2 — contracts/obligations.js, their
+// words kept): each stand-in below is that line, tagged, as the block carries it.
+const lineFor = (kind, resolution) => { const o = obligationsFor({ mode: "move", resolution }).find(x => x.kind === kind); return o ? `- [${o.kind}] ${o.text}` : ""; };
+const formatFightOfferBlock = (fightOffer) => lineFor("fight", { moveId: "enter_the_fray", fightOffer });
+const formatStakesBlock = (stakes, outcome, extra = {}) => lineFor("stakes", { stakes, outcome, ...extra });
+const withUnansweredCards = (input) => ({ ...input, ...unansweredCardsFor(input) });
 import { buildNarratorUserMessage, buildRoundUserMessage } from '../../src/narration/narratorPrompt.js';
 
 // Run 3, a27 — the player's line, the stakes the dialog showed, the outcome block sent.
@@ -67,8 +73,8 @@ const LINE   = 'The Ashen Wake bursts out of the dark off Bleakhold, so I swing 
 const STAKES = { hit: "You swing the Kobayashi IV into the Wake's line and open with a clean salvo before she can bring her own guns to bear." };
 const OUTCOME = '[MOVE: Enter the Fray +edge] [ROLL: Action: 6 + 2 = 8 vs Challenge: 2, 2] [OUTCOME: Strong Hit with a Match [MATCH]] '
   + '[CONSEQUENCE: Strong hit: take both — +2 momentum AND you are in control.]';
-const OFFERED  = '## THE FIGHT IS STILL ONLY OFFERED';
-const DECLINED = '## THE FIGHT WAS NOT BEGUN';
+const OFFERED  = '[fight] THE FIGHT IS STILL ONLY OFFERED.';
+const DECLINED = '[fight] THE FIGHT WAS NOT BEGUN.';
 
 const frayStrongHit = (over = {}) => ({
   _id: 'res-a27', moveId: 'enter_the_fray', moveName: 'Enter the Fray', statUsed: 'edge', outcome: 'strong_hit',
@@ -100,7 +106,8 @@ describe("an Enter the Fray whose fight is still only offered — as its narrati
     expect(user).toMatch(/The footing this roll gave them: the upper hand\./);
     expect(user).toMatch(/Nobody has struck yet: no shot is fired, no blow lands, nothing and no one is hit, damaged or hurt/);
     expect(user).toMatch(/a first salvo, a first strike — show it as what they are placed to do, about to happen, never as done/);
-    expect(user.indexOf(OFFERED)).toBeLessThan(user.indexOf('## PLAYER NARRATION'));
+    // The one block comes after the player's line, before the instruction (overhaul 4).
+    expect(user.indexOf(OFFERED)).toBeGreaterThan(user.indexOf('## PLAYER NARRATION'));
   });
 
   it('a miss says the footing it gave: the back foot', () => {
@@ -112,7 +119,7 @@ describe("an Enter the Fray whose fight is still only offered — as its narrati
   it('once the fight is begun on the card, the roll is narrated as before', () => {
     globalThis.game.messages.contents.push(fightCard({ thresholdTaken: 'fray' }));
     const resolution = frayStrongHit();
-    expect(withUnansweredCards(resolution)).toBe(resolution);
+    expect(unansweredCardsFor(resolution)).toEqual({});
     const user = buildNarratorUserMessage(resolution, LINE, 3, 'Mira Kestrel');
     expect(user).toContain('This is a strong hit: deliver the hit as stated.');
     expect(user).not.toContain(OFFERED);
@@ -130,7 +137,7 @@ describe("an Enter the Fray whose fight is still only offered — as its narrati
 
   it('control: no card posted — an open fight with that foe was resumed, and nothing is offered', () => {
     const resolution = frayStrongHit();
-    expect(withUnansweredCards(resolution)).toBe(resolution);
+    expect(unansweredCardsFor(resolution)).toEqual({});
     expect(formatFightOfferBlock(null)).toBe('');
     expect(formatStakesBlock(STAKES, 'strong_hit')).toContain('This is a strong hit: deliver the hit as stated.');
   });
@@ -138,7 +145,7 @@ describe("an Enter the Fray whose fight is still only offered — as its narrati
   it('control: another move\'s result is no fight\'s offer, whatever card carries its id', () => {
     globalThis.game.messages.contents.push(fightCard());
     const strike = { _id: 'res-a27', moveId: 'strike', outcome: 'strong_hit', stakes: { hit: 'Your shot lands.' } };
-    expect(withUnansweredCards(strike)).toBe(strike);
+    expect(unansweredCardsFor(strike)).toEqual({});
   });
 
   it('a Batch Mode round\'s entry carries the block under its own outcome', () => {
@@ -146,7 +153,7 @@ describe("an Enter the Fray whose fight is still only offered — as its narrati
     const input = withUnansweredCards({ kind: 'move', resolutionId: 'res-a27', moveId: 'enter_the_fray', moveName: 'Enter the Fray',
       statUsed: 'edge', outcome: 'strong_hit', outcomeLabel: 'Strong Hit', loremasterContext: OUTCOME, stakes: STAKES });
     const user = buildRoundUserMessage({ entries: [{ actorName: 'Mira Kestrel', text: LINE, input }], sentenceTarget: 3 });
-    expect(user).toContain('#### THE FIGHT IS STILL ONLY OFFERED');
+    expect(user).toContain('[fight] THE FIGHT IS STILL ONLY OFFERED.');
     expect(user).not.toContain('deliver the hit as stated.');
   });
 });
