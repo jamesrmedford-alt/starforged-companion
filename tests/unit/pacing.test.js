@@ -1172,7 +1172,7 @@ describe('the classifier reads the line against the recent scene', () => {
     expect(systemPrompt).toMatch(/READ THE INPUT AGAINST THE RECENT SCENE/);
   });
 
-  it("decidePacing sends the session's recent scene to the classifier", async () => {
+  it("decidePacing sends the recent scene to the classifier, read in its campaign state (the open scene's)", async () => {
     apiPost.mockReset();
     apiPost.mockResolvedValue(makeApiResponse({
       decision: 'MOVE', suggestedMove: 'set_a_course', category: 'exploration', confidence: 0.9, reasoning: 'travel to the coordinates',
@@ -1184,7 +1184,8 @@ describe('the classifier reads the line against the recent scene', () => {
       campaignState: { ...BASE_STATE, currentSessionId: 'sess-a23', pacing: { sceneOverride: null, forceNextAsMove: false } },
       character: { name: 'Isaac' }, apiKey: 'sk-ant-test',
     });
-    expect(getRecentSceneForReading).toHaveBeenCalledWith('sess-a23');
+    // With the campaign state it is read in, the ring turns with the scene (overhaul 2 §8).
+    expect(getRecentSceneForReading).toHaveBeenCalledWith('sess-a23', expect.objectContaining({ currentSessionId: 'sess-a23' }));
     expect(apiPost.mock.calls[0][2].messages[0].content).toContain('coordinates for the gap');
   });
 });

@@ -14,7 +14,12 @@ layers. This file is the never-break list.
    `preCreateChatMessage` hook on whichever client creates the card
    (`record/cards.js registerSceneStampHook`, overhaul 2 §8), never by a post
    site; its readers are the colour window and the scene's beat count
-   (`narrator.js sceneNarrationsOf`). A card from before it has none.
+   (`narrator.js sceneNarrationsOf`), and the ring and the reader's recent
+   scene, which turn with the scene (`getRecentNarrationContext`'s `scene`,
+   `getRecentSceneForReading` — overhaul 2 §8: the scene's own cards, the
+   last two before it headed; the session's for `@scene`, the Private
+   Channel, the summary off). A card from before it has none — a session
+   whose cards are unstamped reads the session's ring.
    As of 2026-07 this covers move, paced, @scene, inciting, galley /
    end-session vignettes (and since issue #381 the spotlight vignette,
    `spotlight_begin` — in the ring and the summary's source its entry is

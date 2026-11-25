@@ -121,6 +121,25 @@ from its `roundEntries` (issue #340).
 Move narration reads the last `MOVE_RING_CARDS` (4, bounded by
 `narratorContextCards`) entries (B1); it used to read none.
 
+**The ring turns with the scene** (overhaul 2 slice 5 — §8). A beat of
+play's narration — the move's, the round's, the oracle follow-up's, the
+paced line's — is told its own scene's cards (`getRecentNarrationContext(…,
+{ scene })`, the scene by `ringSceneOf`: the open scene's id and its
+anchor's `what`; the cards by the `sceneId` the stamp hook gave them,
+invariant 1), the newest `limit` — and before them, while the scene's own
+leave room in `limit`, the last `SCENE_BEFORE_ENTRIES` (2) told before it
+began, headed `THE SCENE BEFORE — it ended when ‹what›. How it ended:` (then
+`THIS SCENE:`). The move reads four in all: a new scene's first beat the two
+before it; its third its own two and those two; its fifth its own four. What
+came earlier is the session summary's, made at every scene end (slice 2).
+The reader's recent scene (`getRecentSceneForReading(sessionId,
+campaignState)` — the pacing classifier's and the move interpreter's) is the
+scene's last three entries, with fewer the one before, headed. An `@scene`
+question (a recall wants the session) and the Private Channel read the
+session's ring; so does every beat with the session summary off
+(`narratorSessionSummary` — it is what tells the scenes before), and a
+session whose cards carry no stamp (from before it).
+
 **The flag-family contract.** Any card whose prose is *fiction the narrator
 should remember* must carry all three flags:
 

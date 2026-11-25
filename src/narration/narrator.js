@@ -1415,6 +1415,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
     getRecentNarrationContext(
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
+      { scene: ringSceneOf(extras.sceneLedger ?? campaignState) },
     ),
     { audio: extras.audioMarkupEnabled === true, situation: touched.situation, cast: touched.cast, obligations: moveObligations },
   );
@@ -1912,6 +1913,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     recentContext: getRecentNarrationContext(
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
+      { scene: ringSceneOf(extras.sceneLedger ?? campaignState) },
     ),
     entries,
     sentenceTarget,
@@ -2610,13 +2612,27 @@ function writtenLine(resolution) {
  * player's line that prompted it, then the narrator's prose (ringEntryText).
  * Reads from chat history — not from the chronicle — to reflect the immediate scene.
  *
+ * With `scene` (overhaul 2 §8 — ringSceneOf: a beat of play's move, round,
+ * oracle follow-up and paced narrations), the ring turns with the scene: that
+ * scene's cards (by the `sceneId` their stamp gave them), the newest `limit`,
+ * and before them — while there is room in `limit` — the last
+ * SCENE_BEFORE_ENTRIES told before it began, headed by why the scene before
+ * ended (what came earlier is told by the session summary, made at every
+ * scene end). With no card of the session stamped (a session from before the
+ * stamp), or no `scene` (an `@scene` question — a recall wants the session —
+ * the Private Channel, the summary off), the session's ring, as before.
+ *
  * @param {string} sessionId
  * @param {number} [limit=3]
+ * @param {{ scene?: { sceneId: string, what: string }|null }} [opts]
  * @returns {string}
  */
-export function getRecentNarrationContext(sessionId, limit = 3) {
+export function getRecentNarrationContext(sessionId, limit = 3, { scene = null } = {}) {
   try {
-    return sessionNarratorCards(sessionId)
+    const cards = sessionNarratorCards(sessionId);
+    const byScene = scene ? sceneRingText(cards, scene, limit, SCENE_BEFORE_ENTRIES) : null;
+    if (byScene !== null) return byScene;
+    return cards
       .slice(-limit)
       .map(ringEntryText)
       .filter(Boolean)
@@ -2625,6 +2641,61 @@ export function getRecentNarrationContext(sessionId, limit = 3) {
     console.warn(`${MODULE_ID} | narrator: getRecentNarrationContext failed:`, err);
     return '';
   }
+}
+
+/** How many of the scene before's entries a scene's ring carries, under its heading (overhaul 2 §8). */
+const SCENE_BEFORE_ENTRIES = 2;
+
+/**
+ * The scene a beat's ring and its reading are told by (overhaul 2 §8): the
+ * open scene's id and why it began (its anchor's `what` — why the scene
+ * before ended). Null with none open, or with the session summary off — it is
+ * what tells the scenes before the one the ring shows, so without it the ring
+ * stays the session's. Never throws.
+ *
+ * @param {Object|null} state — the scene ledger as the store has it, else the caller's copy
+ * @returns {{ sceneId: string, what: string }|null}
+ */
+function ringSceneOf(state) {
+  const sceneId = state?.currentSceneId ?? null;
+  if (typeof sceneId !== 'string' || !sceneId || !rollingSummaryEnabled()) return null;
+  const began = state?.sceneBegan && state.sceneBegan.sceneId === sceneId ? state.sceneBegan : null;
+  return { sceneId, what: typeof began?.what === 'string' ? began.what.trim() : '' };
+}
+
+/**
+ * A ring of a scene (getRecentNarrationContext's, getRecentSceneForReading's):
+ * the scene's own cards (stamped with it), the newest `limit`, and before them
+ * the cards told before the scene began — at most `beforeMax`, and only while
+ * the scene's own leave room in `limit` — under THE SCENE BEFORE, with why it
+ * ended (why this one began). Null when no card of the session is stamped (a
+ * session from before the stamp): the caller reads the session's ring. Pure
+ * but for the cards it is given.
+ *
+ * @param {Object[]} cards — the session's narrator cards, oldest first
+ * @param {{ sceneId: string, what: string }} scene
+ * @param {number} limit
+ * @param {number} beforeMax
+ * @returns {string|null}
+ */
+function sceneRingText(cards, scene, limit, beforeMax) {
+  const stampOf = (m) => {
+    const id = m?.flags?.[MODULE_ID]?.sceneId;
+    return typeof id === 'string' && id ? id : null;
+  };
+  if (!cards.some(stampOf)) return null;
+  const first = cards.findIndex(m => stampOf(m) === scene.sceneId);
+  const own = first < 0 ? [] : cards.slice(first).filter(m => stampOf(m) === scene.sceneId);
+  const earlier = first < 0 ? cards : cards.slice(0, first);
+  const max = Math.max(1, Number(limit) || 1);
+  const ownText = own.slice(-max).map(ringEntryText).filter(Boolean).join('\n\n');
+  const room = Math.max(0, Math.min(beforeMax, max - Math.min(own.length, max)));
+  const beforeText = room ? earlier.slice(-room).map(ringEntryText).filter(Boolean).join('\n\n') : '';
+  if (!beforeText) return ownText;
+  const head = scene.what
+    ? `THE SCENE BEFORE — it ended when ${scene.what}. How it ended:`
+    : 'THE SCENE BEFORE — it has ended. How it ended:';
+  return [head, beforeText, ...(ownText ? ['THIS SCENE:', ownText] : [])].join('\n\n');
 }
 
 /** What heads a cutaway's entry in the ring and the summary's source (ringEntryText, issue #381). */
@@ -2690,12 +2761,21 @@ export const READING_SCENE_MAX_CHARS = 2400;
  * (the classifier a one-line scene frame), so travel to an NPC's coordinates
  * was neither offered a move nor given its destination.
  *
+ * With the campaign state (overhaul 2 §8), the open scene's: its last three
+ * entries, and with fewer the scene before's last one, headed — the ring's
+ * rule (ringSceneOf, sceneRingText); the session's with no stamped card.
+ * The line reader's route (pacing/readAndRoute.js, issue #384, unwired)
+ * passes none, and reads the session's until it is pointed at the scene.
+ *
  * @param {string|null} sessionId
+ * @param {Object|null} [campaignState] — the scene it is read in
  * @returns {string} '' when there is none
  */
-export function getRecentSceneForReading(sessionId) {
+export function getRecentSceneForReading(sessionId, campaignState = null) {
   if (!sessionId) return '';
-  const text = getRecentNarrationContext(sessionId, READING_SCENE_CARDS);
+  const scene = campaignState ? ringSceneOf(campaignState) : null;
+  const byScene = scene ? sceneRingText(sessionNarratorCards(sessionId), scene, READING_SCENE_CARDS, 1) : null;
+  const text = byScene ?? getRecentNarrationContext(sessionId, READING_SCENE_CARDS);
   if (text.length <= READING_SCENE_MAX_CHARS) return text;
   const tail = text.slice(-READING_SCENE_MAX_CHARS);
   const cut  = tail.indexOf('\n\n');
@@ -4220,7 +4300,8 @@ export async function narrateOracleFollowup({
   // One sentence count: the oracle_followup role's "2-3 sentences". The
   // Length setting governs move and paced narration only (issue #326 W40); it
   // was read into this user message while the role said 2-3 (issue #331 X28).
-  const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
+  const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards(),
+    { scene: ringSceneOf(extras.sceneLedger ?? campaignState) });
   const userMessage    = buildOracleUserMessage({
     kind, oracleName, question, rolledLine, recentContext, seedLines,
     sceneObligations: sceneObligationsOf(extras.sceneLedger, campaignState),
@@ -5065,7 +5146,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         campaignState, settings, character, '', extras,
       );
 
-      const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
+      const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards(),
+        { scene: ringSceneOf(extras.sceneLedger ?? campaignState) });
       const sentenceTarget = settings.narrationLength ?? 3;
       const touched = await beatSituation(character?.actorId ?? null, campaignState);
       pacedChosenSince = choicesChosenSince();

@@ -1064,7 +1064,15 @@ move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
 it as well — the last 3 entries, the newest 2,400 characters
 (`getRecentSceneForReading`, passed by `movePipeline.readMove` and
 `router.decidePacing`) — so a line is read with the scene it follows (alpha 23
-playtest). Both are told the speaker's **situation**, in one block built once
+playtest). Since overhaul 2 slice 5 (§8) the ring turns with the scene: the
+move, round, oracle follow-up and paced narrations read the open scene's
+cards (by their `sceneId` stamp — `ringSceneOf` / internal `sceneRingText`),
+the newest of their limit, and before them, while there is room, the last two
+told before the scene began, under `THE SCENE BEFORE — it ended when ‹what›.
+How it ended:` (`SCENE_BEFORE_ENTRIES`); the reader's recent scene is the
+scene's last three, with fewer the one before, headed. `@scene` and the
+Private Channel read the session's ring, as does every beat with the session
+summary off or no card of the session stamped. Both are told the speaker's **situation**, in one block built once
 (`moves/situation.js buildSituationBlock` — the classifier's CHARACTER
 section, `buildContextSummary` for the interpreter): the sheet's health,
 spirit and supply, each beside the impact its recovery move clears (wounded,

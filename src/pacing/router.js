@@ -230,7 +230,7 @@ export async function decidePacing({
 
   // What the line follows: "we're on our way" is travel only to a reader who
   // saw the destination being discussed (alpha 23 playtest).
-  const recentScene = getRecentSceneForReading(campaignState?.currentSessionId ?? null);
+  const recentScene = getRecentSceneForReading(campaignState?.currentSessionId ?? null, campaignState);
 
   const result = await classifyInput({
     playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive, sceneChallenges, recentScene,
