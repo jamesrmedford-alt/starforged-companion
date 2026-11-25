@@ -294,7 +294,8 @@ mechanics together:
   an item given and then left (beat 5's dock-fee slip, read by its refusals
   alone: it has no probe, so the kept runs' beat checks stand) —
   each asked about in every later session, scored stored / in the prompt / in
-  the answer, with the words that would contradict it; read against the
+  the answer, with the words that would contradict it (a rename's old name
+  told as what it was — "renamed her from" — contradicts nothing); read against the
   narrator's answers **and** against every summary, Chronicle entry and recap
   the helpers wrote.
 - **Mechanical checks after every action**, from the game's text: each roll

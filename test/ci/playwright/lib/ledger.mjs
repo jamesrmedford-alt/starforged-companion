@@ -16,7 +16,10 @@
 //   refusals  — what contradicts it: `near` words that refuse when they stand
 //               in a sentence that also holds the fact (or its `subject`
 //               words), and `anywhere` phrases that refuse wherever they
-//               occur (the old value of a corrected fact, an old name);
+//               occur (the old value of a corrected fact, an old name). With
+//               `former`, an `anywhere` phrase is no refusal in a sentence
+//               that holds the fact and gives the phrase as what it was
+//               before (FORMER_MARK) — a rename told, not the old name used;
 //   probes    — the questions asked about it, in the player's words as the
 //               charter gives them, never naming the fact.
 //
@@ -110,6 +113,15 @@ export function markedCorrected(prompt, word) {
   return text.split(/\n\s*\n/).some(block => holdsAny(block, [word]) && CORRECTION_MARK.test(block));
 }
 
+/**
+ * Words that give a name as what it was before: a sentence holding the new
+ * name and one of these tells the rename and does not use the old name as if
+ * it stood — "The table renamed her from "Tamsin Vey," so Okoro is the
+ * surname the story holds." (the long haul's fifth live run, a55, scored a
+ * refusal until a refusal could say `former`).
+ */
+export const FORMER_MARK = /\b(?:renamed|formerly|previously|once (?:went|called|known)|used to (?:go|be)|no longer|was called|went by|is now|instead of)\b/i;
+
 /** How many words may stand between a refusal's word and what it is said of. */
 export const NEAR_WORDS = 10;
 
@@ -197,7 +209,8 @@ export function refusalsIn(text, fact) {
         continue;
       }
       const near = clausesOf(s).map(c => saidOf(c, r.near, subject, { after: r.after === true })).find(Boolean) ?? null;
-      const anywhere = (r.anywhere ?? []).find(w => holdsAny(s, [w]));
+      const toldAsFormer = r.former === true && FORMER_MARK.test(s) && factIn(s, fact);
+      const anywhere = toldAsFormer ? undefined : (r.anywhere ?? []).find(w => holdsAny(s, [w]));
       const word = near ?? anywhere;
       if (word) out.push({ refusal: r.id ?? r.note ?? word, word, sentence: s.slice(0, 300) });
     }

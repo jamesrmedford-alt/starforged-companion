@@ -72,12 +72,12 @@ const charter = now ? {
   ...asRun,
   facts: asRun.facts.map(f => now.facts?.find(x => x.id === f.id) ?? f),
   baits: (asRun.baits ?? []).map(b => now.baits?.find(x => x.id === b.id) ?? b),
-  // …and which moves a beat wants of its lines of play (`wants`, `setupLines`
-  // — lib/review.mjs freeformOf): scoring too, so a run made before a beat
-  // said so is measured by what the beat says now.
+  // …and which moves a beat wants of its lines of play (`wants`, `setupLines`,
+  // `setupWords` — lib/review.mjs freeformOf): scoring too, so a run made
+  // before a beat said so is measured by what the beat says now.
   beats: asRun.beats.map((b) => {
     const cur = now.beats?.find(x => x.id === b.id) ?? null;
-    return { ...b, check: cur?.check ?? b.check, ...(cur?.wants ? { wants: cur.wants } : {}), ...(cur?.setupLines != null ? { setupLines: cur.setupLines } : {}) };
+    return { ...b, check: cur?.check ?? b.check, ...(cur?.wants ? { wants: cur.wants } : {}), ...(cur?.setupLines != null ? { setupLines: cur.setupLines } : {}), ...(cur?.setupWords ? { setupWords: cur.setupWords } : {}) };
   }),
 } : asRun;
 

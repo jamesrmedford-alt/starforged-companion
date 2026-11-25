@@ -179,7 +179,8 @@
       "variants": [
         "tide of cargo",
         "next tide",
-        "cargo tide"
+        "cargo tide",
+        "next cargo"
       ],
       "refusals": [
         {
@@ -307,7 +308,8 @@
           "anywhere": [
             "Tamsin Vey",
             "Vey"
-          ]
+          ],
+          "former": true
         }
       ],
       "probes": [
@@ -784,6 +786,9 @@
         "sojourn",
         "hearten",
         "repair"
+      ],
+      "setupWords": [
+        "I rest aboard until the next morning."
       ]
     },
     {
