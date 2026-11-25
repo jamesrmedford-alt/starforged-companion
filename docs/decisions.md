@@ -59,6 +59,9 @@ rejected.
 
 Why: the fourth live run (#383) showed one scene per session; the narrator's own hooks re-set as the scene's question; colour filed as canon and contradicting what the player said; and the frame and the ship's record disagreeing for forty beats.
 
+
+**Decided (2026-11-25; TRUTH-OF-AN-EARLIER-SCENE-UNCORRECTABLE — this reverses issue #326 W67's "listed on the typist's own client"):** `!truth list` is the canonical GM's. Issue #326 W67 listed the active scene's truths on the typist's own client. The list now shows the session's earlier scenes' truths too, and those are kept on the session record, in the Session Log journal, which is the GM's (a player sees a World Journal journal only once the GM shares it). So the list is relayed to the canonical GM, as every other `!truth` / `!state` command is, and whispered to the typist; with no GM connected it says so. Rejected: a campaignState copy of the earlier scenes' truths that a player's client could read — a second store of what the record holds, to be written through on every set, strike, X-Card and rename.
+
 ## Overhaul 2 — scenes that begin and end, facts that know where they came from: scoped as issue #386, decisions taken to build (2026-11)
 
 **Decision** (the maintainer, 2026-11-25: "Please also execute overhaul 2"; and, for the round, "Go with your recommendation when in doubt"): overhaul 2 is scoped as issue #386, its decisions taken at the design's recommendations, each the maintainer's to take back. Among them: scenes turn in code — on a change of place, of the ship's place, a fight, an expedition, a scene challenge, or a time skip in the player's line — through one check, `ensureCurrentScene` (D1–D4); every truth and state entry carries a basis (player, dice, GM, setup, narrator), and only the narrator's own colour does not bind: it is shown as colour, drops out six narrations after it was last said, ends with its scene, and is never filed as lore, a card detail or a last-known place (D5–D8, D13); the location, the ship's position and the frame's place inside it are one place, composed (D9, D17); a scene question comes from the player's words, and one left unanswered three beats is let go, its hook with it (D10).
@@ -706,8 +709,10 @@ built, and why:
   asked for it** (`installRefusalTrace`): the refusal itself comes back with
   the server's stack and says nothing of who asked.
 - **A rehearsal that rolls** (`createRollingRehearsal`): the script says
-  which lines are moves, the stand-in's classifier and interpreter say so to
-  the module, and the resolver rolls. `rehearsalDice` scripts the rolls the
+  which lines are moves, the stand-in line reader reads each so — asked for,
+  since the script's lines name no move and the module's own route would
+  otherwise offer a move with no roll and a roll after a dense run of rolls —
+  and the resolver rolls. `rehearsalDice` scripts the rolls the
   six do not, so a rehearsal walks one road. Four of them found, for
   nothing: the runner's settle, a result held where a price was expected, a
   vow card with no Link ("A vow's card offers its Link…", below), that a strike's miss does not
