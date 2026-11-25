@@ -105,7 +105,10 @@ layers. This file is the never-break list.
    (UNREVEALED, THIS BEAT ENDS A VOW) is what asks for the truth to be stated.
    A newTruth's and a stateChange's `from` ("line" | "result", else null —
    the narrator's own colour) is normalised in `sidecarParser.js`, asked for
-   in `appendSidecarInstruction`, and floored in `narrator.js
+   in `appendSidecarInstruction` (a fact the player's own line states is
+   always tagged "line", shown by a worked example whose facts pass the
+   floor — the tag is the only way a narrator fact binds), and floored in
+   `narrator.js
    applySidecarSideData` (`provenance.js factBasis` over the beat's ground)
    before `applySidecar` writes each entry's `basis` (overhaul 2 §5.2, D5).
    The scene frame's `question` is the player's (overhaul 2 §7.2): read against

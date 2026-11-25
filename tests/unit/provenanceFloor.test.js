@@ -24,6 +24,7 @@ import { describe, it, expect } from 'vitest';
 import { factBasis, groundOf, decidedOfMove, entryBasis, binds, raisedBasis, saidBy } from '../../src/factContinuity/provenance.js';
 import { normaliseSidecar, extractSidecar } from '../../src/factContinuity/sidecarParser.js';
 import { applySidecar } from '../../src/factContinuity/ledgers.js';
+import { appendSidecarInstruction } from '../../src/narration/narratorPrompt.js';
 
 const PCS = ['Mira Kestrel', 'Kobayashi IV'];
 const about = (subject) => [subject, ...PCS];
@@ -140,5 +141,30 @@ describe('overhaul 2 §5.2 — the tag, through the parser and the ledger', () =
     const cs = { currentSessionId: 's1', currentSceneId: 'sc-1', sceneTruths: [], sceneState: { bySubject: {}, sceneId: 'sc-1' } };
     applySidecar({ newTruths: [{ subject: 'Tamsin Vey', fact: A15.fact, from: 'line' }], stateChanges: [] }, { campaignState: cs, asserter: 'narrator' });
     expect(cs.sceneTruths[0].basis).toBe('narrator');
+  });
+});
+
+describe('overhaul 2 §5.2 — the rule asks for the tag on what the player\'s own line states', () => {
+  // The tag is the only way a narrator fact binds (D5): untagged, the gather
+  // line's dockmaster placed "with him" at the Hollow Spire is colour, and
+  // his place never becomes LAST KNOWN (first-session's end step).
+  const flat = (text) => text.replace(/\s+/g, ' ');
+
+  it('says it plainly, frame or no frame, with a worked example from a line', () => {
+    for (const options of [{}, { sceneFrameEnabled: false }, { skeletonsEnabled: true }]) {
+      const rule = flat(appendSidecarInstruction(options));
+      expect(rule).toContain('A fact the player\'s own line states is always tagged "from": "line"');
+      expect(rule).toContain('where they and whoever is with them are');
+      expect(rule).toContain('E.g. the line "I hand Kael the datapad and wait with him in the cargo bay" states');
+      expect(rule).toContain('"attribute": "location", "value": "in the cargo bay with the PC", "from": "line" }');
+    }
+  });
+
+  it('the example\'s facts are the player\'s by the floor — the thing given, and where he is', () => {
+    const ground = groundOf({ line: 'I hand Kael the datapad and wait with him in the cargo bay' });
+    expect(factBasis('line', 'holds the datapad the PC handed him', ground, { about: about('Kael Dros') })).toBe('player');
+    expect(factBasis('line', 'in the cargo bay with the PC', ground, { about: about('Kael Dros') })).toBe('player');
+    // Untagged, the same facts are the narration's colour.
+    expect(factBasis(null, 'in the cargo bay with the PC', ground, { about: about('Kael Dros') })).toBe('narrator');
   });
 });

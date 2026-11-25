@@ -145,6 +145,17 @@ export function appendSidecarInstruction(options = {}) {
     '  visible state, door positions, lighting, weather. These supersede',
     '  prior state for the same subject + attribute. Say where it comes from',
     '  as for a newTruth.',
+    // The tag is the only way a narrator fact binds (§5.2, D5 — no lexical
+    // rule): a fact the player's own line states, left untagged, is colour and
+    // never becomes LAST KNOWN. The example's facts pass the floor against
+    // their own line (provenanceFloor.test.js).
+    '- A fact the player\'s own line states is always tagged "from": "line" —',
+    '  what their character does, says, gives or carries, and where they and',
+    '  whoever is with them are — in the line\'s own words. E.g. the line "I',
+    '  hand Kael the datapad and wait with him in the cargo bay" states',
+    '  { "subject": "Kael Dros", "fact": "holds the datapad the PC handed him",',
+    '  "from": "line" } and { "subject": "Kael Dros", "attribute": "location",',
+    '  "value": "in the cargo bay with the PC", "from": "line" }.',
     '- REQUIRED: when your prose establishes or changes WHERE a named',
     '  character is (their location, the vessel or structure they are',
     '  aboard) or their physical condition (wounded, dying, well), you MUST',
