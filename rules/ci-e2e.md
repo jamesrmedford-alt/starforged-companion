@@ -1309,8 +1309,8 @@ line goes unread.
 
 **The readers' plain-line test** (`./scripts/cloud.sh readers`;
 `playwright/readers.mjs`, `readers/plain-lines.json`, `lib/readers.mjs`) asks
-the same question without a table: about sixty-five lines of play, none
-naming a move (a unit test holds the list to that) save one marked `named`,
+the same question without a table: about seventy-five lines of play, none
+naming a move (a unit test holds the list to that) save the two marked `named`,
 each with the reading it should get — a move, one of two, or none — put through the pacing reader
 (`decidePacing`) and, where that calls a move, the move reader
 (`interpretMove`, as `readMove` calls it), in the live world with each line's
@@ -1347,6 +1347,21 @@ wants alone and rolled, `want.rolled` — offered, it is `offered, not rolled`,
 and not read; `recentMoves` sets the readers' count of recent moves before
 the line, which is otherwise cleared). The list's own checks
 (`validateCases`) hold each of those to what it is.
+
+It also measures **the one reader** that is to replace the two (issue #384,
+slice 1: `src/moves/reader.js`, routed by `src/pacing/readAndRoute.js` — what
+`decidePacing` calls at the switch). An arm of `READERS_ARMS` is a design and a
+model — `two:<model>` the two readers, `one:<model>` the one reader; a bare
+model is `two:` — and a run with both on one model compares them in its report
+by the switch's criteria (`lib/readers.mjs` `compareDesigns`): the measure is
+`READERS_ARMS=two:claude-sonnet-5-5,one:claude-sonnet-5-5,one:claude-haiku-5-5
+READERS_REPEATS=2`. Its list holds fights (a combat track with the character's
+`position` in it, written with `setCombatTrackPosition`), lines that follow a
+run of moves (`recentMoves`), the two named-move lines (`named`, read right
+only when rolled — `want.rolled`) and issue #383's kinds (`kind`), two lines
+each. Its cost criterion is the whole spend a line (the mean), with the median
+told beside it: the median sets the pacing reader's one call against a whole
+reading.
 
 ## Quench batch coupling — shared defaults and hooks
 
