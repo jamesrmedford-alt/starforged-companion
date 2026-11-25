@@ -149,7 +149,10 @@ longer special-cases them).
   docs/flows/session-record-flow.md), as the ledger saves put the set and the
   struck truth there (`truth.set` / `truth.struck`): every view of the record
   — the Session Log page — writes the new name, its short form too, at read
-  (`writeNewNames`), never where the old name already stands inside a name
+  (`writeNewNames`) — save a strike's own words, kept as struck with the new
+  name beside them ("Struck: raider cutter — is named the Ashen Wake (now:
+  Cinder Wren)"; written as the new name, the struck truth read as the one
+  that stands — known-issues STRUCK-NAME-REWRITTEN-AS-THE-NEW-NAME) —, never where the old name already stands inside a name
   as it is now — its own new one, another change's, another record's, in any
   case — and each place once, from the text as stored: for "Tamsin" →
   "Tamsin Okoro" it wrote "tied the vow to Tamsin Okoro Okoro" on the pages

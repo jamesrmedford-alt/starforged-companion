@@ -124,14 +124,19 @@ function truthLine(t) {
 
 function correctionLine(c) {
   if (c.kind === 'name') {
-    // The new name alone: the old one is written nowhere a view shows.
+    // The new name alone: the old one is written nowhere a view shows but in
+    // a strike, as it was struck.
     const how = c.how === 'corrected' ? 'A name was corrected' : 'A name was changed';
     return `<li>${how}: <strong>${escapeHtml(c.to)}</strong>${c.about ? ` (${escapeHtml(c.about)})` : ''}.</li>`;
   }
   if (c.kind === 'strike') {
+    // As struck, with a name changed since beside it (read.js — known-issues
+    // STRUCK-NAME-REWRITTEN-AS-THE-NEW-NAME): the one place a view writes an old name.
     const subject = subjectText(c.subject);
     const was = `${subject ? `${escapeHtml(subject)} — ` : ''}<s>${escapeHtml(c.fact)}</s>`;
-    return `<li>Struck: ${was}${c.replacedBy ? ` — now: ${escapeHtml(c.replacedBy)}` : ''}</li>`;
+    const now = c.replacedBy ? ` — now: ${escapeHtml(c.replacedBy)}`
+      : (c.now?.length ? ` (now: ${escapeHtml(c.now.join(', '))})` : '');
+    return `<li>Struck: ${was}${now}</li>`;
   }
   if (c.kind === 'removed') {
     return `<li>${c.count === 1 ? 'One beat was' : `${c.count} beats were`} removed by the table.</li>`;

@@ -133,7 +133,7 @@ describe('a player\'s line, its move and its telling reach the Session Log page 
 });
 
 describe('a correction of a name reaches the page (known-issues SESSION-LOG-KEEPS-OLD-NAMES)', () => {
-  it('`!truth strike` then `!truth set` of a ship\'s name: the page lists the truth under the new name, says it was corrected, and holds the old one nowhere', async () => {
+  it('`!truth strike` then `!truth set` of a ship\'s name: the page lists the truth under the new name, says it was corrected, and holds the old one nowhere but in the strike, as struck', async () => {
     await table.client('pl-1').chat('!truth set "raider cutter" is named the Ashen Wake');
     await table.settle();
     const first = world().sceneTruths.find(t => /Ashen Wake/.test(t.fact));
@@ -148,7 +148,12 @@ describe('a correction of a name reaches the page (known-issues SESSION-LOG-KEEP
     expect(storedEvents().map(e => e.k)).toEqual(expect.arrayContaining(['truth.set', 'truth.struck', 'name.changed']));
     expect(body).toContain('is named the Cinder Wren');
     expect(body).toMatch(/A name was corrected: <strong>Cinder Wren<\/strong>/);
-    expect(body).not.toMatch(/Ashen|Wake/);
+    // The strike stays as struck, the new name beside it (known-issues
+    // STRUCK-NAME-REWRITTEN-AS-THE-NEW-NAME: it read "Struck: … is named the
+    // Cinder Wren", the truth that stands) — the one place the old name is.
+    const struck = '<li>Struck: raider cutter — <s>is named the Ashen Wake</s> (now: Cinder Wren)</li>';
+    expect(body).toContain(struck);
+    expect(body.replace(struck, '')).not.toMatch(/Ashen|Wake/);
   });
 });
 

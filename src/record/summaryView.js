@@ -101,8 +101,9 @@ export function summarySource(session) {
     const entry = `[${id}] ${facts}${telling ? `\nTOLD AS: ${quote(telling)}` : ''}`;
     (beat.kind === 'question' ? asked : told).push(entry);
   }
+  // A strike as struck, a name changed since beside it (read.js).
   const struck = (session.corrections ?? []).filter(c => c.kind === 'strike')
-    .map(c => `- ${subjectText(c.subject) ? `${subjectText(c.subject)} — ` : ''}${clean(c.fact)}${c.replacedBy ? ` (now: ${clean(c.replacedBy)})` : ''}`);
+    .map(c => `- ${subjectText(c.subject) ? `${subjectText(c.subject)} — ` : ''}${clean(c.fact)}${c.replacedBy ? ` (now: ${clean(c.replacedBy)})` : (c.now?.length ? ` (now: ${c.now.join(', ')})` : '')}`);
   const out = [];
   const earlier = session.resumed && clean(session.story) ? clean(session.story) : '';
   if (earlier) out.push(`## EARLIER THIS SESSION (written before the record)\n\n${earlier}`);

@@ -135,8 +135,9 @@ export function recapSource({ read, standing = [], notes = [], earlier = [], cur
       lines.push({ id, text: `[${id}] ${facts}`, lasting: !!beat.lasting });
     });
     if (!newest && lines.length > TURNING_POINTS_PER_SESSION) lines = lines.slice(-TURNING_POINTS_PER_SESSION);
+    // A strike as struck, a name changed since beside it (read.js).
     const struck = session.corrections.filter(c => c.kind === 'strike')
-      .map(c => `- ${subjectText(c.subject) ? `${subjectText(c.subject)} — ` : ''}${clean(c.fact)}${c.replacedBy ? ` (now: ${clean(c.replacedBy)})` : ''}`);
+      .map(c => `- ${subjectText(c.subject) ? `${subjectText(c.subject)} — ` : ''}${clean(c.fact)}${c.replacedBy ? ` (now: ${clean(c.replacedBy)})` : (c.now?.length ? ` (now: ${c.now.join(', ')})` : '')}`);
     blocks.push({
       session, newest, lines,
       head: `### ${sessionLabel(session)}${newest ? ' — the latest session, in full' : ' — its turning points'}`,

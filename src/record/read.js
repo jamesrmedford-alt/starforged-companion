@@ -25,7 +25,8 @@
  *      B → C makes A → C; a change undone drops), uncapped, and written as the
  *      new one in every words, label and prose field (nameChanges.js
  *      writeNewNames) — and a field with an actor id is written with that
- *      actor's current name.
+ *      actor's current name. Save a strike's words: a strike stays as struck,
+ *      the new names its words hold beside it (`now`).
  *   4. Cutaways. A closing vignette and Begin's Spotlight Vignette are beats
  *      of kind `cutaway`: a scene elsewhere, hidden from the characters — not
  *      something they did.
@@ -530,6 +531,23 @@ function sessionBeats(events, { xcarded, superseded }) {
   return { begun, ended, beats: kept, strikes, renames, removed, scenes };
 }
 
+/**
+ * The new names of the changes whose old name a text holds — each a change
+ * the text reads otherwise without (writeNewNames, with every change) — once
+ * each, in the order of the changes. [] for a text no change reaches.
+ */
+function namesNowIn(text, names, otherNames) {
+  if (typeof text !== 'string' || !text) return [];
+  const all = writeNewNames(text, names, { otherNames });
+  if (all === text) return [];
+  const now = [];
+  for (const c of names) {
+    if (!c?.to || now.includes(c.to)) continue;
+    if (writeNewNames(text, names.filter(o => o !== c), { otherNames }) !== all) now.push(c.to);
+  }
+  return now;
+}
+
 /** Write a session's names anew: every words, label and prose field, and each actor's current name. */
 function correctNames(session, { names, nameOf, otherNames }) {
   const fix = (text) => (typeof text === 'string' && text ? writeNewNames(text, names, { otherNames }) : text);
@@ -561,13 +579,21 @@ function correctNames(session, { names, nameOf, otherNames }) {
       t.fact = fix(t.fact);
       t.subject = subject(t.subject);
     }
-    beat.leaveOut = beat.leaveOut.map(fix);
+    // What a beat leaves out is a struck fact: as struck (below).
   }
+  // A strike stays as struck: its words are what the table took back. Written
+  // with the new name, "raider cutter — is named the Ashen Wake", struck
+  // before "… is named the Cinder Wren" was set, read "Struck: raider cutter —
+  // is named the Cinder Wren" — the truth that stands, said not to have
+  // happened, on the Session Log page and in every summary's and recap's
+  // source (known-issues STRUCK-NAME-REWRITTEN-AS-THE-NEW-NAME). The names in
+  // its words that have changed since go beside it (`now`), unless a
+  // replacement stands — it is written with the new names, and says what is so.
   for (const s of session.corrections) {
     if (s.kind !== 'strike') continue;
-    s.fact = fix(s.fact);
     s.replacedBy = fix(s.replacedBy);
     s.subject = subject(s.subject);
+    s.now = s.replacedBy ? [] : namesNowIn(s.fact, names, otherNames);
   }
   const snapshot = (snap) => {
     if (!snap) return;
