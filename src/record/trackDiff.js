@@ -75,14 +75,20 @@ export function trackEvents(before, after) {
 
 /**
  * Record what a track save began, marked, moved or ended. Called by
- * writeTracks once its save landed. Never throws.
+ * writeTracks once its save landed. Never throws. `by`: what made the save
+ * (a move's `{ move, res }`, `"hand"`), on each begun, marked and ended
+ * event (overhaul 4, D12).
  *
  * @param {Object[]} before
  * @param {Object[]} after
+ * @param {{ by?: Object|string|null }} [opts]
  */
-export function recordTrackChanges(before, after) {
+export function recordTrackChanges(before, after, { by = null } = {}) {
   try {
-    for (const { kind, payload } of trackEvents(before, after)) recordEvent(kind, payload);
+    for (const { kind, payload } of trackEvents(before, after)) {
+      const made = by && kind !== 'position.changed' ? { ...payload, d: { ...payload.d, by } } : payload;
+      recordEvent(kind, made);
+    }
   } catch (err) {
     console.warn('starforged-companion | session record: a track save was not recorded:', err?.message ?? err);
   }

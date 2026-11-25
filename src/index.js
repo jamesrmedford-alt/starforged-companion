@@ -235,7 +235,7 @@ import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
 import { recordEvent } from "./record/record.js";
 import { recordPlaceArrival } from "./record/tableSnapshot.js";
 import { registerRecordCardHook } from "./record/cards.js";
-import { registerSheetWatch } from "./record/sheetWatch.js";
+import { registerSheetWatch, recordCause } from "./record/sheetWatch.js";
 import { registerSessionLogView } from "./record/sessionLogView.js";
 import { registerChronicleScribe } from "./record/chronicleView.js";
 import { registerStarshipConditionSync, reconcileStarshipAssetConditions } from "./entities/ship.js";
@@ -2357,6 +2357,10 @@ async function applyOutcomeEffects({
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
+  // What the move's track writes were made by (the session record's `by`,
+  // overhaul 4 D12): this move.
+  // Read when a write is made: the resolution's id is the one it holds then.
+  const madeBy     = { get by() { return { move: resolution.moveId ?? null, res: resolution._id ?? null }; } };
   const orig       = against?.consequences ?? {};
   const upgrade    = against !== null;
   const isHit      = (outcome) => outcome === "strong_hit" || outcome === "weak_hit";
@@ -2542,8 +2546,8 @@ async function applyOutcomeEffects({
         { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null, expeditionRank: interpretation?.expeditionRank },
         {
           listTracks:   () => listProgressTracks(),
-          createTrack:  (data) => addProgressTrack(data),
-          markProgress: (id) => markProgressById(id),
+          createTrack:  (data) => addProgressTrack(data, madeBy),
+          markProgress: (id) => markProgressById(id, 1, madeBy),
         },
       );
       if (result && !result.track) {
@@ -2774,7 +2778,7 @@ async function applyOutcomeEffects({
         {
           listTracks:   () => listProgressTracks(),
           getTrack:     (id) => getProgressTrack(id),
-          markProgress: (id, times) => markProgressById(id, times),
+          markProgress: (id, times) => markProgressById(id, times, madeBy),
           adjustClock:  (id, delta) => adjustClockSegments(id, delta),
         },
       );
@@ -2871,7 +2875,7 @@ async function applyOutcomeEffects({
           let track = stampedOpen;
           let marksApplied = 0;
           for (let i = 0; i < marks; i++) {
-            const updated = await markProgressById(stampedOpen.id);
+            const updated = await markProgressById(stampedOpen.id, 1, madeBy);
             if (updated) { track = updated; marksApplied++; }
           }
           combatProgressTrack = track;
@@ -2889,7 +2893,7 @@ async function applyOutcomeEffects({
           { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null, combatRank: interpretation?.combatRank, markCount: marks },
           {
             listTracks:   () => listProgressTracks(),
-            markProgress: (id) => markProgressById(id),
+            markProgress: (id) => markProgressById(id, 1, madeBy),
           },
         );
         if (result && !result.track) {
@@ -3000,7 +3004,7 @@ async function applyOutcomeEffects({
         { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null },
         {
           listTracks:    () => listProgressTracks(),
-          completeTrack: (id) => completeProgressTrack(id),
+          completeTrack: (id) => completeProgressTrack(id, madeBy),
         },
       );
       if (fin?.track) {
@@ -6212,8 +6216,9 @@ export async function createCombatTrackFromThreshold({ label, rank, vowName, obj
     },
     {
       listTracks:   () => listProgressTracks(),
-      createTrack:  (data) => addProgressTrack(data),
-      markProgress: (id) => markProgressById(id),
+      // Made by Enter the Fray's commit (the session record's `by`, D12).
+      createTrack:  (data) => addProgressTrack(data, { by: { move: "enter_the_fray", res: null } }),
+      markProgress: (id) => markProgressById(id, 1, { by: { move: "enter_the_fray", res: null } }),
     },
   );
   if (result?.track) {
@@ -6496,7 +6501,7 @@ export function resolveVowHolderActor(vowName, preferredActorId = null) {
 // forged bond's track and said so (known-issues VOW-DEEPEN-BONDED-MARKS-TRACK).
 //
 // @returns {Promise<{ ok: boolean, bonded?: boolean, reason?: string, error?: string }>}
-export async function deepenLinkedConnection(connectionName, marks, { connectionId = null, actorId = null } = {}) {
+export async function deepenLinkedConnection(connectionName, marks, { connectionId = null, actorId = null, by = null } = {}) {
   try {
     const target = await findOpenConnection(connectionName, connectionId);
     if (!target?.__hostId) {
@@ -6506,7 +6511,7 @@ export async function deepenLinkedConnection(connectionName, marks, { connection
     }
     if (target.bonded === true) return await offerBondedDevelopRoll(target, { actorId });
     const conn = await import("./entities/connection.js");
-    await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks));
+    await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks), { by });
     await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks));
     return { ok: true };
   } catch (err) {
@@ -6559,7 +6564,7 @@ async function offerBondedDevelopRoll(connection, { actorId = null } = {}) {
  *   connectionName?: string|null, connectionId?: string|null, marks?: number }} card
  * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string }>}
  */
-export async function deepenVowConnectionOnce({ vowName = null, vowId = null, actorId = null, connectionName = null, connectionId = null, marks = 1 } = {}) {
+export async function deepenVowConnectionOnce({ vowName = null, vowId = null, actorId = null, connectionName = null, connectionId = null, marks = 1, by = null } = {}) {
   const copies = payoffVowCopies({ vowId, vowName, actorId });
   // A card posted before its vow's link carried the card's id reads it off the vow.
   const linkId = connectionId ?? linkedConnectionIdOf(copies);
@@ -6575,7 +6580,7 @@ export async function deepenVowConnectionOnce({ vowName = null, vowId = null, ac
   }
   // A bond already forged is offered its roll instead, as the card's roller's
   // (deepenLinkedConnection): recorded the same way, so the vow offers it once.
-  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: linkId, actorId });
+  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: linkId, actorId, by });
   if (res?.ok) await recordPayoffStep(copies, "deepen");
   return res;
 }
@@ -7084,7 +7089,9 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
     // character holding the vow.
     if (connectionName && owed("deepen")) {
       const rollerId = actorId ?? allCopies.find(({ item: i }) => i === item)?.actor?.id ?? null;
-      await settle("deepen", await deepenLinkedConnection(connectionName, marks, { connectionId, actorId: rollerId }), { connectionName, connectionId, marks });
+      // A fulfilment's deepen is the fulfilment's (the session record's `by`, D12).
+      await settle("deepen", await deepenLinkedConnection(connectionName, marks, { connectionId, actorId: rollerId,
+        by: { move: "fulfill_your_vow", res: null } }), { connectionName, connectionId, marks });
     }
 
     // Grant the promised reward (one-time; scaled by outcome). The fulfil path
@@ -7114,13 +7121,14 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
 // to be the one completed (issue #301 B02). `rank` is the rank's NAME: the
 // Item holds the vendor's ChallengeRank number, which paid every vow as a
 // dangerous one and threw in the fulfil card (issue #325 W01).
-async function completeVowItemByName(vowName, { actorId = null, itemId = null } = {}) {
+async function completeVowItemByName(vowName, { actorId = null, itemId = null, res = null } = {}) {
   const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
   if (!primary) return null;
   let anyDone = false;
   for (const { actor, item } of copies) {
     if (item.system?.completed === true) continue;
-    const done = await completeVowItem(actor, item.id).catch(err => {
+    // Closed by Fulfill Your Vow — the session record's `by` (overhaul 4, D12).
+    const done = await completeVowItem(actor, item.id, recordCause({ kind: "move", move: "fulfill_your_vow", res })).catch(err => {
       console.warn(`${MODULE_ID} | completeVowItemByName failed:`, err?.message ?? err);
       return false;
     });
@@ -7284,7 +7292,8 @@ export async function payForgedBondNative(connectionName, { actorId = null } = {
     claim = `bond:${target.__hostId}`;
     _nativePayoffsInFlight.add(claim);
 
-    await conn.forgeBond(target.__hostId);
+    // Forged by Forge a Bond rolled on the sheet — the session record's `by` (D12).
+    await conn.forgeBond(target.__hostId, { by: { move: "forge_a_bond", res: null } });
     // The bonds legacy, read and written after the await (writeLegacyTicks).
     // A refused write is told to the GMs, with a Retry, and the forge card
     // says the legacy is not yet marked (issue #306 R04 — it was logged, and
@@ -8345,7 +8354,7 @@ async function postDevelopRelationshipCard(plan) {
  *   could not act here (no PC, not a GM client); rejects when the mark's
  *   write is refused
  */
-async function applyReachMilestone(actor, target, marks = 1, { itemId = null, askUnnamed = false } = {}) {
+async function applyReachMilestone(actor, target, marks = 1, { itemId = null, askUnnamed = false, res = null } = {}) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
   // must not claim progress on a client that can't write. In solo-GM play the
   // player is the GM, so this is the normal path. `marks` > 1 applies a major
@@ -8364,7 +8373,8 @@ async function applyReachMilestone(actor, target, marks = 1, { itemId = null, as
     : planReachMilestone(vows, target, { askUnnamed });
   if (plan.action === "mark") {
     const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
-    await markVowProgress(actor, plan.vow.id, ticks);
+    // Made by Reach a Milestone — the session record's `by` (overhaul 4, D12).
+    await markVowProgress(actor, plan.vow.id, ticks, recordCause({ kind: "move", move: "reach_a_milestone", res }));
     await postReachMilestoneCard(plan.vow, ticks);
   } else if (plan.action === "pick") {
     // The marks ride the picker: a won fight's ×2 that falls to the picker
@@ -9173,7 +9183,8 @@ async function handleSeverCommand(message) {
       : `Starforged Companion: no active connection matched "${arg || ""}"${arg ? "" : " — name the connection (!sever <name>) when several are active"}.`);
     return;
   }
-  await conn.loseConnection(target.__hostId, "Severed (!sever).");
+  // `!sever` is the table's own hand (overhaul 4, D7): recorded as the hand.
+  await conn.loseConnection(target.__hostId, "Severed (!sever).", "", { by: "hand" });
   await ChatMessage.create({
     content: `<div class="sf-card sf-sever-card"><div class="sf-card-header">💔 Connection severed: ${escapeChatHtml(target.name)}</div><div class="sf-card-body"><p>The relationship is lost. The record is kept (inactive) for the campaign history; the narrator stops treating them as an ally. Envision what this costs you.</p></div></div>`,
     flags:   { [MODULE_ID]: { severCommandCard: true, connectionName: target.name ?? null } },

@@ -1992,6 +1992,8 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
       actorId: typeof f.actorId === "string" ? f.actorId : null,
       connectionName: f.connectionName,
       connectionId: typeof f.connectionId === "string" && f.connectionId ? f.connectionId : null, marks,
+      // Made by a button as Develop Your Relationship (the session record's `by`, D12).
+      by: { move: "develop_your_relationship", res: null },
     });
     return { ...res, step: "deepen", connectionName: f.connectionName, marks };
   });

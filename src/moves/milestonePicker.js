@@ -159,7 +159,10 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
     // Reach a Milestone's picker marks once.
     const ticks = milestoneTicks(vow.rank) * choice.marks;
     try {
-      await markVowProgress(actor, vow.id, ticks);
+      // Made by Reach a Milestone, for the session record's `by` (D12).
+      const { recordCause } = await import("../record/sheetWatch.js");
+      await markVowProgress(actor, vow.id, ticks, recordCause({ kind: "move", move: "reach_a_milestone",
+        res: message.flags?.[MODULE_ID]?.resolutionId ?? null }));
     } catch (err) {
       console.warn(`${MODULE_ID} | milestone pick: the mark on "${vow.name}" was refused — the claim is released:`, err?.message ?? err);
       await message.update({ [`flags.${MODULE_ID}.resolved`]: false })

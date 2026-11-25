@@ -120,7 +120,7 @@ export async function applySceneChallengeOffer(payload = {}, ctx = {}) {
     const track = await addProgressTrack({
       label: offer.label, type: "scene_challenge", rank: "dangerous",
       ...(clock ? { tensionClockId: clock._id } : {}),
-    });
+    }, { by: { move: "begin_the_scene", res: null } });
     await message.update({
       content: closedContent(offer.label, `Scene challenge begun: <strong>${escapeHtml(offer.label)}</strong> (dangerous — re-rank it in the Progress Tracks panel). ${clock ? "The countdown is its tension clock." : "The countdown had ended; it has a clock of its own."}`),
     }).catch(err => console.warn(`${MODULE_ID} | scene challenge offer: card ${messageId} could not be closed:`, err?.message ?? err));
