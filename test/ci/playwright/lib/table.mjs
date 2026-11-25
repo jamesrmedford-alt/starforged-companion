@@ -11,7 +11,7 @@
 // Read from the GM's page because the GM's world is the whole world: the
 // Secrets journal and the whispered cards are not on a player's.
 
-import { MODULE_ID } from "./foundry.mjs";
+import { MODULE_ID, MODULE_SRC } from "./foundry.mjs";
 
 /**
  * The dice of a move card, from the card's own text (the `.sf-move-dice`
@@ -149,7 +149,7 @@ export async function readTable(gm) {
 }
 
 function readTableOnPage(gm) {
-  return gm.page.evaluate((MODULE_ID) => {
+  return gm.page.evaluate(async ({ MODULE_ID, MODULE_SRC }) => {
     const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
     const strip = (html) => clean(String(html ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
     const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
@@ -216,16 +216,63 @@ function readTableOnPage(gm) {
     // it is battered — what a Repair has to mend (lib/beats.mjs sheetSpent).
     const shipRecords = (cs.shipIds ?? []).map(id => flagsOf(game.actors.get(id)).ship ?? null).filter(Boolean);
     const vehicle = shipRecords.find(s => s.isCommandVehicle) ?? (shipRecords.filter(s => s.npcShip !== true).length === 1 ? shipRecords.find(s => s.npcShip !== true) : null);
+    // Where the ship is, in the words the narrator is told it (the module's
+    // own line — factContinuity/shipPosition.js — so a run reads the record
+    // as THE SCENE's Ship line does, overhaul 2 §6.1). Null with no record.
+    let shipPosition = null;
+    if (vehicle?.position && typeof vehicle.position === "object") {
+      try {
+        const { formatShipPositionLine } = await import(`${MODULE_SRC}/factContinuity/shipPosition.js`);
+        shipPosition = clean(String(formatShipPositionLine(vehicle.position, cs, vehicle.name ?? "") ?? "").replace(/^SHIP POSITION:\s*/, "")) || null;
+      } catch (err) {
+        console.warn("explore table: the ship's position line could not be read", err);
+      }
+    }
     const notes = (sectorScene?.notes.contents ?? []).map(n => ({ name: n.text, x: n.x, y: n.y }));
     const at = shipToken ? notes.find(n => n.x === shipToken.x && n.y === shipToken.y) ?? null : null;
     const here = cs.currentLocationId ? game.actors.get(cs.currentLocationId) : null;
 
     // ── the scene's ledger ───────────────────────────────────────────────────
     const subjectOf = (s) => (typeof s === "string" ? s : s?.kind === "entity" ? (game.actors.get(s.entityId)?.name ?? s.entityId) : s?.text ?? "");
+    // Each with what it rests on (overhaul 2 §5.1): `basis` — player, dice, gm
+    // and setup bind; narrator is the narration's colour — and the narrations
+    // that said it (`said`, newest first).
     const truths = (cs.sceneTruths ?? []).map(t => ({
       id: t.id, subject: clean(subjectOf(t.subject)), fact: clean(t.fact), retracted: t.retracted === true, retractedBy: t.retractedBy ?? null,
       narrationId: t.narrationId ?? null, asserter: t.asserter ?? null,
+      basis: typeof t.basis === "string" ? t.basis : null, said: Array.isArray(t.said) ? t.said.filter(id => typeof id === "string") : [],
     }));
+    // Why the scene began (overhaul 2 §4.1, its anchor — `sceneBegan`), and
+    // what play let go in it (§7.3, the frame's code-kept list).
+    const anchor = cs.sceneBegan && typeof cs.sceneBegan === "object" ? cs.sceneBegan : null;
+    const began = anchor ? {
+      sceneId: anchor.sceneId ?? null, cause: anchor.cause ?? null, what: clean(anchor.what ?? ""),
+      place: clean(anchor.place?.name ?? "") || null, ship: clean(anchor.ship?.line ?? "") || null,
+    } : null;
+    const letGo = (Array.isArray(cs.sceneFrame?.letGo) ? cs.sceneFrame.letGo : [])
+      .filter(e => e && typeof e.text === "string" && e.text.trim())
+      .map(e => ({ text: clean(e.text), stems: Array.isArray(e.stems) ? e.stems.filter(s => typeof s === "string") : [] }));
+
+    // What a scene's end filed (overhaul 2 §5.6 — only what binds is): the
+    // World Journal's Lore entries and the entity tiers' migrated details,
+    // each with the narration that asserted it.
+    const filed = [];
+    const tierOf = (where, data) => {
+      for (const t of Array.isArray(data?.generativeTier) ? data.generativeTier : []) {
+        if (t?.source === "scene_truth_migration") filed.push({ where, fact: clean(t.detail), narrationId: t.narrationId ?? null });
+      }
+    };
+    for (const a of game.actors.contents) {
+      const type = flagsOf(a).entityType;
+      if (type) tierOf(`the ${type} ${a.name}`, flagsOf(a)[type]);
+    }
+    for (const j of game.journal.contents) {
+      for (const p of j.pages?.contents ?? []) {
+        const lore = flagsOf(p).loreEntry;
+        if (lore && typeof lore.fact === "string") filed.push({ where: `Lore: ${p.name}`, fact: clean(lore.fact), narrationId: lore.narrationId ?? null });
+        for (const [key, value] of Object.entries(flagsOf(p))) if (key !== "loreEntry") tierOf(`${key} ${j.name}`, value);
+      }
+    }
 
     // ── what the helpers wrote ───────────────────────────────────────────────
     const chronicle = [];
@@ -283,11 +330,12 @@ function readTableOnPage(gm) {
       location: { id: cs.currentLocationId ?? null, type: cs.currentLocationType ?? null, name: here?.name ?? null },
       ship: {
         token: shipToken ? { x: shipToken.x, y: shipToken.y } : null, tokenAt: at?.name ?? null,
-        ...(vehicle ? { name: vehicle.name ?? null, integrity: num(vehicle.integrity), integrityMax: num(vehicle.integrityMax), battered: vehicle.battered === true } : {}),
+        ...(vehicle ? { name: vehicle.name ?? null, integrity: num(vehicle.integrity), integrityMax: num(vehicle.integrityMax), battered: vehicle.battered === true, position: shipPosition } : {}),
       },
       pcs, connections, entityCards, tracks,
       legacy: { quests: legacyOf("quests"), bonds: legacyOf("bonds"), discoveries: legacyOf("discoveries") },
-      scene: { id: cs.currentSceneId ?? null, frame: cs.sceneFrame ?? null, truths },
+      scene: { id: cs.currentSceneId ?? null, frame: cs.sceneFrame ?? null, truths, began, letGo },
+      filed,
       xCardedNarrationIds: [...(cs.xCardedNarrationIds ?? [])],
       // The recap's text, and — for its review (lib/review.mjs recapCitesOf)
       // — as stored: its paragraphs, each sentence's cited ids, when it was made.
@@ -301,7 +349,7 @@ function readTableOnPage(gm) {
       plans,
       recentOracles: (cs.recentOracles ?? []).map(o => ({ name: o.name ?? null, question: o.question ?? null, answer: o.answer ?? null })),
     };
-  }, MODULE_ID);
+  }, { MODULE_ID, MODULE_SRC });
 }
 
 /**

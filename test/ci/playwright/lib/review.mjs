@@ -322,14 +322,20 @@ const longestRun = (hits, n) => { let best = 0, cur = 0; for (let i = 0; i < n; 
  * never writes without its capital). A count to start reading from: it finds
  * what is said in the same words, not a device said in new ones each time.
  *
- * @param {Array<{ step: string, phase: string, narrator?: boolean, vignette?: string|null, text: string }>} messages
- * @returns {{ sessions: object[], worst: object|null }}
+ * And scene by scene (overhaul 2 §8 — a scene's narrations are its own; a
+ * scene turns when its place or its situation changes): `scenes`, each
+ * scene's words in a third or more of its own narrations of play, and at
+ * least three, for a scene of REFRAIN_MIN_NARRATIONS or more.
+ *
+ * @param {Array<{ step: string, phase: string, narrator?: boolean, vignette?: string|null, text: string, sceneId?: string|null }>} messages
+ * @param {{ marks?: object[] }} [opts] — the table after each step: a card with no scene stamp is placed by it
+ * @returns {{ sessions: object[], worst: object|null, worstScene: object|null }}
  */
-export function refrainsOf(messages = []) {
+export function refrainsOf(messages = [], { marks = [] } = {}) {
   const byPhase = new Map();
   const answersOf = new Map();
-  const asked = new Set(messages.filter(m => m.fromPlayer && /^@scene\b/i.test(String(m.text ?? "").trim())).map(m => m.step));
-  const isAnswer = (m) => (m.card ?? []).includes("sceneResponse") || asked.has(m.step);
+  const isAnswer = sceneAnswerTest(messages);
+  const sceneOf = sceneOfMessage(marks);
   for (const m of messages) {
     if (!m.narrator || m.vignette || !/^session-/.test(String(m.phase ?? ""))) continue;
     const into = isAnswer(m) ? answersOf : byPhase;
@@ -394,8 +400,21 @@ export function refrainsOf(messages = []) {
       return { step: m.step, waiting: REFRAIN_WAITS.test(last), sentence: (sentences.at(-1) ?? "").slice(0, 160) };
     });
     const counted = n >= REFRAIN_MIN_NARRATIONS;
+    // …and each scene's own narrations of play.
+    const inScene = narrations.map(m => sceneOf(m));
+    const scenes = [...new Set(inScene)].filter(Boolean).map((sceneId) => {
+      const idx = new Set(inScene.map((s, i) => (s === sceneId ? i : -1)).filter(i => i >= 0));
+      const sn = idx.size;
+      if (sn < REFRAIN_MIN_NARRATIONS) return { sceneId, narrations: sn, counted: false, refrains: [] };
+      const sFloor = Math.max(3, Math.ceil(sn * REFRAIN_SHARE - 1e-9));
+      const refrainRows = [...words].map(([w, hits]) => ({ what: w, in: [...hits].filter(i => idx.has(i)).length }))
+        .filter(r => r.in >= sFloor && !isName(r.what))
+        .map(r => ({ ...r, of: sn, share: Number((r.in / sn).toFixed(3)) }))
+        .sort((a, b) => b.in - a.in || a.what.localeCompare(b.what));
+      return { sceneId, narrations: sn, counted: true, refrains: refrainRows.slice(0, 10) };
+    });
     sessions.push({
-      phase, narrations: n, counted, sceneAnswers: answers.length,
+      phase, narrations: n, counted, sceneAnswers: answers.length, scenes,
       words: wordRows.slice(0, 20), phrases: phraseRows.slice(0, 20),
       refrains: counted ? { words: wordRows.filter(r => r.in >= floor), phrases: phraseRows.filter(r => r.in >= floor) } : { words: [], phrases: [] },
       endings: { waiting: endings.filter(e => e.waiting).length, of: n, steps: endings.filter(e => e.waiting).map(e => ({ step: e.step, sentence: e.sentence })) },
@@ -403,7 +422,9 @@ export function refrainsOf(messages = []) {
   }
   const worst = sessions.filter(x => x.counted).flatMap(x => [...x.refrains.words, ...x.refrains.phrases].filter(r => !r.name).map(r => ({ phase: x.phase, ...r })))
     .sort((a, b) => b.share - a.share || b.in - a.in)[0] ?? null;
-  return { sessions, worst };
+  const worstScene = sessions.flatMap(x => x.scenes.filter(c => c.counted).flatMap(c => c.refrains.map(r => ({ phase: x.phase, sceneId: c.sceneId, ...r }))))
+    .sort((a, b) => b.share - a.share || b.in - a.in)[0] ?? null;
+  return { sessions, worst, worstScene };
 }
 /** The scorecard's one line of refrainsOf. */
 function refrainsResult(r) {
@@ -417,8 +438,11 @@ function refrainsResult(r) {
   const answers = (x, row) => (x?.sceneAnswers ? `; in ${row.inAnswers ?? 0} of its ${x.sceneAnswers} @scene answers, counted apart` : "");
   const of = counted.reduce((n, x) => n + x.narrations, 0);
   const worstSession = w ? counted.find(x => x.phase === w.phase) : null;
+  const s = r.worstScene;
+  const scenes = counted.reduce((n, x) => n + (x.scenes ?? []).filter(c => c.counted).length, 0);
   return `${w ? `"${w.what}" in ${w.in} of ${w.phase}'s ${w.of} narrations${asked(worstSession)} (${w.run} in a row${answers(worstSession, w)})` : "nothing in a third of any session's narrations"}; `
     + `${total} word(s) and phrase(s), names apart, in a third or more of a session's narrations (${counted.map(x => `${x.phase}: ${own(x)}`).join(", ")}); `
+    + `scene by scene: ${s ? `"${s.what}" in ${s.in} of a scene's ${s.of} (${s.phase})` : scenes ? "nothing in a third of any scene's" : "no scene long enough to count"}; `
     + `${waiting} of ${of} narrations end on someone waiting, watching or still`;
 }
 
@@ -929,7 +953,14 @@ export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions
       cost: costSplit(spend, { actions: actions.length, lines }),
       length: lengthOf(allCalls),
       repetition: repetitionOf(messages),
-      refrains: refrainsOf(messages),
+      refrains: refrainsOf(messages, { marks }),
+      // Overhaul 2's counts (issue #386 §14).
+      scenes: scenesOf({ marks, messages }),
+      places: placesOf({ marks, messages }),
+      reconciliations: reconciliationsOf(messages),
+      colour: colourOf({ marks, messages }),
+      provenance: provenanceOf({ marks, exchanges }),
+      openings: openingsOf({ exchanges, messages }),
       setPieces: setPiecesOf({ exchanges, messages }),
       recapCites: recapCitesOf({ marks, requests: moduleRequests }),
       recordSizes: recordSizesOf({ marks }),
@@ -939,6 +970,328 @@ export function reviewDataOf({ moduleRequests = [], runnerRequests = [], actions
       freeform: freeformOf({ messages, exchanges, beats, charter }),
     },
   };
+}
+
+// ── overhaul 2: scenes, one place, what binds (issue #386 §14) ──────────────
+
+/**
+ * Which narrator cards answered an `@scene` question: by the card
+ * (`sceneResponse`), or by the scene question its step put (issue #383 #16e).
+ * The one test the refrains and overhaul 2's counts share — an answer is a
+ * camera on what the story holds, never a beat of play.
+ *
+ * @param {Array<object>} messages
+ * @returns {(m: object) => boolean}
+ */
+export function sceneAnswerTest(messages = []) {
+  const asked = new Set(messages.filter(m => m.fromPlayer && /^@scene\b/i.test(String(m.text ?? "").trim())).map(m => m.step));
+  return (m) => (m.card ?? []).includes("sceneResponse") || asked.has(m.step);
+}
+
+/**
+ * A beat of play's narration — the narrations a scene turns at (overhaul 2
+ * §4.3: a move's, a paced line's, a round's, an oracle follow-up's): no
+ * set-piece, no clock or vow scene, no fallback card, no @scene answer.
+ */
+function playNarration(isAnswer) {
+  return (m) => {
+    const card = m.card ?? [];
+    return !!m.narrator && !m.vignette && !isAnswer(m) && !card.includes("narrationFallback")
+      && (!!m.moveId || card.includes("pacedNarrative") || card.includes("oracleNarrationCard") || card.includes("roundId"));
+  };
+}
+
+/** The scene a message was told in: its card's stamp (record/cards.js), else the scene the table was on after its step. */
+function sceneOfMessage(marks) {
+  const at = new Map(marks.map(k => [k.step, k.table?.scene?.id ?? null]));
+  return (m) => m.sceneId ?? at.get(m.step) ?? null;
+}
+
+const aroundMatch = (text, m) => String(text ?? "").slice(Math.max(0, m.index - 60), m.index + m[0].length + 60).trim();
+
+/**
+ * The scenes of each session (overhaul 2 §4 — a scene is a place and a
+ * situation, and it turns in code; known-issues SCENE-TURNS-UNMEASURED): each
+ * with why it began (its anchor's `cause` and words), the step it began at
+ * and the narrations of play told in it. Read off the table after each step:
+ * a new scene id is a scene begun. The fourth live run had one a session,
+ * besides the cutaways.
+ *
+ * @param {{ marks: object[], messages: object[] }} run
+ * @returns {{ sessions: Array<{ phase: string, scenes: Array<{ sceneId: string, cause: string|null, what: string, at: string, beats: number }> }>, total: number }}
+ */
+export function scenesOf({ marks = [], messages = [] } = {}) {
+  const isAnswer = sceneAnswerTest(messages);
+  const sceneOf = sceneOfMessage(marks);
+  const sessions = [];
+  const byId = new Map();
+  for (const mark of marks) {
+    const scene = mark.table?.scene;
+    const id = scene?.id ?? null;
+    if (!id || byId.has(id)) continue;
+    const began = scene.began?.sceneId === id ? scene.began : null;
+    const phase = String(mark.phase ?? "?");
+    let s = sessions.find(x => x.phase === phase);
+    if (!s) sessions.push(s = { phase, scenes: [] });
+    const row = { sceneId: id, cause: began?.cause ?? null, what: began?.what ?? "", at: mark.step, beats: 0 };
+    s.scenes.push(row);
+    byId.set(id, row);
+  }
+  const isPlay = playNarration(isAnswer);
+  for (const m of messages) {
+    if (!isPlay(m)) continue;
+    const row = byId.get(sceneOf(m));
+    if (row) row.beats += 1;
+  }
+  return { sessions, total: sessions.reduce((n, s) => n + s.scenes.length, 0) };
+}
+/** The scorecard's line of scenesOf. */
+function scenesResult(s) {
+  if (!s.total) return "no scene was seen";
+  return `${s.sessions.map(x => `${x.phase}: ${x.scenes.length} (${x.scenes.map(c => `${c.cause ?? "?"}, ${c.beats}`).join("; ")})`).join(" · ")} — each scene's cause, and its narrations of play`;
+}
+
+/** A ship told as moored where she lies — and as away from it (overhaul 2 §6.2). */
+const SHIP_DOCKED = /\b(?:docked|berthed|moored|in (?:the|her) (?:clamps|berth|cradle))\b/i;
+const SHIP_AWAY = /\b(?:off the (?:station|lock|ring|dock)|open space|under ?way|in the void|adrift|clear of the (?:station|lock|ring|dock)|undocked|cast(?:s)? off)\b/i;
+/** The recorded places a frame or a line can name (`!at`'s). */
+const PLACE_TYPES = new Set(["settlement", "planet", "location"]);
+
+/**
+ * Where the narration and the table's three records of place disagree
+ * (overhaul 2 §6; known-issues SHIP-POSITION-AND-FRAME-DISAGREE): a narration
+ * — of play, or an `@scene` answer — whose prose has the ship docked, berthed
+ * or in the clamps while her record says otherwise, or off the station, under
+ * way or in open space while it says docked; and a step whose frame names a
+ * recorded place other than the characters' recorded place, with no line of
+ * the step naming it. A count to read from — the cold read says which are
+ * wrong (a docked cutter beside her is no contradiction). Each `@scene`
+ * question that asks where the ship is is kept with its answer and the
+ * ship's record at that step (`asked`).
+ *
+ * @param {{ marks: object[], messages: object[] }} run
+ * @returns {{ sessions: Array<{ phase: string, contradictions: object[] }>, total: number, asked: object[] }}
+ */
+export function placesOf({ marks = [], messages = [] } = {}) {
+  const isAnswer = sceneAnswerTest(messages);
+  const tableAt = new Map(marks.map(k => [k.step, k.table ?? null]));
+  const lineAt = new Map(messages.filter(m => m.fromPlayer).map(m => [m.step, String(m.text ?? "")]));
+  const sessions = [];
+  const asked = [];
+  const add = (phase, row) => {
+    let s = sessions.find(x => x.phase === phase);
+    if (!s) sessions.push(s = { phase, contradictions: [] });
+    s.contradictions.push(row);
+  };
+  const framed = new Set();
+  for (const m of messages) {
+    if (!m.narrator || m.vignette) continue;
+    const t = tableAt.get(m.step);
+    if (!t) continue;
+    const phase = String(m.phase ?? "?");
+    const text = String(m.text ?? "");
+    const ship = String(t.ship?.position ?? "");
+    const docked = /\b(?:docked|berthed) at\b/i.test(ship);
+    const answer = isAnswer(m);
+    const kind = answer ? "an @scene answer" : "a narration";
+    if (ship) {
+      const d = SHIP_DOCKED.exec(text);
+      if (d && !docked) add(phase, { step: m.step, kind: `${kind} has her docked`, quote: aroundMatch(text, d), record: ship });
+      const a = SHIP_AWAY.exec(text);
+      if (a && docked) add(phase, { step: m.step, kind: `${kind} has her away`, quote: aroundMatch(text, a), record: ship });
+    }
+    const where = String(t.scene?.frame?.location ?? "").toLowerCase();
+    if (where && !framed.has(m.step)) {
+      framed.add(m.step);
+      const here = String(t.location?.name ?? "").toLowerCase();
+      const line = (lineAt.get(m.step) ?? "").toLowerCase();
+      const other = (t.entityCards ?? []).find(c => PLACE_TYPES.has(c.entityType) && c.name
+        && where.includes(c.name.toLowerCase()) && c.name.toLowerCase() !== here && !line.includes(c.name.toLowerCase()));
+      if (other) add(phase, { step: m.step, kind: "the frame names another place", quote: t.scene.frame.location, record: t.location?.name ?? "no recorded place" });
+    }
+    if (answer) {
+      const q = lineAt.get(m.step) ?? "";
+      const name = String(t.ship?.name ?? "").toLowerCase();
+      if (/\bwhere\b/i.test(q) && (/\bship\b/i.test(q) || (name && q.toLowerCase().includes(name)))) {
+        asked.push({ step: m.step, question: q, answer: text.slice(0, 300), record: ship || null });
+      }
+    }
+  }
+  return { sessions, total: sessions.reduce((n, s) => n + s.contradictions.length, 0), asked };
+}
+/** The scorecard's line of placesOf. */
+function placesResult(p) {
+  const each = p.sessions.map(x => `${x.phase}: ${x.contradictions.length} (${[...new Set(x.contradictions.map(c => c.step))].join(" ")})`).join(" · ");
+  const ship = p.asked.map(a => `asked where the ship is at ${a.step}: "${a.answer.slice(0, 90)}${a.answer.length > 90 ? "…" : ""}" — her record: ${a.record ?? "none"}`).join("; ");
+  return `${p.total} to read${each ? ` — ${each}` : ""}${ship ? `; ${ship}` : ""}`;
+}
+
+/**
+ * A narration explaining a difference between its records (overhaul 2 §6.1;
+ * known-issues FRAME-REASONING-IN-PROSE): the fourth live run's a15 "You are no
+ * longer at Tamsin's stall, so the manifest is not where you left it", a59
+ * "docked at Bleakhold Station, though the scene frame has her off the
+ * station", a65 "still off the station, so the market is a short hop away".
+ * A phrase list over the narrations of play, then the cold read.
+ */
+const RECONCILING = Object.freeze([
+  /\bno longer (?:at|in|aboard|docked|berthed|off)\b/i,
+  /\b(?:though|although|even though)\b[^.?!]{0,40}\b(?:scene frame|the frame|the record|her record|the ship'?s record)\b/i,
+  /\b(?:the scene frame|the frame has|the record says|by the record|the ship'?s record)\b/i,
+  /\bstill (?:off|at|in|aboard|docked|berthed)\b[^.?!]{0,60}?,\s*so\b/i,
+]);
+/**
+ * @param {Array<object>} messages
+ * @returns {{ sessions: Array<{ phase: string, sentences: Array<{ step: string, sentence: string }> }>, total: number }}
+ */
+export function reconciliationsOf(messages = []) {
+  const isAnswer = sceneAnswerTest(messages);
+  const sessions = [];
+  for (const m of messages) {
+    if (!m.narrator || m.vignette || isAnswer(m) || !/^session-/.test(String(m.phase ?? ""))) continue;
+    for (const sentence of sentencesOf(m.text)) {
+      if (!RECONCILING.some(re => re.test(sentence))) continue;
+      let s = sessions.find(x => x.phase === m.phase);
+      if (!s) sessions.push(s = { phase: m.phase, sentences: [] });
+      s.sentences.push({ step: m.step, sentence: sentence.slice(0, 220) });
+    }
+  }
+  return { sessions, total: sessions.reduce((n, s) => n + s.sentences.length, 0) };
+}
+
+/** What binds (overhaul 2 §5.1): the player's, the dice's, the GM's, the premise's. The narrator's is colour. */
+const BINDING_BASES = new Set(["player", "dice", "gm", "setup"]);
+
+/**
+ * Colour told as fact (overhaul 2 §5.3, §5.7): a sentence of a session's
+ * summary, the campaign recap or a Chronicle entry that holds the words of a
+ * colour truth — one the narration described, basis `narrator` — that no
+ * truth that binds and no line of the player's holds. The fourth live run's
+ * session 1 summary told its untaken amber light; session 2's opening the
+ * fee slip in Mira's hands. Read at the run's end, against every truth the
+ * table held on the way.
+ *
+ * @param {{ marks: object[], messages: object[] }} run
+ * @returns {{ colourTruths: number, told: Array<{ where: string, sentence: string, fact: string, words: string[] }> }}
+ */
+export function colourOf({ marks = [], messages = [] } = {}) {
+  const colour = new Map();
+  const bound = new Set();
+  for (const mark of marks) {
+    for (const t of mark.table?.scene?.truths ?? []) {
+      if (t.retracted) continue;
+      if (BINDING_BASES.has(t.basis)) for (const w of contentWords(t.fact)) bound.add(w);
+      else if (t.basis === "narrator" && !colour.has(t.id)) colour.set(t.id, { id: t.id, fact: t.fact, narrationId: t.narrationId ?? null });
+    }
+  }
+  for (const m of messages) if (m.fromPlayer) for (const w of contentWords(m.text)) bound.add(w);
+  const last = [...marks].reverse().find(k => k.table?.helpers)?.table ?? null;
+  const names = new Set([...(last?.pcs ?? []).map(p => p.name), ...(last?.entityCards ?? []).map(c => c.name), last?.ship?.name]
+    .filter(Boolean).flatMap(n => contentWords(n)));
+  const own = [...colour.values()]
+    .map(c => ({ ...c, words: [...new Set(contentWords(c.fact))].filter(w => !names.has(w) && !bound.has(w)) }))
+    .filter(c => c.words.length);
+  const texts = [
+    ...(last?.helpers?.summaries ?? []).map(s => ({ where: `the summary of ${s.session}`, text: s.text })),
+    ...(last?.helpers?.recap ? [{ where: "the campaign recap", text: last.helpers.recap }] : []),
+    ...(last?.helpers?.chronicle ?? []).map(e => ({ where: "a Chronicle entry", text: e.text })),
+  ];
+  const told = [];
+  for (const { where, text } of texts) {
+    for (const sentence of sentencesOf(text)) {
+      const said = new Set(contentWords(sentence));
+      for (const c of own) {
+        const hit = c.words.filter(w => said.has(w));
+        if (hit.length >= Math.min(2, c.words.length)) { told.push({ where, sentence: sentence.slice(0, 220), fact: c.fact, words: hit }); break; }
+      }
+    }
+  }
+  return { colourTruths: colour.size, told };
+}
+
+/** A reply's text, from a recorded exchange. */
+const replyOf = (x) => (x?.response?.content ?? []).filter(c => c?.type === "text").map(c => c.text).join("");
+/** The last fenced JSON block of a narration's reply — its fact block — or null. */
+function factBlockOf(text) {
+  const blocks = [...String(text ?? "").matchAll(/```json\s*([\s\S]*?)```/g)];
+  if (!blocks.length) return null;
+  try { return JSON.parse(blocks.at(-1)[1]); } catch { return null; }
+}
+const sameFact = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/**
+ * What the table's facts rest on, session by session (overhaul 2 §5.1–5.2):
+ * each truth the ledger held, by its basis — the player's, the dice's, the
+ * GM's and the premise's bind; the narrator's is colour — and the tags
+ * refused: a truth the narrator's fact block tagged `from` "line" or "result"
+ * that the floor kept as its own colour, read from the run's recorded replies
+ * (a tagged state value has no truth to find: counted apart).
+ *
+ * @param {{ marks: object[], exchanges: object[] }} run
+ * @returns {{ sessions: Array<{ phase: string, truths: number, byBasis: Record<string, number> }>, truths: number,
+ *   tags: { tagged: number, kept: number, refused: number, unmatched: number, states: number, refusedFacts: object[] } }}
+ */
+export function provenanceOf({ marks = [], exchanges = [] } = {}) {
+  const truths = new Map();
+  for (const mark of marks) {
+    for (const t of mark.table?.scene?.truths ?? []) truths.set(t.id, { ...t, phase: truths.get(t.id)?.phase ?? String(mark.phase ?? "?") });
+  }
+  const sessions = [];
+  for (const t of truths.values()) {
+    let s = sessions.find(x => x.phase === t.phase);
+    if (!s) sessions.push(s = { phase: t.phase, truths: 0, byBasis: {} });
+    s.truths += 1;
+    const basis = t.basis ?? "none";
+    s.byBasis[basis] = (s.byBasis[basis] ?? 0) + 1;
+  }
+  const byFact = new Map([...truths.values()].map(t => [sameFact(t.fact), t]));
+  const tags = { tagged: 0, kept: 0, refused: 0, unmatched: 0, states: 0, refusedFacts: [] };
+  for (const x of exchanges) {
+    if (!/^callNarratorAPI>/.test(String(x?.kind ?? ""))) continue;
+    const block = factBlockOf(replyOf(x));
+    const tagged = (e) => ["line", "result"].includes(String(e?.from ?? "").trim().toLowerCase());
+    for (const e of Array.isArray(block?.stateChanges) ? block.stateChanges : []) if (tagged(e)) tags.states += 1;
+    for (const e of Array.isArray(block?.newTruths) ? block.newTruths : []) {
+      if (!tagged(e)) continue;
+      tags.tagged += 1;
+      const t = byFact.get(sameFact(e.fact));
+      if (!t) tags.unmatched += 1;
+      else if (t.basis === "narrator") { tags.refused += 1; tags.refusedFacts.push({ step: x.step, fact: t.fact, from: String(e.from).toLowerCase() }); }
+      else tags.kept += 1;
+    }
+  }
+  return { sessions, truths: truths.size, tags };
+}
+/** The scorecard's line of provenanceOf. */
+function provenanceResult(p) {
+  const order = ["player", "dice", "gm", "setup", "narrator", "none"];
+  const each = p.sessions.map(x => `${x.phase}: ${order.filter(b => x.byBasis[b]).map(b => `${b} ${x.byBasis[b]}`).join(", ")}`).join(" · ");
+  return `${p.truths} truth(s) — ${each || "none"}; tags: ${p.tags.tagged} truth(s) tagged, ${p.tags.kept} kept, ${p.tags.refused} refused, ${p.tags.unmatched} not found (and ${p.tags.states} state value(s) tagged)`;
+}
+
+/**
+ * Each opening told where the last session stopped (overhaul 2 §9; known-issues
+ * OPENING-CONTRADICTS-WHERE-IT-STOPPED): its WHERE block — from the record
+ * ("…session N's record, the table's facts") or from the summary — beside
+ * the opening the table read, for the cold read against it. The fourth live
+ * run's a20 and a89 contradicted theirs.
+ *
+ * @param {{ exchanges: object[], messages: object[] }} run
+ * @returns {Array<{ step: string, fromRecord: boolean, block: string[], prose: string }>}
+ */
+export function openingsOf({ exchanges = [], messages = [] } = {}) {
+  const out = [];
+  for (const x of exchanges) {
+    const user = String(x?.user ?? "");
+    if (setPieceKindOf(user) !== "opening") continue;
+    const at = user.indexOf("WHERE THE LAST SESSION STOPPED");
+    if (at < 0) continue;
+    const block = user.slice(at).split(/\n\s*\n/)[0].split("\n").map(l => l.trim()).filter(Boolean);
+    const prose = messages.filter(m => m.step === x.step && m.narrator && m.vignette && !/spotlight|end/i.test(String(m.vignette)))
+      .map(m => m.text).join(" ");
+    out.push({ step: x.step, fromRecord: /the table's facts/.test(block[0] ?? ""), block, prose: prose.slice(0, 700) });
+  }
+  return out;
 }
 
 // ── the generated layers ─────────────────────────────────────────────────────
@@ -973,6 +1326,32 @@ const COLD_READ = [
   "## The cold read", "",
   "_To write before anything below — `transcript.md` read straight through by a reader who has seen neither the charter, this run's questions nor the fixes it was to verify (in a Claude Code session, a sub-agent handed that one file), asked what the session was like to play: what a player would complain of, what repeats, what makes no sense, what the player was made to do. Its findings, each then checked against the evidence — and, first, what the charter itself made the player do that a person at the table would not._", "",
 ];
+
+/**
+ * Overhaul 2's counts for the next live run, each beside what the fourth live
+ * run counted (design §14, "The next live run"): one table to read them off.
+ * Rows a run has no count for say so.
+ */
+export function againstRunFour({ refrains = null, mechanics = null, scenes = null, places = null, reconciliations = null, colour = null, provenance = null, openings = [], ledger = null } = {}) {
+  const check = (name) => mechanics?.byCheck?.[name] ?? null;
+  const letGo = check("let-go-stays");
+  const t = ledger?.totals ?? null;
+  const w = refrains?.worst ?? null;
+  const rows = [
+    ["Refrains per narration of play", w ? `"${w.what}" in ${w.in} of ${w.phase}'s ${w.of} (${w.run} running)${refrains.worstScene ? `; scene by scene "${refrains.worstScene.what}" ${refrains.worstScene.in} of ${refrains.worstScene.of}` : ""}` : refrains ? "nothing in a third of a session's" : "not counted", 'session 3: "light" 15 of 17 (12 running)'],
+    ["Questions re-set on a let-go subject", letGo ? `${letGo.violated} (of ${letGo.made} questions set while play had let one go)` : "not checked", "4 (a65, a69, a73, a85)"],
+    ["Scenes a session, and their causes", scenes ? scenesResult(scenes) : "not counted", "one a session, besides the cutaways"],
+    ["Location contradictions a session", places ? `${places.total} to read cold${places.sessions.length ? ` (${places.sessions.map(x => `${x.phase}: ${x.contradictions.length}`).join(", ")})` : ""}` : "not counted", "session 3: a59, a65, a81, a85"],
+    ["Reconciliation sentences", reconciliations ? `${reconciliations.total}${reconciliations.total ? ` (${reconciliations.sessions.flatMap(x => x.sentences.map(y => y.step)).join(" ")})` : ""}` : "not counted", "3 (a15, a59, a65)"],
+    ["Colour told as fact", colour ? `${colour.told.length} sentence(s)` : "not counted", "session 1's summary's amber light; the fee slip in session 2 (a20, a24, a33)"],
+    ["Facts by provenance; tags refused", provenance ? provenanceResult(provenance) : "not counted", "—"],
+    ["Openings against where it stopped", openings.length ? `${openings.length} opening(s), ${openings.filter(o => o.fromRecord).length} by the record — the cold read, below` : "none told where a last session stopped", "2 of 3 contradicted (a20, a89)"],
+    ["The ledger's recalls", t ? `${t.recalled} recalled, ${t.lost} lost` : "not scored", "5 recalled, 0 lost"],
+  ];
+  return ["## Overhaul 2's counts, against run 4", "",
+    "The counts the fourth live run's findings asked the next run for (issue #386 §14). A count with \"to read\" is a list to start the cold read from.", "",
+    table(["Count", "This run", "Run 4"], rows), ""];
+}
 
 /**
  * The annotated transcript with every generated layer filled in: for each
@@ -1040,7 +1419,7 @@ export function annotatedTranscript({ charter, run, actions = [], messages = [],
  * to trust it, then the detail. Rows that are judgement say so and are left
  * to write.
  */
-export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, refrains = null, setPieces = null, recapCites = null, recordSizes = null, friction = null, agency = [], slips = null, freeform = null }) {
+export function scorecard({ charter, run, goal = null, beats = [], mechanics = null, ledger = null, baits = [], leaks = [], speed = null, caching = null, cost = null, length = null, repetition = null, refrains = null, setPieces = null, recapCites = null, recordSizes = null, friction = null, agency = [], slips = null, freeform = null, scenes = null, places = null, reconciliations = null, colour = null, provenance = null, openings = [] }) {
   const done = beats.filter(b => b.status === "done").length;
   const failed = beats.filter(b => b.status === "failed").length;
   const never = beats.filter(b => b.status !== "done" && b.status !== "failed").length;
@@ -1065,6 +1444,12 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ["Narrator quality", worstOpening ? `repetition by content: ${pct(worstOpening.sharedShare)} of ${worstOpening.later}'s content words were in ${worstOpening.earlier}; ${worstOpening.repeatedActs.length} repeated who-is-doing-what` : "no two scenes of one kind to compare", "shared content words and repeated acts between scenes of one kind", "medium for repetition; the rest is the reading"],
       ...(setPieces?.totals.scenes || setPieces?.spotlights.length ? [["Set-pieces", setPiecesResult(setPieces), "each opening, closing and spotlight call: its MATERIAL's numbered results, and the words its reply's fact block gave for each (`builtFrom`) found in its prose; each Begin card's spotlight roll followed by its cutaway or by the note that it is the table's to envision", "high for the arithmetic; whether a result is in the scene recognisably, and not only in the words given, is for the reading"]] : []),
       ...(refrains ? [["Refrains", refrainsResult(refrains), "each session's narrations of play, the opening and closing scenes and the @scene answers apart: the content words and the phrases by how many narrations hold them; the last two sentences of each", "medium: it counts what is said in the same words — a device said in new words each time is for the reading"]] : []),
+      ...(scenes ? [["Scenes", scenesResult(scenes), "the table after each step: a new scene id is a scene begun, its anchor (`sceneBegan`) says why; each card's scene stamp places its narration", "high for the count; whether a scene turned where the story did is for the reading"]] : []),
+      ...(places ? [["One place", placesResult(places), "each narration and @scene answer against the ship's position record and the frame's where against the recorded place, at its step", "low: a phrase list to start the cold read from"]] : []),
+      ...(reconciliations ? [["Reconciling in prose", `${reconciliations.total} sentence(s)${reconciliations.sessions.length ? ` — ${reconciliations.sessions.map(x => `${x.phase}: ${x.sentences.length} (${[...new Set(x.sentences.map(y => y.step))].join(" ")})`).join(" · ")}` : ""}`, "each sentence of a narration of play against a phrase list (\"no longer at\", \"though the scene frame\", \"still off …, so\")", "low: a phrase list, then the cold read"]] : []),
+      ...(colour ? [["Colour told as fact", `${colour.told.length} sentence(s) of the summaries, the recap and the Chronicle hold a colour truth's own words (of ${colour.colourTruths} colour truth(s) the table held)`, "each helper sentence against each colour truth's words that no truth that binds and no player's line holds", "medium: shared words, to be read"]] : []),
+      ...(provenance ? [["What binds", provenanceResult(provenance), "every truth the ledger held, by its basis; each tagged truth of the narrator's recorded fact blocks against the basis it was stored with", "high"]] : []),
+      ...(openings?.length ? [["Openings", `${openings.length} opening(s) told where the last session stopped — ${openings.filter(o => o.fromRecord).length} by its record — each to read cold against its WHERE block (below)`, "each opening's call: its WHERE block, and the opening the table read", "the reading's"]] : []),
       ...(recapCites?.totals.recaps ? [["Recap — what it rests on", recapCitesResult(recapCites), "each sentence of each campaign recap the table held, beside the lines of its source it cites: the cache's ids (`campaignRecapCache.cites`) against the recap's recorded request", "high for the ids; whether a sentence says only what its lines say is for the reading"]] : []),
       ...(recordSizes?.ends.length || recordSizes?.last?.pages.length ? [["Record sizes", recordSizesResult(recordSizes), "each Session Log page's `sessionRecord` as JSON, in characters, at the step each session closed and at the run's end", "high"]] : []),
       ["Speed", speed ? speedResult(speed) : "not recorded", "each call's latency; the time from a line of play, and from a scene question, to the first narration after it", "high"],
@@ -1151,6 +1536,26 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       if (below.length) out.push(`Phrases in fewer: ${below.map(r => `"${r.what}" ${r.in} (${r.steps.join(" ")})`).join("; ")}.`, "");
       out.push(`Endings that leave someone waiting, watching or still: ${x.endings.waiting} of ${x.endings.of}${x.endings.steps.length ? ` — ${x.endings.steps.map(e => `${e.step}: …${cell(e.sentence.slice(-90))}`).join("; ")}` : ""}.`, "");
     }
+  }
+  // Overhaul 2's counts, where the run has them (a run scored from before them has none).
+  if (scenes || places || reconciliations || colour || provenance) {
+    out.push(...againstRunFour({ refrains, mechanics, scenes, places, reconciliations, colour, provenance, openings, ledger }));
+  }
+  if (scenes?.total) {
+    out.push("## Scenes", "", "Each session's scenes in order: why each began (its anchor's cause, and its words) and how many narrations of play it had. A scene turns when its place or its situation changes (overhaul 2 §4).", "",
+      table(["Session", "Began at", "Cause", "Why", "Narrations of play"], scenes.sessions.flatMap(x => x.scenes.map(c => [x.phase, c.at, c.cause ?? "", c.what, c.beats]))), "");
+  }
+  if (places && (places.total || places.asked.length)) {
+    out.push("## One place — what to read cold", "", "Each narration or @scene answer whose prose says where the ship is against her record at its step, and each frame that names another recorded place with no line naming it. A docked cutter beside her is no contradiction: read each.", "");
+    if (places.total) out.push(table(["At", "What", "It says", "The record"], places.sessions.flatMap(x => x.contradictions.map(c => [c.step, c.kind, c.quote, c.record]))), "");
+    if (places.asked.length) out.push("### Asked where the ship is", "", table(["At", "Question", "Answer", "Her record"], places.asked.map(a => [a.step, a.question, a.answer, a.record ?? "none"])), "");
+  }
+  if (reconciliations?.total) out.push("## Reconciling in prose — each to be read", "", table(["At", "Sentence"], reconciliations.sessions.flatMap(x => x.sentences.map(y => [y.step, y.sentence]))), "");
+  if (colour?.told.length) out.push("## Colour told as fact — each to be read", "", table(["Where", "Sentence", "The colour truth", "Its words"], colour.told.map(c => [c.where, c.sentence, c.fact, c.words.join(", ")])), "");
+  if (provenance?.tags.refusedFacts.length) out.push("## Tags refused", "", table(["At", "Tagged", "The truth"], provenance.tags.refusedFacts.map(f => [f.step, f.from, f.fact])), "");
+  if (openings?.length) {
+    out.push("## Openings against where the last session stopped — read each cold", "");
+    for (const o of openings) out.push(`### At ${o.step} — ${o.fromRecord ? "by the record" : "by the summary"}`, "", ...o.block.map(l => `> ${l}`), "", `The opening: ${o.prose || "(no opening card at that step)"}`, "");
   }
   if (recapCites?.recaps.length) {
     out.push("## The recap, sentence by sentence — what each rests on", "",

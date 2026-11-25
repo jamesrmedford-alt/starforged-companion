@@ -249,24 +249,23 @@ describe('the beats that need the connection ask the world for it, not for beat 
 describe('the rehearsal walks either road: its readers refuse a connection already made, and its player keeps to its beats', () => {
   const entry = CHARTER.rehearsal.find(e => e.beat === 2 && e.move?.id === 'make_a_connection');
   const turn = (beat) => ({ system: 'You are playtesting', tools: [{ name: 'take_action' }], messages: [{ role: 'user', content: `CURRENT BEAT: ${beat} of 27 [session 1] — Meet someone\n\nYOUR SCREEN NOW:\n[m1] Gamemaster: hello` }] });
-  const pacing = (connections) => ({ system: 'You are the pacing pre-classifier for a Starforged table.', messages: [{ role: 'user', content: `## CHARACTER\nName: Mira Kestrel\nSITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded).\n- Connections: ${connections}.\n\n## PLAYER INPUT\n${entry.text}` }] });
-  const reading = (r, connections) => JSON.parse(r.reply(pacing(connections)).content[0].text);
+  // The line reader's call (src/moves/reader.js): its SITUATION block lists the character's connections.
+  const lineReader = (connections) => ({ system: 'You are the line reader for a Starforged table.', messages: [{ role: 'user', content: `MODE — READ THE LINE: say which move it sets about, if any.\n\nSITUATION — Mira Kestrel's sheet as it stands:\n- Meters: Health 5 of 5 (full, not wounded).\n- Connections: ${connections}.\n\nPLAYER LINE\n"${entry.text}"` }] });
+  const reading = (r, connections) => JSON.parse(r.reply(lineReader(connections)).content[0].text);
   const rehearse = () => { const r = createRehearsal({ charter: { ...CHARTER, rehearsal: [entry] } }); r.reply(turn(2)); return r; };
 
   it('makes the scripted Make a Connection where she is no one\'s connection yet — the "No one" road', () => {
     expect(entry.move).toMatchObject({ id: 'make_a_connection', target: 'Tamsin Vey' });
-    expect(reading(rehearse(), 'none')).toMatchObject({ decision: 'MOVE', suggestedMove: 'make_a_connection' });
+    expect(reading(rehearse(), 'none')).toMatchObject({ move: 'make_a_connection', asked: true, stat: 'heart', target: 'Tamsin Vey' });
   });
 
   it('narrates it where the sheet already holds her — under her name, or the part of it her card was made under', () => {
     for (const held of ['"Tamsin Vey" (dangerous, relationship 0 of 10 boxes)', '"Tamsin" (dangerous, relationship 0 of 10 boxes)']) {
       const r = rehearse();
-      expect(reading(r, held), held).toMatchObject({ decision: 'NARRATIVE', suggestedMove: null, reasoning: expect.stringContaining('is already among the connections') });
-      const asked = { system: 'You are the move interpreter.', messages: [{ role: 'user', content: `Connections:\n- Connections: ${held}.` }] };
-      expect(JSON.parse(r.reply(asked).content[0].text)).toMatchObject({ noMove: true, moveId: null });
+      expect(reading(r, held), held).toMatchObject({ move: null, reason: expect.stringContaining('is already among the connections') });
     }
     // Someone else held is no reason to refuse her.
-    expect(reading(rehearse(), '"Idris Vane" (troublesome, relationship 0 of 10 boxes)')).toMatchObject({ decision: 'MOVE' });
+    expect(reading(rehearse(), '"Idris Vane" (troublesome, relationship 0 of 10 boxes)')).toMatchObject({ move: 'make_a_connection' });
   });
 
   it('its scripted player waits for a later beat\'s entry until that beat comes, and does not spend its patience on it', () => {
@@ -508,7 +507,7 @@ describe('the recovery beat is aimed at what the sheet holds spent (the fourth l
       journal: { contents: [] }, scenes: { contents: [] },
     };
     const table = await withPage({ game }, () => readTable({ page: { evaluate: async (fn, arg) => fn(arg) } }));
-    expect(table.ship).toEqual({ token: null, tokenAt: null, name: 'Kobayashi IV', integrity: 4, integrityMax: 5, battered: false });
+    expect(table.ship).toEqual({ token: null, tokenAt: null, name: 'Kobayashi IV', integrity: 4, integrityMax: 5, battered: false, position: null });
     expect(sheetSpent(table).spent).toEqual(['spirit', 'integrity']);
   });
 });

@@ -1034,17 +1034,22 @@ scores `not-achieved` at `storage`. Run both after a change to the runner.
 **The long haul's rehearsal rolls** (`createRollingRehearsal`). The memory
 charter's stand-in narrates every line, so it reaches nothing on the move
 path — and the first live run stalled on a question the module puts to the GM
-before the dice. A charter with beats is rehearsed by a stand-in whose
-classifier calls a move where the script makes the line one (`move: { id,
-stat, target }` on a `say` or a `click`) and whose interpreter names it; the
-resolver then rolls for real, so the confirmation, the held result, the price,
-the suffer card, the victory card and every prompt on the way are reached with
-no key. Its scripted player finds a button by its label, a dropdown by its
+before the dice. A charter with beats is rehearsed by a stand-in whose line
+reader reads the script's move where the script makes the line one (`move: {
+id, stat, target }` on a `say` or a `click`) — one reply in the reader's own
+format (src/moves/reader.js, as parseReading reads it), in its open, roll and
+chosen modes. The script's lines name no move, so it reads each scripted move
+as asked for: unasked, the module's own route would offer what the two
+readers' stand-in rolled (a move with no roll; a roll after a dense run of
+rolls — readAndRoute routeReading). A line the script offers a move for
+(`offer`) is read unasked, and offered. The resolver then rolls for real, so
+the confirmation, the held result, the price, the suffer card, the victory
+card and every prompt on the way are reached with no key. Its scripted player finds a button by its label, a dropdown by its
 option and a window by its title on the screen its prompt shows; waits a few
 turns for one that is not there yet; skips what the table never offered; and
 drops an entry whose `beat` the pointer has passed — and waits on one whose
 `beat` the pointer has not come to, which played early would land in the
-window of the beat before. Its readers make the script's move save one: a
+window of the beat before. Its reader reads the script's move save one: a
 Make a Connection for someone the SITUATION block already lists among the
 character's connections is narrated, as the live readers read it (the fourth
 live run, a5–a8); before, the stand-in rolled it all the same, so no rehearsal

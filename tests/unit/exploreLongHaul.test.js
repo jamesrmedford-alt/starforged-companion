@@ -45,6 +45,7 @@ import {
 } from '../../test/ci/playwright/lib/player.mjs';
 import { buildRequest } from '../../test/ci/playwright/lib/anthropic.mjs';
 import { createRehearsal, readScreenText } from '../../test/ci/playwright/lib/rehearsal.mjs';
+import { buildReaderSystemPrompt, buildReaderUserMessage, parseReading } from '../../src/moves/reader.js';
 import {
   annotatedTranscript, cachingOf, contentOverlap, costSplit, frictionOf, lengthOf, percentile, questionsOf, repetitionOf, rolesIn, scorecard, slipsOf, speedOf, spokenFor,
 } from '../../test/ci/playwright/lib/review.mjs';
@@ -951,14 +952,16 @@ describe('a rehearsal that rolls', () => {
     expect(r.skipped.map(s => s.why)).toEqual(['beat 1 was over', 'beat 1 was over', 'beat 2 was over', 'beat 3 was over', 'beat 3 was over']);
   });
 
-  it('its classifier calls a move where the script makes the line one, and its interpreter names it', () => {
+  it('its line reader reads the move where the script makes the line one — asked for, with its stat — and a line it does not as none', () => {
+    // The line reader's call (src/moves/reader.js), as the module makes it and reads the reply.
+    const reader = (text) => module(buildReaderSystemPrompt(), buildReaderUserMessage({ mode: 'open', text, situation: {} }));
     const r = createRehearsal({ charter: mini });
     r.reply(turn('CHAT: empty', 2));                                   // skips to "I work the docks."
-    expect(JSON.parse(textOf(r.reply(module('You are the pacing pre-classifier …'))))).toMatchObject({ decision: 'MOVE', suggestedMove: 'gather_information', confidence: 0.95 });
-    expect(JSON.parse(textOf(r.reply(module('You are the move interpreter …'))))).toMatchObject({ moveId: 'gather_information', moveName: 'Gather Information', statUsed: 'wits', isProgressMove: false });
+    expect(parseReading(textOf(r.reply(reader('I work the docks.'))), { narration: 'I work the docks.' }))
+      .toMatchObject({ moveId: 'gather_information', asked: true, risk: 'high', failed: null, interpretation: { moveName: 'Gather Information', statUsed: 'wits', isProgressMove: false } });
     const plain = createRehearsal({ charter: mini });
     plain.reply(turn('CHAT: empty', 1));
-    expect(JSON.parse(textOf(plain.reply(module('You are the pacing pre-classifier …')))).decision, 'a line the script does not make a move is narrated').toBe('NARRATIVE');
+    expect(parseReading(textOf(plain.reply(reader('!begin-session'))), { narration: '!begin-session' }).moveId, 'a line the script does not make a move is no move').toBeNull();
   });
 
   it('its narrator records what the player plants, answers a probe only when the fact is in front of it, and decides a plan it is asked to', () => {
@@ -1216,10 +1219,15 @@ describe('the long-haul charter', () => {
   });
 
   it('its facts are the issue\'s — a possession, a name, a handover, a promise, the ship, a correction, a rename — each with what refuses it', () => {
-    expect(CHARTER.facts.map(f => f.id)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7']);
+    expect(CHARTER.facts.map(f => f.id)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8']);
     for (const f of CHARTER.facts) {
       expect(f.refusals?.length, `${f.id} has a refusal`).toBeGreaterThan(0);
-      expect(f.probes.length, `${f.id} is probed`).toBeGreaterThanOrEqual(2);
+      // F8, overhaul 2's (issue #386 §14 — the fourth live run's a6/a7): a thing
+      // given and then left. It is read through its refusals, the colour told as
+      // fact and the openings, never by a probe: one would change what a probe
+      // set's beat asks of the kept runs.
+      if (f.id === 'F8') expect(f.probes, 'F8 is not probed').toEqual([]);
+      else expect(f.probes.length, `${f.id} is probed`).toBeGreaterThanOrEqual(2);
       expect(f.from === 'world' ? CHARTER.beats.some(b => b.id === f.plantedBy) : true, `${f.id} is planted by a beat that exists`).toBe(true);
     }
     expect(CHARTER.baits).toHaveLength(2);

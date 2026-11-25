@@ -317,6 +317,37 @@
             "ask": "What is my bonded friend's full name now?"
           }
         ]
+      },
+      {
+        "id": "F8",
+        "kind": "an item given and then left",
+        "required": true,
+        "statement": "Mira left the dock-fee slip Tamsin gave her on Tamsin's counter.",
+        "variants": [
+          "counter"
+        ],
+        "anchor": [
+          "slip"
+        ],
+        "refusals": [
+          {
+            "id": "she still has it",
+            "subject": [
+              "slip"
+            ],
+            "near": [
+              "in your hand",
+              "in your hands",
+              "on your knee",
+              "in your pocket",
+              "in your jacket",
+              "you still have",
+              "tucked in your",
+              "you kept the"
+            ]
+          }
+        ],
+        "probes": []
       }
     ],
     "baits": [

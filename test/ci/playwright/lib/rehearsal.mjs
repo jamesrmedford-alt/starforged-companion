@@ -23,10 +23,11 @@
 // stand-in narrated every line without a roll, so it could find nothing on
 // the move path — and the first live run stalled on a question the module
 // puts to the GM before the dice. Here the script says which lines are moves
-// (`move: { id, stat, … }`), the stand-in's classifier calls a move for them
-// and its interpreter names it, and the resolver rolls: the confirmation, the
-// suffer cards, the victory card and the prompts of all of them are reached
-// with no key. The script presses buttons by their label (`click`), picks
+// (`move: { id, stat, … }`), the stand-in line reader reads that move in them
+// (src/moves/reader.js: one call, answered in the reader's own reply), the
+// module routes the reading to a roll, and the resolver rolls: the
+// confirmation, the suffer cards, the victory card and the prompts of all of
+// them are reached with no key. The script presses buttons by their label (`click`), picks
 // dropdown options (`choose`) and closes windows, finding each on the screen
 // its prompt shows, and skips what the table never offered.
 
@@ -153,9 +154,8 @@ export function createRehearsal({ charter, forget = false }) {
     const text = (t) => ({ content: [{ type: "text", text: t }], stop_reason: "end_turn" });
 
     if (tool === "take_action") return toolUse(playerInput(user));
-    if (system.includes("pacing pre-classifier")) {
-      return text(JSON.stringify({ decision: "NARRATIVE", suggestedMove: null, sceneChallenge: null, category: "social", confidence: 0.9, reasoning: "rehearsal: narrated, no roll" }));
-    }
+    // The line reader: every line narrated, none a move (a roll asked for, or a move a card chose, aside).
+    if (system.startsWith(LINE_READER)) return text(lineReaderReply(system, user, {}));
     if (system.includes("chronicle scribe")) {
       return text(JSON.stringify(knows
         ? { type: "discovery", salience: "notable", text: fact.statement }
@@ -183,6 +183,74 @@ export function createRehearsal({ charter, forget = false }) {
 // ── a rehearsal that rolls ───────────────────────────────────────────────────
 
 const TITLE = (id) => String(id ?? "").split("_").map(w => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+
+// ── the line reader ──────────────────────────────────────────────────────────
+
+/** The line reader's system prompt opens so (src/moves/reader.js ROLE). */
+const LINE_READER = "You are the line reader";
+/** A roll asked for of a line the script makes no move: Face Danger +wits, as the two readers' stand-in read it. */
+const ANY_ROLL = Object.freeze({ id: "face_danger", stat: "wits" });
+
+/**
+ * The line reader's reply in its own format — one JSON object, its keys in
+ * the order THE REPLY gives them, a key left out where it would be null or
+ * false (src/moves/reader.js, as parseReading reads it) — for the scripted
+ * entry the table is answering, in the mode the call's user message opens
+ * with:
+ *
+ *   READ THE LINE (open) — a `say` the script makes a move (`move`) is that
+ *     move, asked for: its stat, target, ranks and heal situation the
+ *     script's, a rolled move's risk high. Asked, because the script's lines
+ *     never name a move (decisions.md → "A player is never made to name a
+ *     move"), and unasked, the module's own route would offer what the two
+ *     readers' stand-in rolled — a move with no roll (Develop Your
+ *     Relationship, Reach a Milestone) and a roll after a dense run of rolls
+ *     (src/pacing/readAndRoute.js routeReading, rows 6 and 8). A `say` the
+ *     script offers a move for (`offer`) is that move unasked, at little
+ *     risk: offered. A Make a Connection for someone the SITUATION already
+ *     lists among the connections (`connected`), and any other line, is no
+ *     move.
+ *   A ROLL WAS ASKED FOR (roll) — never no move: the script's move, else its
+ *     offer, else Face Danger +wits.
+ *   THE MOVE IS CHOSEN (chosen) — the chosen move, with the script's stat
+ *     and target where the script's move is that move.
+ *
+ * Whether a reading is rolled, offered or narrated is the module's
+ * (routeReading), never the reader's. Pure.
+ *
+ * @param {string} system — the call's system prompt: its THE MOVES says which moves are made with no roll
+ * @param {string} user — its user message: the MODE line it opens with
+ * @param {object} entry — the scripted entry the table is answering ({} for none)
+ * @param {{ connected?: string|null }} [o]
+ * @returns {string}
+ */
+function lineReaderReply(system, user, entry, { connected = null } = {}) {
+  const chosen = /^MODE — THE MOVE IS CHOSEN: ([a-z_]+)/m.exec(String(user ?? ""))?.[1] ?? null;
+  const roll = !chosen && /^MODE — A ROLL WAS ASKED FOR\b/m.test(String(user ?? ""));
+  // A move with no roll has no risk (moves/readerCatalogue.js renderReaderCatalogue: `- id (Name; no roll): …`).
+  const unrolled = (id) => new RegExp(`^- ${id} \\([^)\\n]*; no roll\\)`, "m").test(String(system ?? ""));
+  const read = (move, reason, { asked = false, risk = "high" } = {}) => JSON.stringify({
+    move: move.id,
+    ...(asked ? { asked: true } : {}),
+    ...(unrolled(move.id) ? {} : { risk }),
+    category: move.category ?? "exploration",
+    confidence: "high",
+    reason,
+    ...(move.target ? { target: move.target } : {}),
+    ...(move.stat ? { stat: move.stat } : {}),
+    ...(move.heal ? { healSituation: move.heal } : {}),
+    ...(move.expeditionRank ? { expeditionRank: move.expeditionRank } : {}),
+    ...(move.rank ? { combatRank: move.rank } : {}),
+  });
+  const none = (reason) => JSON.stringify({ move: null, category: "social", confidence: "high", reason });
+  const said = entry?.action === "say";
+  if (chosen) return read(entry?.move?.id === chosen ? entry.move : { id: chosen }, `Rehearsal: the card the table pressed chose ${TITLE(chosen)}.`);
+  if (roll) return read(entry?.move ?? entry?.offer ?? ANY_ROLL, "Rehearsal: a roll was asked for.");
+  if (said && connected) return none(`Rehearsal: ${connected} is already among the connections; there is no connection to make.`);
+  if (said && entry.offer) return read(entry.offer, `Rehearsal: the script offers this line ${TITLE(entry.offer.id)}.`, { risk: "slight" });
+  if (said && entry.move) return read(entry.move, `Rehearsal: the script makes this line ${TITLE(entry.move.id)}.`, { asked: true });
+  return none("Rehearsal: narrated, no roll.");
+}
 
 /**
  * The vow truths a narration's system prompt asks to have told: each plan
@@ -228,8 +296,9 @@ export function readScreenText(user) {
  * The script's entries are the player's actions, each optionally tagged:
  *   beat    — the beat it belongs to: skipped once the pointer is past it;
  *   move    — on a `say` or a `click`: the move the line is (`{ id, stat,
- *             target, rank, heal }`); the classifier calls it, the
- *             interpreter names it;
+ *             target, rank, heal }`): the line reader reads it so, asked
+ *             for, and the module rolls it (a card's chosen move is read
+ *             with the script's stat and target);
  *   plants  — fact ids the line states: the narrator repeats and records them;
  *   probe   — a fact id the line asks about: answered if the fact is in
  *             front of the narrator;
@@ -239,10 +308,11 @@ export function readScreenText(user) {
  *             are written there, where the cast's full name is not: a cast
  *             member under a part of the name ("Tamsin" for Tamsin Vey — what
  *             the third live run's detector proposed);
- *   offer   — on a `say`: the move the classifier offers for the line rather
- *             than makes (`{ id }`: NARRATIVE_WITH_MOVE_AVAILABLE), so the
- *             narration carries a "Roll …" button — a step toward a vow said
- *             in the fiction is offered its milestone so;
+ *   offer   — on a `say`: the move the line reader reads in the line
+ *             unasked, at little risk (`{ id }`), which the module offers
+ *             rather than makes — the narration carries a "Roll …" button: a
+ *             step toward a vow said in the fiction is offered its milestone
+ *             so (a move with no roll is offered, unasked);
  *   sidecar — a fact block the narrator sends with this line's reply whether
  *             or not one was asked for: an @scene answer is asked for none,
  *             and the module drops one that comes anyway;
@@ -256,10 +326,10 @@ export function readScreenText(user) {
  * rehearsal walks the reveal (known-issues VOW-FULFILLED-WITH-NOBODY-NAMED).
  * It tells nothing a prompt does not ask for.
  *
- * The stand-in readers make the script's move — save one: a Make a Connection
- * for someone the readers' SITUATION block already lists among the
- * character's connections is no move, and the line is narrated, as the live
- * readers read it (the fourth live run, a5–a8). The stand-in used to roll it
+ * The stand-in reader reads the script's move — save one: a Make a
+ * Connection for someone the reader's SITUATION block already lists among
+ * the character's connections is no move, and the line is narrated, as the
+ * live readers read it (the fourth live run, a5–a8). The stand-in used to roll it
  * all the same, so a rehearsal could never show a connection made by a draft
  * card rather than by the roll (known-issues
  * CONNECTION-MADE-BY-CONFIRMING-A-DRAFT); with the GM's rules on that road
@@ -288,8 +358,8 @@ export function createRollingRehearsal({ charter, forget = false }) {
   let turn = 0;
   const skipped = [];
   const sameName = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
-  // The character's connections, as the readers' SITUATION block names them
-  // (src/moves/situation.js renderSituation: `- Connections: "Tamsin Vey" (…)`).
+  // The character's connections, as the line reader's SITUATION block names them
+  // (src/moves/readerSituation.js buildReaderSituationBlock: `- Connections: "Tamsin Vey" (…)`).
   const connectionsIn = (text) => [...(/^- Connections: (.*)$/m.exec(String(text ?? ""))?.[1] ?? "").matchAll(/"([^"]+)"/g)].map(m => m[1]);
   /** The connection a scripted Make a Connection asks for that the sheet already holds — by name, or as one cast member — or null. */
   const connectedAlready = (entry, text) => {
@@ -450,29 +520,9 @@ export function createRollingRehearsal({ charter, forget = false }) {
     const entry = current ?? {};
 
     if (tool === "take_action") return toolUse(playerInput(user));
-    // A Make a Connection for someone already a connection is no move (the live readers' reading).
-    const connected = connectedAlready(entry, `${system}\n${user}`);
-    if (system.includes("pacing pre-classifier")) {
-      if (connected && entry.action === "say") {
-        return text(JSON.stringify({ decision: "NARRATIVE", suggestedMove: null, sceneChallenge: null, category: "social", confidence: 0.9, reasoning: `rehearsal: ${connected} is already among the connections — there is no connection to make` }));
-      }
-      if (entry.offer && entry.action === "say") {
-        return text(JSON.stringify({ decision: "NARRATIVE_WITH_MOVE_AVAILABLE", suggestedMove: entry.offer.id, sceneChallenge: null, category: entry.offer.category ?? "progress", confidence: 0.9, reasoning: `rehearsal: the script offers this line ${entry.offer.id}` }));
-      }
-      return text(JSON.stringify(entry.move && entry.action === "say"
-        ? { decision: "MOVE", suggestedMove: entry.move.id, sceneChallenge: null, category: entry.move.category ?? "action", confidence: 0.95, reasoning: `rehearsal: the script makes this line ${entry.move.id}` }
-        : { decision: "NARRATIVE", suggestedMove: null, sceneChallenge: null, category: "social", confidence: 0.9, reasoning: "rehearsal: narrated, no roll" }));
-    }
-    if (system.includes("move interpreter")) {
-      if (connected) return text(JSON.stringify({ moveId: null, noMove: true, rationale: `Rehearsal: ${connected} is already a connection; there is none to make.` }));
-      const move = entry.move ?? { id: "face_danger", stat: "wits" };
-      return text(JSON.stringify({
-        moveId: move.id, moveName: TITLE(move.id), statUsed: move.stat ?? null, statValue: 0,
-        isProgressMove: move.progress === true, progressTicks: 0, moveTarget: move.target ?? null,
-        expeditionRank: move.expeditionRank ?? null, combatRank: move.rank ?? null, healSituation: move.heal ?? null,
-        rationale: `Rehearsal: the script makes this line ${TITLE(move.id)}.`,
-      }));
-    }
+    // The line reader, in the mode it is called in. A Make a Connection for
+    // someone already a connection is no move (the live readers' reading).
+    if (system.startsWith(LINE_READER)) return text(lineReaderReply(system, user, entry, { connected: connectedAlready(entry, `${system}\n${user}`) }));
     if (system.includes("chronicle scribe")) {
       const said = forget ? [] : facts.filter(f => holds(user, f)).map(f => f.statement);
       return text(JSON.stringify(said.length

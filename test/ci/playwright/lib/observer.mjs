@@ -102,6 +102,8 @@ export function readWorld(gm, facts, notMemory = []) {
         narrator: f.narratorCard === true,
         vignette: f.sessionVignetteCard === true ? (f.vignetteKind ?? "vignette") : null,
         moveId: f.moveId ?? null, outcome: f.outcome ?? null,
+        // The scene it was told in (record/cards.js's stamp — overhaul 2 §8).
+        sceneId: typeof f.sceneId === "string" && f.sceneId ? f.sceneId : null,
       };
     });
 
