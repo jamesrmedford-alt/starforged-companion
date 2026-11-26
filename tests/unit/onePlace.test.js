@@ -16,12 +16,14 @@
  *   - only a beat of play moves the ship: a bookend's, a clock vignette's and
  *     the oath scene's ship/position are dropped; the inciting incident's
  *     starting position stands;
- *   - "I take the lift down to Hollow Spire" with the frame naming it: the
- *     current location moves in the frame's persist, `place.arrived` is
- *     recorded `how: "line"`, the next beat turns the scene, the ship stays;
- *     the frame naming it with no line naming it moves nothing; a word of its
- *     name another place in the sector shares names nothing; a Set a Course's
- *     beat walks nowhere — its arrival is the move's own.
+ *   - issue #393 (overhaul 8) D3: no line walks the characters to another
+ *     place — "I take the lift down to Hollow Spire", the frame naming it,
+ *     moves nothing and records no arrival (the sixth live long haul's a64
+ *     walked Mira between two stations); only travel, `!at` and the Entities
+ *     panel move them;
+ *   - D4: the frame never names another place — a frame naming one keeps the
+ *     scene's last `where`, so the Place and Where lines never disagree;
+ *     between places the frame is taken whole.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
@@ -142,74 +144,55 @@ describe('overhaul 2 §6 — one place, on the table', () => {
     expect(ship.flags[MODULE_ID].ship.position).toMatchObject({ nearestSettlementId: HOLLOW });
   }, 60_000);
 
-  it('"I take the lift down to Hollow Spire": the current location moves with the frame, recorded; the next beat turns; the ship stays', async () => {
+  it('"I take the lift down to Hollow Spire" (issue #393 D3): no line walks them there — no arrival, no turn; the ship stays', async () => {
     table.replies = reply();
     await narrateLine('I wait at the lock.');
     const first = stored().currentSceneId;
 
     table.replies = reply({ location: 'the Hollow Spire docks', situation: 'Kira steps out of the lift' });
     const events = await recorded(() => narrateLine('I take the lift down to Hollow Spire.'));
-    expect(stored()).toMatchObject({ currentLocationId: HOLLOW, currentLocationType: 'settlement', currentSceneId: first });
-    expect(events.filter(e => e.k === 'place.arrived')).toEqual([
-      expect.objectContaining({ ref: expect.objectContaining({ place: HOLLOW }), d: expect.objectContaining({ how: 'line', name: 'Hollow Spire' }) }),
-    ]);
-    // The ship stays where its record says (D17).
+    expect(stored()).toMatchObject({ currentLocationId: BLEAKHOLD, currentLocationType: 'settlement', currentSceneId: first });
+    expect(events.filter(e => e.k === 'place.arrived')).toEqual([]);
+    // The frame's where stays the spot in Bleakhold; the rest of the frame is the narration's (D4).
+    expect(stored().sceneFrame).toMatchObject({ location: 'Bleakhold Station docking ring', situation: 'Kira steps out of the lift' });
     expect(ship.flags[MODULE_ID].ship.position).toMatchObject(DOCKED);
 
     table.replies = reply({ location: 'the Hollow Spire docks' });
     await narrateLine('I look for a drink.');
-    expect(stored().currentSceneId).not.toBe(first);
-    expect(stored().sceneBegan).toMatchObject({ cause: 'place', place: { id: HOLLOW } });
+    expect(stored().currentSceneId).toBe(first);
   }, 90_000);
 
-  it('a telling word of its name the line names walks them too; a word another place in the sector shares does not', async () => {
-    table.replies = reply();
-    await narrateLine('I wait at the lock.');
-    table.replies = reply({ location: 'the Hollow Spire docks' });
-    await narrateLine('I ride the lift down to the Spire.');
-    expect(stored().currentLocationId).toBe(HOLLOW);
-
-    // A second place in the sector with "Spire" in its name: the word names neither.
-    await gmOf(table).run(async () => {
-      const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, 'campaignState'));
-      await game.settings.set(MODULE_ID, 'campaignState', { ...cs, currentLocationId: BLEAKHOLD, locationIds: [SPIRE_POINT] });
-    });
-    table.addActor({ id: SPIRE_POINT, type: 'location', name: 'Spire Point',
-      flags: { [MODULE_ID]: { entityType: 'location', location: { _id: 'rec-sp', name: 'Spire Point', sectorId: 'sec-1' } } } });
-    await table.settle();
-    table.replies = reply();
-    await narrateLine('I wait at the lock again.');
-    table.replies = reply({ location: 'the Hollow Spire docks' });
-    await narrateLine('I ride the lift down to the Spire.');
-    expect(stored().currentLocationId).toBe(BLEAKHOLD);
-  }, 90_000);
-
-  it('the frame naming another place that no line named moves nothing', async () => {
+  it('the frame naming another place keeps its last where (D4): the Place and Where lines agree', async () => {
     table.replies = reply();
     await narrateLine('I wait at the lock.');
     const first = stored().currentSceneId;
-    table.replies = reply({ location: 'the Hollow Spire docks' });
+    table.replies = reply({ location: 'Tamsin\'s ledger stall, Hollow Spire docks' });
     const events = await recorded(() => narrateLine('I look over the stalls.'));
     expect(stored().currentLocationId).toBe(BLEAKHOLD);
+    expect(stored().sceneFrame.location).toBe('Bleakhold Station docking ring');
     expect(events.filter(e => e.k === 'place.arrived')).toEqual([]);
+    table.replies = reply({ location: 'a bench by the lock' });
     await narrateLine('I find a bench.');
     expect(stored().currentSceneId).toBe(first);
-    // The scene block goes on saying where the table's record has them.
     expect(lastSystem()).toContain('  Place:    Bleakhold Station — where the characters are, by the table\'s record');
+    expect(lastSystem()).toContain('  Where:    Bleakhold Station docking ring — as the narration has it');
+    expect(lastSystem()).not.toContain('Hollow Spire docks');
+    // A spot that names no other place is taken.
+    expect(stored().sceneFrame.location).toBe('a bench by the lock');
   }, 60_000);
 
-  it('a Set a Course\'s beat walks nowhere: a miss\'s frame "en route to Hollow Spire" under a line naming it moves nothing', async () => {
+  it('between places, the frame is taken whole: "on approach to Hollow Spire"', async () => {
     table.replies = reply();
     await narrateLine('I wait at the lock.');
+    await gmOf(table).run(async () => {
+      const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, 'campaignState'));
+      await game.settings.set(MODULE_ID, 'campaignState', { ...cs, currentLocationId: null, currentLocationType: null });
+    });
+    await table.settle();
+    const line = 'We burn hard for Hollow Spire.';
     const block = { newTruths: [], stateChanges: [],
-      sceneFrame: { location: 'en route to Hollow Spire', present: ['Kira'], situation: 'Raiders cut across the lane' } };
-    const line = 'We set a course for Hollow Spire and burn hard.';
-    const events = await recorded(() => applyBlock(block, { mode: 'move_resolution', moveId: 'set_a_course', ground: groundOf({ line }) }));
-    expect(stored().currentLocationId).toBe(BLEAKHOLD);
-    expect(events.filter(e => e.k === 'place.arrived')).toEqual([]);
-    // Control: the same line from a beat with no move, its frame naming the place, walks them there.
-    const docks = { ...block, sceneFrame: { ...block.sceneFrame, location: 'the Hollow Spire docks', situation: 'Kira steps off the ramp' } };
-    await recorded(() => applyBlock(docks, { mode: 'paced_narrative', ground: groundOf({ line }) }));
-    expect(stored().currentLocationId).toBe(HOLLOW);
+      sceneFrame: { location: 'on approach to Hollow Spire', present: ['Kira'], situation: 'The station grows in the viewport' } };
+    await applyBlock(block, { mode: 'move_resolution', moveId: 'set_a_course', ground: groundOf({ line }) });
+    expect(stored()).toMatchObject({ currentLocationId: null, sceneFrame: expect.objectContaining({ location: 'on approach to Hollow Spire' }) });
   }, 60_000);
 });

@@ -50,6 +50,11 @@ const TRACK_CAUSES = Object.freeze({ combat: 'fight', expedition: 'expedition', 
 /** The moves that arrive somewhere: their place is "reached", a GM's word's is "at". */
 const ARRIVAL_MOVES = new Set(['set_a_course', 'finish_an_expedition']);
 
+/** Whether a beat's moves include an arrival's (Set a Course, Finish an Expedition). */
+function arrivingBeat(beat) {
+  return [beat?.moveId, ...(Array.isArray(beat?.moveIds) ? beat.moveIds : [])].some(m => ARRIVAL_MOVES.has(m));
+}
+
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
 /** A ship's line that reads "docked at": its name, and where (its scope in brackets left off). */
@@ -182,12 +187,14 @@ export function sceneAnchorOf(live, { sceneId, at = Date.now(), cause = 'first',
  * @param {{ sceneId: string }} scene
  * @returns {Object|null} the anchor to keep, or null when it stands as it is
  */
-export function anchorFilled(anchor, live, { sceneId } = {}) {
+export function anchorFilled(anchor, live, { sceneId, beat = null } = {}) {
   if (!anchor || typeof anchor !== 'object' || anchor.sceneId !== sceneId) {
     return sceneAnchorOf(live, { sceneId, cause: 'first' });
   }
   const fill = {};
-  if (!anchor.place && live?.place) fill.place = live.place;
+  // A scene begun between places (issue #393 D1 — an expedition set out) is
+  // not given the place an arrival reaches: the arrival turns it (sceneTurnDue).
+  if (!anchor.place && live?.place && !arrivingBeat(beat)) fill.place = live.place;
   if (!anchor.ship && live?.ship) fill.ship = { key: live.ship.key, line: live.ship.line };
   return Object.keys(fill).length ? { ...anchor, ...fill } : null;
 }
@@ -245,9 +252,10 @@ export function sceneTurnDue(anchor, live, { line = '', moveId = null, moveIds =
   const ending = new Set((Array.isArray(endingIds) ? endingIds : []).filter(Boolean));
   const moves = new Set([moveId, ...(Array.isArray(moveIds) ? moveIds : [])].filter(Boolean));
 
-  // The characters' place, then the ship's: begins before.
-  if (anchor.place && live.place && live.place.id !== anchor.place.id) {
-    const arrived = [...moves].some(m => ARRIVAL_MOVES.has(m));
+  // The characters' place, then the ship's: begins before. A scene begun
+  // between places turns at the arrival (issue #393 D1).
+  const arrived = [...moves].some(m => ARRIVAL_MOVES.has(m));
+  if (live.place && (anchor.place ? live.place.id !== anchor.place.id : arrived)) {
     return { cause: 'place', what: causeText('place', { arrived, name: live.place.name }) };
   }
   // …but while an expedition is under way, the ship moving on its legs is

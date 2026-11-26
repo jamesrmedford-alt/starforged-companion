@@ -156,7 +156,8 @@ describe("issue #362 AC49 — an upgrade's own refused writes are on its payoff 
       && state().currentLocationId !== "actor-bleak");
     const card = await course();
     expect(refused.refused, "the arrival's write was refused (setup)").toBe(1);
-    expect(state().currentLocationId).toBe("actor-port");
+    // The miss set out (issue #393 D1): between places, where the refused arrival left them.
+    expect(state().currentLocationId).toBeNull();
 
     expect(upgradeCards()).toHaveLength(1);
     const [fail] = upgradeCards();

@@ -148,7 +148,8 @@ describe('issue #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT — a course for a new
 
     expect(control.confirmed.at(-1), 'read as Undertake an Expedition').toMatchObject({ moveId: 'undertake_an_expedition' });
     expect(control.confirmed.at(-1).courseRerouted).toMatchObject({ from: 'set_a_course', destination: GAP });
-    expect(state().currentLocationId, 'nobody arrived at Archer').toBe('actor-vigil');
+    // The expedition sets out (issue #393 D2): between places, at Archer never.
+    expect(state().currentLocationId, 'nobody arrived at Archer').toBeNull();
     // The expedition is for the gap: an uncharted site under its working label, and the track links it.
     expect(sector().mapData.discoveries, 'the gap is recorded').toHaveLength(1);
     expect(sector().mapData.discoveries[0]).toMatchObject({ name: GAP_SITE, type: 'uncharted', discovered: false });
@@ -160,7 +161,7 @@ describe('issue #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT — a course for a new
     await setACourse('the wreck beyond Bleakhold');
 
     expect(control.confirmed.at(-1)).toMatchObject({ moveId: 'undertake_an_expedition' });
-    expect(state().currentLocationId).toBe('actor-vigil');
+    expect(state().currentLocationId, 'set out — not at Bleakhold').toBeNull();
     expect(sector().mapData.discoveries.map(d => d.name)).toEqual(['Wreck Beyond Bleakhold']);
   }, 30_000);
 

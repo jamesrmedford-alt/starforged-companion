@@ -244,6 +244,7 @@ import {
   DEFAULT_NPC_FEMININE_VOICE_ID,
 } from "./audio/elevenlabs.js";
 import { getEntityDocument, readEntityFlag, registerSheetNotesRemovalHook } from "./entities/registry.js";
+import { getCurrentSiteKind } from "./entities/location.js";
 import { resolveSpeakerActorId, messageAuthorId } from "./multiplayer/speaker.js";
 import { RUN_ON, dispatchChatCommand } from "./multiplayer/commandRouting.js";
 import {
@@ -2225,6 +2226,21 @@ export function holdHandedOverForcedMoves(payload = {}, ctx = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The characters set out (issue #393 D1): no place — aboard, between places —
+ * until an arrival, the GM's `!at` or the Entities panel sets one. On the
+ * caller's copy, which its persist saves. Whether there was a place to leave.
+ *
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+function setOut(campaignState) {
+  if (!campaignState?.currentLocationId) return false;
+  campaignState.currentLocationId = null;
+  campaignState.currentLocationType = null;
+  return true;
+}
+
+/**
  * The current-location pick ({ id, type, entity }, as resolveCurrentLocationName
  * returns) for a place known by its host document id — a settlement, location
  * or planet — or null. An arrival whose destination came by id (a token
@@ -2461,43 +2477,50 @@ async function applyOutcomeEffects({
       );
       tokenMoved  = tokenReport.tokenMoved === true;
       tokenStayed = tokenReport.tokenStayed ?? null;
+    }
 
-      // When the id and the name both miss, the place the ship just docked at:
-      // the position's word scan finds "Bleakhold" in "the expedition to
-      // Bleakhold", the name resolver only a place whose name holds the whole
-      // label — the ship docked there while the current location stayed where
-      // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
-      // naming no place (free text) leaves the store untouched.
-      arrivedAt = named
-        ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
-          .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
-        ?? null;
-      if (arrivedAt) {
-        campaignState.currentLocationId   = arrivedAt.id;
-        campaignState.currentLocationType = arrivedAt.type;
-        // The pipeline's persistResolution saves its working copy; an upgrade's
-        // location is saved here, beside the ship record just written. Refused,
-        // it is a step on the upgrade's payoff card, whose Retry saves it — it
-        // was a console line (issue #362 AC49, X18's rule for the upgrade).
-        if (upgrade) {
-          try {
-            await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
-            void recordPlaceArrival(campaignState, { res: resolution._id ?? null, how: "move" });
-          } catch (err) {
-            console.warn(`${MODULE_ID} | arrival after an upgrade: the world refused the current location:`, err?.message ?? err);
-            const name = arrivedAt.entity?.name ?? arrivalName ?? null;
-            out.failures.push({ step: "arrival", reason: "refused", error: errText(err),
-              locationId: arrivedAt.id, locationType: arrivedAt.type, name });
-            notApplied.push(`the current location${name ? ` ${name}` : ""} — the world refused it; the GMs have a Retry`);
-          }
-        } else {
-          noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
-            name: arrivedAt.entity?.name ?? arrivalName ?? null });
+    // The characters arrive whether or not the ship's record and its token
+    // follow (issue #393 D2 — travel is the only way to another place): Ship
+    // Positioning and Auto-Move gate the ship's record and the token, never
+    // the arrival. With them off, a hit on Set a Course left the characters
+    // where they set out, and every reader said they were still there.
+    // When the id and the name both miss, the place the ship just docked at:
+    // the position's word scan finds "Bleakhold" in "the expedition to
+    // Bleakhold", the name resolver only a place whose name holds the whole
+    // label — the ship docked there while the current location stayed where
+    // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
+    // naming no place (free text) leaves the store untouched.
+    arrivedAt = named
+      ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
+        .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
+      ?? null;
+    if (arrivedAt) {
+      campaignState.currentLocationId   = arrivedAt.id;
+      campaignState.currentLocationType = arrivedAt.type;
+      // The pipeline's persistResolution saves its working copy; an upgrade's
+      // location is saved here, beside the ship record just written. Refused,
+      // it is a step on the upgrade's payoff card, whose Retry saves it — it
+      // was a console line (issue #362 AC49, X18's rule for the upgrade).
+      if (upgrade) {
+        try {
+          await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+          void recordPlaceArrival(campaignState, { res: resolution._id ?? null, how: "move" });
+        } catch (err) {
+          console.warn(`${MODULE_ID} | arrival after an upgrade: the world refused the current location:`, err?.message ?? err);
+          const name = arrivedAt.entity?.name ?? arrivalName ?? null;
+          out.failures.push({ step: "arrival", reason: "refused", error: errText(err),
+            locationId: arrivedAt.id, locationType: arrivedAt.type, name });
+          notApplied.push(`the current location${name ? ` ${name}` : ""} — the world refused it; the GMs have a Retry`);
         }
-      } else if (arrivalName) {
-        console.debug(`${MODULE_ID} | arrival: "${arrivalName}" is not a tracked location — currentLocation unchanged.`);
+      } else {
+        noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
+          name: arrivedAt.entity?.name ?? arrivalName ?? null });
       }
+    } else if (arrivalName) {
+      console.debug(`${MODULE_ID} | arrival: "${arrivalName}" is not a tracked location — currentLocation unchanged.`);
+    }
 
+    if (positioning) {
       // §20.4b — when the move was initiated by a Token drag and we
       // succeeded, also move the Token to the destination Note's
       // coordinates. On a miss the Token never moved (the drag was
@@ -2550,6 +2573,10 @@ async function applyOutcomeEffects({
     // destination's words.
     resolution.loremasterContext = [resolution.loremasterContext,
       arrivalNarratorLine(interpretation?.arrivalPlace ?? moveTarget, resolution.outcome)].filter(Boolean).join(" ");
+  } else if (resolution.moveId === "set_a_course" && resolution.outcome === "miss" && !upgrade) {
+    // Waylaid on the way (issue #393 D1): the characters are aboard, between
+    // places — no longer at the place they set out from — until an arrival.
+    if (setOut(campaignState)) applied.push("set out — between places until an arrival");
   }
 
   // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
@@ -2593,6 +2620,9 @@ async function applyOutcomeEffects({
           // sightings and an Action + Theme. Dropped when skeletons are off.
           resolution.skeletonRequests = [...(resolution.skeletonRequests ?? []),
             expeditionPlanRequest(result.track, campaignState, resolution._id)];
+          // Where the expedition goes, as its link resolves it (below): the
+          // recorded place its label names, else the site it is linked to.
+          const bound = { towards: null, recordedNow: false };
           try {
             const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination, saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
@@ -2655,10 +2685,34 @@ async function applyOutcomeEffects({
               } else if (recorded) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: recorded.sector?.id ?? null,
                 site: recorded.site, name: recorded.site?.name ?? null });
               linked ??= recorded;
+              bound.recordedNow = !!recorded;
             }
+            bound.towards = place?.id ?? linked?.site?.actorId ?? null;
             if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
           } catch (err) {
             console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
+          }
+          // The expedition sets out (issue #393 D2): the characters leave the
+          // place they are at — aboard, between places — until its arrival.
+          // The sixth live long haul's a22–a24 set out for the distress call
+          // while every reader said "Place: Hollow Spire". An expedition for
+          // the place they are at stays there, and so does one begun at a site
+          // (a vault, a derelict) for no other recorded place: it explores the
+          // site.
+          const here = campaignState.currentLocationId ?? null;
+          const atSite = !!getCurrentSiteKind(campaignState);
+          const elsewhere = bound.towards ? bound.towards !== here && !(atSite && bound.recordedNow) : !atSite;
+          if (here && elsewhere) {
+            setOut(campaignState);
+            if (upgrade) {
+              try {
+                await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "setting out after an upgrade");
+              } catch (err) {
+                console.warn(`${MODULE_ID} | setting out after an upgrade: the world refused the current location:`, err?.message ?? err);
+                notApplied.push("setting out — the world refused the current location");
+              }
+            }
+            applied.push("set out — between places until the expedition's arrival");
           }
         }
         await followsTheRoll(() => postExpeditionProgressCard({ ...result, actorId: rollerActor?.id ?? null }).catch(err =>

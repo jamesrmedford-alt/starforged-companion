@@ -6,6 +6,21 @@ rejected.
 
 ---
 
+## Overhaul 8, slice 1: the characters' place, as built (issue #393 — 2026-11-26)
+
+**Decision** (the maintainer: "Do the where characters are overhaul"; #393's D1–D4 at its design's recommendation, built as below — each the maintainer's to take back).
+
+- **D2 — an arrival is the characters', whatever the ship settings say.** A hit on Set a Course or Finish an Expedition sets `currentLocationId`. Ship Positioning and Auto-Move gate the ship's record and its token, never the arrival. With either off, a hit used to leave the characters where they set out.
+- **D1 — a journey that leaves sets out.** The place is none, aboard and between places, until an arrival, `!at` or the Entities panel sets one:
+  - Undertake an Expedition's new track, for another place than the one they are at;
+  - a Set a Course that misses: waylaid, they are no longer where they set out. D1's "none while aboard between places" covers it, though the scope named only the expedition.
+
+  An expedition for the place they are at leaves nothing. So does one begun at a site (a vault, a derelict) for no other recorded place: it explores the site, as Starforged's derelict exploration does. THE SCENE and the reader say "Place: none — … between places, on the expedition <label>". A scene begun between places turns at the arrival, as a place; the arrival is not filled into its anchor silently.
+- **D3, as built: no line moves the characters' place.** The scope allowed a walk within a settlement: to the settlement itself, or to a location whose `settlementId` is it. Nothing writes a location's `settlementId`, so "within the settlement" cannot be read. Building it would have left a branch that never fires. Overhaul 2's walk (§6.4, `placeWalkedTo`, `place.arrived` `how: "line"`) is retired; within a place, the frame's `where` names the spot. If records of places within a settlement are wanted, `settlementId` needs a writer first.
+- **D4 — the frame's `where` never names another place.** While the characters are at a recorded place, a narration's `where` that names another recorded settlement, planet or location keeps the scene's last `where`; the rest of the frame is taken. Between places the frame is taken whole ("on approach to Hollow Spire").
+
+---
+
 ## The sixth live round: findings tracked by status; the dice bind over a line; one record of where everyone is (2026-11-26)
 
 **Decision** (the maintainer, on reading the round's review: "Please go with the collection of recommended fixes. Do the where characters are overhaul. Players can't over rule dice"; and "consolidate the partially completed issues into a few based on finding's status and close the old ones").

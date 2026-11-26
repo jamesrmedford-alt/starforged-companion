@@ -520,6 +520,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // are told the scene by one renderer, from one read.
   const read = sceneForReading(campaignState, {
     sceneBeats: options?.sceneBeats, sceneFrameEnabled, nameChanges: options?.nameChanges ?? null,
+    underway: options?.underway ?? '',
   });
   const what = read.began?.what ?? '';
   const beats = read.began?.beats ?? null;
@@ -531,6 +532,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const vehicle = commandVehicleLines(campaignState);
   const placeLines = [];
   if (read.place?.name) placeLines.push(`  Place:    ${read.place.name} — where the characters are, by the table's record`);
+  else if (read.between) placeLines.push(`  Place:    none — the characters are between places, ${read.between}, until it arrives`);
   if (read.ship) placeLines.push(`  Ship:     ${read.ship}`);
   const frameLines = [];
   if (frame) {
@@ -678,7 +680,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
  * @returns {{ began: { cause: string, what: string, beats: number|null }|null, place: { id: string, name: string }|null,
  *   ship: string, where: string, present: string[], now: string, question: string, letGo: string[] }}
  */
-export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null } = {}) {
+export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null, underway = '' } = {}) {
   const anchor = campaignState?.sceneBegan && typeof campaignState.sceneBegan === 'object'
     && campaignState.sceneBegan.sceneId && campaignState.sceneBegan.sceneId === (campaignState.currentSceneId ?? null)
     ? campaignState.sceneBegan : null;
@@ -686,6 +688,10 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
   const began = anchor ? { cause: anchor.cause ?? 'first', what: typeof anchor.what === 'string' ? anchor.what.trim() : '', beats } : null;
   const placeName = currentPlaceName(campaignState);
   const place = placeName ? { id: campaignState.currentLocationId, name: placeName } : null;
+  // No place, on an expedition: the characters set out — aboard, between
+  // places, until its arrival (issue #393 D1).
+  const journey = typeof underway === 'string' ? underway.trim() : '';
+  const between = !campaignState?.currentLocationId && journey ? `on the expedition ${journey}` : '';
   const ship = commandVehicleLines(campaignState).position.replace(/^SHIP POSITION:\s*/, '');
   const frame = sceneFrameEnabled !== false && campaignState?.sceneFrame && typeof campaignState.sceneFrame === 'object'
     ? campaignState.sceneFrame : null;
@@ -700,6 +706,7 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
   return {
     began,
     place,
+    between,
     ship,
     where: fresh(frame?.location),
     present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
@@ -722,7 +729,9 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
 export function formatSceneForReading(scene) {
   if (!scene || typeof scene !== 'object') return '';
   const ship = /^not yet established\b/i.test(scene.ship ?? '') ? 'not yet established' : (scene.ship ?? '');
-  const head = [scene.place?.name ? `Place: ${scene.place.name}.` : '', ship ? `Ship: ${ship}.` : '']
+  const place = scene.place?.name ? `Place: ${scene.place.name}.`
+    : scene.between ? `Place: none — between places, ${scene.between}.` : '';
+  const head = [place, ship ? `Ship: ${ship}.` : '']
     .filter(Boolean).join(' ');
   const bits = [];
   if (scene.began?.what) {
@@ -1949,7 +1958,7 @@ function formatEntityCardsBlock(entityCards) {
  */
 function formatLedgerSection(campaignState, settings = {}, {
   matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
-  nameChanges = null,
+  nameChanges = null, progressTracks = [],
 } = {}) {
   const {
     factContinuityEnabled         = true,
@@ -1971,6 +1980,7 @@ function formatLedgerSection(campaignState, settings = {}, {
     sceneBeats:   Number.isInteger(sceneNarrations?.beats) ? sceneNarrations.beats : null,
     playerLine,
     nameChanges,
+    underway: expeditionUnderway(progressTracks),
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -2636,6 +2646,7 @@ export function buildNarratorSystemBlocks(
     askSceneQuestion: sidecarEnabled && factContinuitySceneFrame ? (SCENE_QUESTION_ASK[resolvedMode] ?? '') : '',
     sceneNarrations, playerLine,
     nameChanges: extras?.nameChanges ?? null,
+    progressTracks,
   });
   if (ledgerBlock) parts.push(ledgerBlock);
 
@@ -4130,4 +4141,17 @@ function inTheNamesNow(text, nameChanges) {
   const changes = Array.isArray(nameChanges) ? nameChanges : [];
   if (!text || !changes.length) return text;
   return writeNewNames(text, changes, { otherNames: actorNames() });
+}
+
+/**
+ * The open expedition the characters are under way on, by its label, or ''
+ * (issue #393 D1: with no place recorded, they are between places on it).
+ * The first open one — the tracks as the narration was given them.
+ *
+ * @param {Array<{ type?: string, label?: string, completed?: boolean }>} tracks
+ * @returns {string}
+ */
+export function expeditionUnderway(tracks) {
+  const open = (Array.isArray(tracks) ? tracks : []).find(t => t?.type === 'expedition' && t.completed !== true);
+  return open ? String(open.label ?? '').trim() : '';
 }

@@ -1740,14 +1740,14 @@ question the frame does not already hold stands only when the mode may set
 one (`QUESTION_MODES`), it shares a telling word with those words (the PCs'
 and the command vehicle's names are no evidence — `namesNoEvidence`) and it
 is no let-go question again (`playersQuestion`); a Now line that carries a
-let-go question is stored empty (`touchesLetGo`). A beat of play whose frame
-names exactly one recorded place that is not the current location, and whose
-player words name it too, walks the characters there: the current location
-moves in the frame's persist (`persistSceneLedgerFields`' `onto`, while the
-store is on the scene it was read in) and on the caller's copy, the arrival is
-recorded (`place.arrived`, `how: "line"`), and the next beat turns the scene
-(`sceneLifecycle.js placeWalkedTo` — overhaul 2 §6.4; the ship stays, D17).
-Every beat is then counted
+let-go question is stored empty (`touchesLetGo`). The frame's `where` is a
+spot within the characters' place (issue #393 D4): while they are at a
+recorded place, a `where` naming another recorded settlement, planet or
+location keeps the scene's last `where` (`sceneLifecycle.js
+framedAtThePlace`, before `applySceneFrame`; between places it is taken
+whole), and no beat walks the characters anywhere (D3 — overhaul 2 §6.4's
+walk is retired: only an arrival, `!at` and the Entities panel write the
+current location). Every beat is then counted
 against the question the frame keeps (`countSceneQuestionBeat` →
 `sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the question is let go:
 onto the frame's code-kept `letGo` list — its text and telling stems — and

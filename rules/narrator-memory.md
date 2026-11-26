@@ -351,8 +351,10 @@ layers. This file is the never-break list.
 
 6c. **One place: three stores, three facts** (overhaul 2 §6,
    SHIP-POSITION-AND-FRAME-DISAGREE). The characters' recorded place is
-   `currentLocationId` / `currentLocationType` (an arrival, `!at`, the
-   Entities panel, a line that walked them there); where the ship is, its
+   `currentLocationId` / `currentLocationType` (an arrival — whatever Ship
+   Positioning and Auto-Move say — `!at`, the Entities panel; none while they
+   are between places, set out on an expedition or waylaid by a Set a Course's
+   miss; never a line or a frame — issue #393 D1–D4); where the ship is, its
    position record (an arrival, `!at`, the panel, the token, a beat of play's
    ship/position, the X-Card's restore); `sceneFrame.location`, where in that
    place the narration has them — the narration's own, no store's fact (the

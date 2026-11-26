@@ -42,8 +42,7 @@ import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js
 import { narrateKeepingObligations } from '../moves/contracts/checks.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition, formatShipPositionLine }  from '../factContinuity/shipPosition.js';
-import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, placeWalkedTo } from '../factContinuity/sceneLifecycle.js';
-import { recordPlaceArrival } from '../record/tableSnapshot.js';
+import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, framedAtThePlace } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, rolledMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
@@ -7174,7 +7173,6 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // new position from the Ship Actor on the next turn.
   const shipPositionChanges = [];
   const otherChanges = [];
-  let walked = null;
   for (const c of sidecar.stateChanges ?? []) {
     const subject   = typeof c?.subject === 'string' ? c.subject.trim().toLowerCase() : '';
     const attribute = typeof c?.attribute === 'string' ? c.attribute.trim().toLowerCase() : '';
@@ -7273,23 +7271,14 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       const prior = campaignState.sceneFrame ?? null;
       const about = noEvidence;
       const line = !bookend && QUESTION_MODES.has(ctx.mode) ? (ctx.ground?.line ?? '') : '';
-      const framed = playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
+      // Its where is a spot within the characters' place, never another place
+      // (issue #393 D4); no line walks them to one (D3) — only travel, `!at`
+      // and the Entities panel move them.
+      const framed = framedAtThePlace(playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
         sceneId: campaignState.currentSceneId ?? null, line, about,
-      });
+      }), prior, campaignState);
       if (framed && applySceneFrame(framed, campaignState, { narrationId })) {
         campaignState.sceneFrame = countSceneQuestionBeat(campaignState.sceneFrame, prior, { bookend, about });
-        // A line that walks them to another recorded place (overhaul 2 §6.4):
-        // the frame names it and so do the player's words — the current
-        // location moves with the frame, on this copy and in its persist
-        // (a later write of this copy keeps it), and the next beat turns.
-        // Never a Set a Course's: its arrival is the move's own — the outcome
-        // decides it, and the auto-move or the GM's drag applies it with the
-        // ship (a miss's frame "en route to Hollow Spire" arrives nowhere).
-        walked = line && ctx.moveId !== 'set_a_course' ? placeWalkedTo(campaignState.sceneFrame, line, campaignState) : null;
-        if (walked) {
-          campaignState.currentLocationId   = walked.id;
-          campaignState.currentLocationType = walked.type;
-        }
       }
     }
 
@@ -7300,20 +7289,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     // ledgers whole dropped a mid-narration `!truth` correction or oracle
     // truth and resurrected a scene End a Session had just closed — so the
     // ledgers are unioned by id, and skipped when the scene changed.
-    // A walk is written onto the store's state in the same persist, while the
-    // scene it was read in is still the store's; once landed, recorded.
-    const walkedIn = campaignState.currentSceneId ?? null;
-    let arrived = false;
-    const onto = walked ? (target) => {
-      if ((target.currentSceneId ?? null) !== walkedIn) return;
-      target.currentLocationId   = walked.id;
-      target.currentLocationType = walked.type;
-      arrived = true;
-    } : null;
-    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar', { onto }).then(written => {
-      if (walked && arrived && written) void recordPlaceArrival(campaignState, { how: 'line' });
-      return written;
-    }).catch(err =>
+    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
     );
   } catch (err) {

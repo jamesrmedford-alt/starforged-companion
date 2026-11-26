@@ -1623,7 +1623,7 @@ export class SettingsPanelApp extends ApplicationV2 {
                    ${ctx.factContinuity.shipAutoMove ? 'checked' : ''} ${dis}>
             Auto-move the ship on Set a Course
           </label>
-          <span class="pacing-field-hint">A hit on Set a Course or Finish an Expedition moves the ship to the destination you named. Off: move it with !at.</span>
+          <span class="pacing-field-hint">A hit on Set a Course or Finish an Expedition moves the ship's record and token to the destination you named. The characters arrive either way. Off: move the ship with !at.</span>
         </div>
         <div class="pacing-field">
           <label class="pacing-field-label">

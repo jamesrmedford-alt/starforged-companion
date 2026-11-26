@@ -49,7 +49,6 @@ import { recordLedgerChanges } from '../record/ledgerDiff.js';
 import { recordEvent } from '../record/record.js';
 import { sceneStores, sceneAnchorOf, anchorFilled, sceneTurnDue, shipPlaceKey, causeText } from './sceneTurns.js';
 import { entryBasis, raisedBasis, binds } from './provenance.js';
-import { tellingStems } from '../world/tellingWords.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -165,7 +164,7 @@ async function turnIfDue(campaignState, beat) {
   if (!sceneId || (storedScene && storedScene !== sceneId)) return null;
 
   const live = await sceneStoresNow(campaignState);
-  const filled = anchorFilled(campaignState.sceneBegan ?? null, live, { sceneId });
+  const filled = anchorFilled(campaignState.sceneBegan ?? null, live, { sceneId, beat });
   if (filled) {
     campaignState.sceneBegan = filled;
     await persistCampaignStateFields(campaignState, ['sceneBegan'], 'scene anchor');
@@ -909,55 +908,42 @@ export function placeNamedBy(where, campaignState) {
   return ids.size === 1 ? { id: [...ids][0], type: within[0].entityType } : null;
 }
 
-/** The places a line may walk the characters to: as `!at` names them — never a ship. */
-const WALK_TYPES = new Set(['settlement', 'planet', 'location']);
+/** What the characters' place can be: as `!at` names one — never a ship. */
+const WHERE_TYPES = new Set(['settlement', 'planet', 'location']);
 
 /**
- * The recorded place a beat of play's line walked the characters to (overhaul
- * 2 §6.4), or null. The beat's frame names exactly one recorded place
- * (placeNamedBy) that is not the current location, and the beat's player
- * words name it too — its name, or a telling word of it no other recorded
- * place in the active sector has ("I take the lift down to the Spire" for
- * Hollow Spire). The caller makes it the current location in the same persist
- * as the frame, and records the arrival (`place.arrived`, `how: "line"`); the
- * next beat's check turns the scene (`place` — sceneTurns.js). A frame naming
- * another place that no line named moves nothing: the scene block goes on
- * saying where the table's record has them, and the narration follows it.
- * The ship stays where its record says (D17). Never throws.
+ * The frame a narration may keep (issue #393 D4 — the frame never names
+ * another place; overhaul 8, CHARACTERS-MOVED-BY-THE-NARRATION). While the
+ * characters are at a recorded place, the frame's `where` is a spot within it
+ * — a stall, a berth, a corridor: a `where` that names another recorded place
+ * (placeNamedBy — a settlement, a planet or a location other than the
+ * record's) is not taken, and the frame keeps the scene's last `where` (none
+ * when the scene has none). The sixth live long haul's frame said "Tamsin's
+ * ledger stall, Hollow Spire docks" for twelve narrations while the record
+ * said Bleakhold Station. Between places (no place recorded) the frame is
+ * taken whole. A line no longer walks the characters to another place (D3):
+ * only travel, the GM's `!at` and the Entities panel move them. Never throws.
  *
- * @param {Object|null} frame — the beat's frame, as applied
- * @param {string} line — the beat's player words
+ * @param {Object|null} frame — the fact block's frame, as the beat's rules made it (playersFrame / bookendFrame)
+ * @param {Object|null} prior — the stored frame
  * @param {Object} campaignState
- * @returns {{ id: string, type: string, name: string }|null}
+ * @returns {Object|null} the frame to apply
  */
-export function placeWalkedTo(frame, line, campaignState) {
+export function framedAtThePlace(frame, prior, campaignState) {
   try {
+    const here = campaignState?.currentLocationId ?? null;
     const where = typeof frame?.location === 'string' ? frame.location.trim() : '';
-    const said  = typeof line === 'string' ? line.trim() : '';
-    if (!where || !said || !campaignState) return null;
-    const place = placeNamedBy(where, campaignState);
-    if (!place || !WALK_TYPES.has(place.type) || place.id === (campaignState.currentLocationId ?? null)) return null;
-    const places = collectAllEntities(campaignState).filter(e => WALK_TYPES.has(e.entityType));
-    const record = places.find(e => (e.journalId ?? e._id) === place.id);
-    const name = String(record?.name ?? '').trim();
-    if (!name) return null;
-    const lower = said.toLowerCase();
-    const whole = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name.toLowerCase())}($|[^\\p{L}\\p{N}])`, 'u').test(lower);
-    if (whole) return { ...place, name };
-    // A word of its name no other recorded place in the active sector has.
-    const sector = campaignState.activeSectorId ?? null;
-    const others = new Set();
-    for (const e of places) {
-      if ((e.journalId ?? e._id) === place.id) continue;
-      if (sector && e.sectorId && e.sectorId !== sector) continue;
-      for (const s of tellingStems(e.name)) others.add(s);
-    }
-    const own = [...tellingStems(name)].filter(s => !others.has(s));
-    const spoken = tellingStems(said);
-    return own.some(s => spoken.has(s)) ? { ...place, name } : null;
+    if (!frame || !here || !where) return frame;
+    const named = placeNamedBy(where, campaignState);
+    if (!named || !WHERE_TYPES.has(named.type) || named.id === here) return frame;
+    const sameScene = !!prior && typeof prior === 'object' && (prior.sceneId ?? null) === (campaignState.currentSceneId ?? null);
+    const kept = sameScene && typeof prior.location === 'string' ? prior.location : '';
+    console.debug?.(`${MODULE_ID} | sceneLifecycle: the frame's "${where}" names another place than the characters' — `
+      + `its where stays ${kept ? `"${kept}"` : 'unsaid'} (issue #393 D4).`);
+    return { ...frame, location: kept };
   } catch (err) {
-    console.warn(`${MODULE_ID} | sceneLifecycle: the line's place was not read:`, err?.message ?? err);
-    return null;
+    console.warn(`${MODULE_ID} | sceneLifecycle: the frame's place was not read — taken as written:`, err?.message ?? err);
+    return frame;
   }
 }
 

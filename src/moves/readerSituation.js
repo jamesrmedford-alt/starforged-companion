@@ -170,7 +170,10 @@ export function readLineSituation(actor, { campaignState = null } = {}) {
   // The place, the ship and the frame as one read, with the table's new names
   // and what play let go — overhaul 2's renderer, the narrator's THE SCENE and
   // the pacing reader's before the switch (narratorPrompt.js sceneForReading).
-  try { situation.scene = formatSceneForReading(sceneForReading(campaignState ?? {})) || null; } catch (err) { unread("the scene", err); }
+  try {
+    situation.scene = formatSceneForReading(sceneForReading(campaignState ?? {},
+      { underway: situation.expeditions[0]?.label ?? "" })) || null;
+  } catch (err) { unread("the scene", err); }
   try { situation.charted = chartedPlaces(campaignState); } catch (err) { unread("the charted places", err); }
 
   return situation;

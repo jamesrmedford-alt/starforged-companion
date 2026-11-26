@@ -690,10 +690,13 @@ ship/position when the player's line or the prose puts the ship somewhere
 its position does not say. Only a beat of play moves the ship (a bookend's,
 a clock vignette's and the oath scene's ship/position are dropped; the
 inciting incident's starting position stands). A fight begun while docked
-tells its opening beat NOT SO [place]. A line that walks the characters to a
-recorded place the frame names moves the current location with the frame
-(`sceneLifecycle.js placeWalkedTo`; `place.arrived`, `how: "line"`), and the
-next beat turns the scene; the ship stays. Names the table changed are
+tells its opening beat NOT SO [place]. No line walks the characters to
+another place (issue #393 D3), and the frame's `where` is a spot within
+their place: one naming another recorded place keeps the scene's last
+`where` (D4, `sceneLifecycle.js framedAtThePlace`). A journey that leaves —
+an expedition for another place, a Set a Course that misses — sets out: no
+current location, "between places, on the expedition …" in THE SCENE, until
+an arrival, which turns the scene as a place. Names the table changed are
 written new in the frame's words as they are read (`writeNewNames`).
 
 **Knob:** `factContinuity.sceneFrame` (world Boolean, default on; Fact
