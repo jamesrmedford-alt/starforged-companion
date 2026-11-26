@@ -398,6 +398,15 @@ the characters are held, and the narration did not: a skiff hop took the
 character to another settlement with no journey (its findings are in #390–#392
 and `docs/known-issues.md`, LONG-HAUL-ROUND-7).
 
+**The eighth live round** (2026-11-26, $3.23, one run) measured the six fixes
+of PR #395. It is kept, reviewed in full, at
+`playwright/explorations/long-haul-live-20261126-184225/`: 24 of 27 beats,
+with no check violated and no fact lost. Beat 12's burn could not be scripted
+and spent the actions the cap then took from beats 26 and 27. The prose kept to
+the record of where everyone is without a re-ask. What a player feels now is
+the story: a vow won by a stranger, and a fight told past its end (its findings
+are in #396 and `docs/known-issues.md`, LONG-HAUL-ROUND-8).
+
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
 sixty-five in-fiction lines that name no move (but one that names its move on
