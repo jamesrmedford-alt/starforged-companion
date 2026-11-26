@@ -382,6 +382,14 @@ reader, moves as contracts and scenes with provenance, and the first to reach
 all 27 beats — reviewed the same way (its findings, issue #388) and re-scored
 after its three wrong checks were mended (`rescore.mjs`).
 
+**The sixth live round of the long haul** (2026-11-25/26, $4.78 over two runs)
+measured the fifth run's fixes. Its first run stopped at beat 22 on a fault of
+the runner's own and is kept as a partial run at
+`playwright/explorations/long-haul-live-20261125-225635/`; its second played
+all 27 beats with no check violated and is kept, reviewed in full, at
+`playwright/explorations/long-haul-live-20261125-232143/` (its findings, issue
+#389). Both are re-scored by the checks mended after them.
+
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
 sixty-five in-fiction lines that name no move (but one that names its move on
