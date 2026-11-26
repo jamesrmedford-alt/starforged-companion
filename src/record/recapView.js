@@ -95,6 +95,22 @@ export function beatFacts(beat) {
   return `${who ? `${who} — ` : ''}${parts.join(' — ')}${lasting}`;
 }
 
+/**
+ * The place a beat happened at, by the record: the scene it was played in — the
+ * one begun before it and not ended — and that scene's place. Null for a beat
+ * between places, or before any scene. Pure.
+ *
+ * @param {Object} beat — one of readRecord's beats
+ * @param {Array<{ startedAt?: number, endedAt?: number|null, place?: { name?: string }|null }>} [scenes]
+ * @returns {string|null}
+ */
+function placeOfBeat(beat, scenes = []) {
+  const at = Number(beat?.at);
+  if (!Number.isFinite(at)) return null;
+  const scene = (Array.isArray(scenes) ? scenes : []).findLast(sc => Number(sc?.startedAt) <= at && (sc.endedAt == null || at <= Number(sc.endedAt)));
+  return clean(scene?.place?.name) || null;
+}
+
 /** "Session 3", or the session's page name when it has no number. */
 const sessionLabel = (s) => (Number.isFinite(s.number) ? `Session ${s.number}` : (clean(s.name) || 'A session'));
 
@@ -129,12 +145,19 @@ export function recapSource({ read, standing = [], notes = [], earlier = [], cur
     const newest = i === sessions.length - 1;
     const key = Number.isFinite(session.number) ? `s${session.number}` : `s${i + 1}`;
     let lines = [];
+    // Where each line happened, said where it changes (RECAP-PLACES-AN-EVENT-BY-
+    // THE-NEXT, round 8: "Back at Hollow Spire you rewrapped your burn" — the
+    // dressing was at Bleakhold, before the journey, and its lines named no place).
+    let lastPlace = null;
     session.beats.forEach((beat, n) => {
       const facts = beatFacts(beat);
       if (!facts) return;
       if (!newest && !beat.lasting) return;
       const id = `${key}-${n + 1}`;
-      lines.push({ id, text: `[${id}] ${facts}`, lasting: !!beat.lasting });
+      const place = placeOfBeat(beat, session.scenes);
+      const at = place && place !== lastPlace ? `at ${place} — ` : '';
+      if (place) lastPlace = place;
+      lines.push({ id, text: `[${id}] ${at}${facts}`, lasting: !!beat.lasting });
     });
     if (!newest && lines.length > TURNING_POINTS_PER_SESSION) lines = lines.slice(-TURNING_POINTS_PER_SESSION);
     // A strike as struck, a name changed since beside it (read.js).

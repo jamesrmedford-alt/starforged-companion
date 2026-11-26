@@ -1023,7 +1023,18 @@ bring more — are filed with their rolls alone by the same apply
 ROUND-PLAN-REQUEST-CAP: the fifth onward was dropped, unfiled). Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
 asked requests list under DECIDE NOW with their oracle rolls, only when the sidecar
-is on; every prose mode, never a meta one; `formatUnrevealedBlock`. Outside
+is on; every prose mode, never a meta one; `formatUnrevealedBlock`.
+Round 8's calls add two things to it:
+- **A who-vow's culprit.** DECIDE NOW lists `extras.storyPeople` — the story's
+  connection cards, at most eight — as the culprit to prefer.
+- **A stranger shown first.** A decided who-plan whose truth names someone not
+  met (`skeletons.strangerNamedIn` → `extras.strangers`) is told "Not yet in
+  play: X …".
+- **A thread gone quiet.** On a beat of play, the plan in play quiet for
+  `QUIET_SCENES` scenes (`skeletons.quietestPlan` over `narrationCardTimes`,
+  `extras.quietThread`, its id added to `planIds`) is named under A THREAD GONE
+  QUIET with its next clue.
+Outside
 the prompt, the plans are read by one player-facing surface: the Session
 panel's What's open — a mystery's question while its truth is hidden, a
 revealed threat's or NPC agenda's subject and wants, no other field;
@@ -1037,7 +1048,9 @@ party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
 P2-21, P2-22, P2-27 — the move, paced and round modes only; with DETAILS
 ALREADY WORN since round 7 — `beatVariety`'s `wornDetails` over the same six
 cards, names, the scene frame's words and the player's line apart,
-NARRATION-REFRAINS-RISING — beside IMAGES ALREADY USED; its shape is
+NARRATION-REFRAINS-RISING — and, since round 8, words capitalised mid-sentence,
+more filler and the scene's actors (present, remote, the fight's foe) apart
+too — beside IMAGES ALREADY USED; its shape is
 said as the narrator's instruction about the narration, under `BEAT_SHAPE_LABEL`,
 never as a director's "Open on…", which came back as prose — issue #377 item 2:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
@@ -1313,6 +1326,27 @@ Consistency Check telemetry page (`kind: "obligation"`, mode `move` /
 to ([outcome], [stakes], [sheet], …) go to the post-narration audit with it
 (`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`, kind
 `obligation`).
+**After round 8** (issue #396; decisions.md → "After the eighth live round"):
+- **certain [quote]:** a quoted sentence of six words or more that an earlier
+  narration of the session gave. `proseVariety.js linesAlreadySaid` reads every
+  session card's `narrationText`, leaving out the player's own line;
+  `beatVariety` returns `extras.saidLines`, which is `obligationsFor`'s `quotes`
+  on the move and paced beats.
+- **[apparatus]** also catches a meter named mid-sentence ("…and Momentum
+  drains").
+- **judge [foe]** (`FOE_DOWN_WORDS`), on Gain Ground, Strike, Clash and React
+  Under Fire. `narrator.js fightStandingOf` reads the open combat track after the
+  move marked it: the only one, else the roller's. `{ label, full }` rides on the
+  resolution as `fightStanding`.
+- **logged TELL [journey]:** on a Set a Course hit rolled from a typed line with
+  no word of travel.
+- **[here] on a complication at the destination.** Its oracle follow-up carries
+  [here] (`extras.here` is read for `oracle_followup` too;
+  `oracleObligationsFor({ here })`), and its message says it comes from what is
+  at the destination.
+- **A chosen complication is told once.** Its follow-up stamps its cost card told
+  (`toldCardId` → `markChosenCostsTold`), so [chosen-since] does not ask for it
+  again.
 
 **The refusal is told** — in the user message, never the system prompt
 (`rules/narrator-memory.md` invariant 7b): the paced message ends with a

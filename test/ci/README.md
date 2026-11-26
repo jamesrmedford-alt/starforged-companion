@@ -435,8 +435,10 @@ key. A line the script offers a move for is read unasked, and offered. The
 stand-in's `asked` is a choice, not a measure: a rehearsal walks the beats,
 and how the real reader reads a plain line is the live run's to measure (the
 Plain lines row) and the readers' plain-line test's. A long run also writes `beats.json`,
-`mechanics.json` and `ledger.json`. Its caps are its own: 100 actions, 400
-model calls, 60 minutes, $15.
+`mechanics.json` and `ledger.json`. Its caps are its own: 400 actions, 1,600
+model calls, 240 minutes, $15 (raised from 100, 400 and 60 after the eighth
+round stopped on the action cap; the dollar cap stays). Fact continuity's
+consistency check runs in it, as in real play, so its judge lines are judged.
 
 **The short scenarios, beside the long haul** (`playwright/suites/scenarios.json`,
 run by `playwright/suite.mjs`). The long haul stays as it is — the

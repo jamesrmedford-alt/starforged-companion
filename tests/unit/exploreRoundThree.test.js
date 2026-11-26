@@ -619,7 +619,7 @@ describe('the expedition beat (b7a): off the charted lane, a waypoint looked ove
     expect(CHARTER.beats.filter(b => b.dice)).toHaveLength(7);
     // The rehearsal rolls its other two for it, so that it walks one road.
     expect(CHARTER.rehearsalDice[0].moves).toEqual(expect.arrayContaining(['undertake_an_expedition', 'explore_a_waypoint']));
-    expect(CHARTER.caps, 'the run\'s caps are a settled decision').toEqual({ actions: 100, calls: 400, minutes: 60, usd: 15 });
+    expect(CHARTER.caps, 'the run\'s caps are a settled decision — raised by the maintainer after round 8').toEqual({ actions: 400, calls: 1600, minutes: 240, usd: 15 });
   });
 
   // The module records an expedition's destination as a place — a site, with

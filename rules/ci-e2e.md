@@ -885,8 +885,9 @@ and the rules that go with each:
   quarter of the beats were never exercised (the run is not counted in its
   round), then `suspected-quality-issue` for a fact lost or refused, else
   `pass`.
-- **Its caps are the charter's** (`caps`: 100 actions, 400 calls, 60 minutes,
-  $15 — issue #373 decision 1), over the config's.
+- **Its caps are the charter's** (`caps`: 400 actions, 1,600 calls, 240
+  minutes, $15 — issue #373 decision 1, raised by the maintainer after the
+  eighth round), over the config's.
 
 **A suite of short scenarios, beside the long haul** (`suites/scenarios.json`,
 `suite.mjs`, `lib/suite.mjs`; the maintainer's "overhaul 7", an addition and

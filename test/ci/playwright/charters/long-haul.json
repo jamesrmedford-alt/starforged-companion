@@ -1,9 +1,9 @@
 {
   "description": "The long haul (issue #373; #302 slice E part 1): three sessions, about ninety player actions, through the real UI. Twenty-seven beats with results the observer checks in the world; a ledger of facts planted in play and probed at three distances and three layers, read against the narrator's answers and against what the helpers wrote; mechanical checks from the game's text after every action; seven decisive rolls scripted, the rest real; four interruptions. The GM is fixed rules. A beat's `id` is its name for good — a kept run's beats are told by it — and `n` is where it stands now: `b7a`, the expedition, was added after the third live run and stands eighth. Rehearsed with a stand-in that rolls (its script is `rehearsal`; `rehearsalDice` scripts its other rolls so a rehearsal walks the same road every time).",
   "caps": {
-    "actions": 100,
-    "calls": 400,
-    "minutes": 60,
+    "actions": 400,
+    "calls": 1600,
+    "minutes": 240,
     "usd": 15
   },
   "persona": "You play Mira Kestrel (she/her), a courier-hunter who flies her own ship, the Kobayashi IV, alone. You are a careful, plain-spoken player: short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
@@ -22,6 +22,7 @@
     "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
     "Some beats are the table's and not yours — a page reloads, a window opens and closes, an X-Card is played, a card is renamed. Wait a few seconds; the observer moves you on.",
     "A roll does not end a beat, and neither does an answer: each turn the observer's note says what it sees of the beat. When it says the beat is NOT done, do not wait for it to move you on — do what the beat asks again, in other words. Wait only on a beat that says it is the table's.",
+    "A fight whose progress track is full is not won by another attack: when a card or the Progress Tracks panel shows the fight's track full, press \"⚔ Attempt to Finish the Fight\" instead of attacking again.",
     "If the narrator has not answered yet, wait rather than repeat yourself. If the same thing fails twice, try the beat another way — still in the fiction."
   ],
   "cast": {
@@ -613,7 +614,7 @@
       "needs": [
         "b9"
       ],
-      "tell": "Attack again, in a line of play — still from the berth. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more.)",
+      "tell": "Attack again, in a line of play — still from the berth. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more — unless the fight's card says its track is full.)",
       "check": {
         "type": "burned",
         "moves": [
@@ -901,7 +902,7 @@
     "factContinuity.enabled": true,
     "factContinuity.ledgerInContext": true,
     "factContinuity.sceneFrame": true,
-    "factContinuity.consistencyCheck": false,
+    "factContinuity.consistencyCheck": true,
     "autoSeedStarship": false,
     "autoSeedConnection": false,
     "factContinuity.shipPositioning": true,

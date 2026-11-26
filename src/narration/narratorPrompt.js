@@ -2344,6 +2344,9 @@ export function buildNarratorSystemBlocks(
     planRequests         = [],
     decideNowRequests    = null,
     plannedSubjects      = [],
+    storyPeople          = [],
+    strangers            = {},
+    quietThread          = null,
     usedImages           = [],
     wornDetails          = [],
     beatShape            = null,
@@ -2703,6 +2706,11 @@ export function buildNarratorSystemBlocks(
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
       planRequests: Array.isArray(decideNowRequests) ? decideNowRequests : planRequests,
       plannedSubjects,
+      // A who-vow's culprit: the people met, and the strangers to be shown (VOW-WON-BY-A-STRANGER).
+      people: storyPeople,
+      strangers,
+      // A thread gone quiet, to be brought back with a clue (the maintainer's call after round 8).
+      quiet: quietThread,
       // An `@scene` answer writes nothing back: the plans in play without the
       // lines that ask for a record of them, and nothing to decide.
       sidecar: factContinuityEnabled && resolvedMode !== 'scene_interrogation',
@@ -3030,7 +3038,12 @@ export function formatSnapshotPlan(r) {
  *
  * @param {Object[]} skeletons — selectRelevantSkeletons' records
  * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number,
- *   coveredIds?: string[], endingSubjectIds?: string[] }} [opts] —
+ *   coveredIds?: string[], endingSubjectIds?: string[], people?: string[], strangers?: Object<string, string>, quiet?: Object|null }} [opts] —
+ *   `people`: the people the story has met, for a who-vow's DECIDE NOW to prefer as the one behind it;
+ *   `strangers`: decided who-vow plans whose truth names someone not met — id → name — each told to
+ *   show that person in play before the truth is revealed (VOW-WON-BY-A-STRANGER, round 8);
+ *   `quiet`: a thread gone quiet — { id, subject, scenes, clue } (skeletons.js quietestPlan) — told to come
+ *   back in this beat through that clue (A THREAD GONE QUIET; the maintainer's call after round 8);
  *   `plannedSubjects`: the beings that already have a plan (skeletons.js plannedBeings), listed under
  *   DECIDE NOW when an enemy or an NPC's agenda is being decided, so the narrator can answer that the
  *   "new" one is one of them (`sameAs`, issue #354 P2-30);
@@ -3040,7 +3053,7 @@ export function formatSnapshotPlan(r) {
  *   is told now (THIS BEAT ENDS A VOW, vowEndingLines)
  * @returns {string} '' when there is nothing to show
  */
-export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [], endingSubjectIds = [] } = {}) {
+export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [], endingSubjectIds = [], people = [], strangers = {}, quiet = null } = {}) {
   const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
   const covered = new Set(Array.isArray(coveredIds) ? coveredIds : []);
   const everyDecided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
@@ -3080,12 +3093,26 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
   let used = lines.join('\n').length;
   const entries = [];
   for (const r of decided) {
-    const entry = formatSkeletonEntry(r);
+    // A who-vow's culprit the story has not met is shown before the truth
+    // comes out (VOW-WON-BY-A-STRANGER: round 8's vow was won by a name the
+    // player never saw).
+    const stranger = typeof strangers?.[r.id] === 'string' && strangers[r.id].trim() ? strangers[r.id].trim() : null;
+    const entry = formatSkeletonEntry(r) + (stranger
+      ? `\n- Not yet in play: ${stranger}. Before this truth is revealed, show ${stranger} in the story — seen, met, or spoken of by name — as one of its clues.`
+      : '');
     if (entries.length && used + entry.length > budget) break;   // the first always shows
     entries.push(entry);
     used += entry.length;
   }
   if (entries.length) lines.push('', entries.join('\n\n'));
+  // A thread gone quiet (the maintainer's call after round 8): one plan that
+  // has not come up for scenes, brought back in this beat with a clue — the
+  // exception to "a beat that does not touch a subject leaves it alone".
+  if (sidecar && quiet && typeof quiet === 'object' && quiet.id && quiet.clue && list.some(r => r.id === quiet.id)) {
+    lines.push('', '### A THREAD GONE QUIET',
+      `${quiet.subject} (id ${quiet.id}) has not come up for ${quiet.scenes} scenes. Bring it back in this beat through one of its clues — `
+      + `"${quiet.clue}" — shown in the fiction, never explained, and record the reveal in your sidecar.`);
+  }
   if (named.length) {
     lines.push(
       '',
@@ -3119,8 +3146,13 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
     // A vow that asks who is won by a name (VOW-FULFILLED-UNANSWERED): its
     // truth names the one behind it — and one that names no one is given a
     // name from the name oracle when it is filed (secrets.js namedIfAWhoVow).
+    // The one behind it is one of the story's people where one fits (the
+    // maintainer's call after round 8, VOW-WON-BY-A-STRANGER), and a new one is
+    // shown in play before the truth comes out.
+    const met = (Array.isArray(people) ? people : []).map(n => String(n ?? '').trim()).filter(Boolean);
     const whoOf = (kind, name) => (kind === 'vow' && vowAsksWho(name)
-      ? ' Its truth names the one behind it — a person, by name: someone the story has met, or a new name.' : '');
+      ? ` Its truth names the one behind it — a person, by name: ${met.length ? `one of the people the story has met if one fits (${met.join(', ')}), else a new name` : 'someone the story has met, or a new name'}; a new one is shown in play, by name, before the truth is revealed.`
+      : '');
     for (const q of requests) {
       const seeds = Array.isArray(q.oracleSeeds) && q.oracleSeeds.length ? ` Oracle: ${q.oracleSeeds.join('; ')}.` : '';
       const journey = q.kind === 'expedition'

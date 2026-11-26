@@ -161,6 +161,17 @@ describe("a combat move upgraded from a miss", () => {
     expect(content(card._id)).toContain("Also applied: progress marked 2 times on Boarders; in control.");
   });
 
+  it("a blow that fills the fight's track says so on its card: only Attempt to Finish the Fight decides it (FIGHT-PAST-ITS-END)", async () => {
+    const boarders = await openTrack("Boarders", { ticks: 24 });
+    const card = await roll("strike", { moveTarget: "Boarders", combatRank: "dangerous" });
+    await click(card, BURN);
+    expect(track(boarders.id)).toMatchObject({ ticks: 40 });
+    const progress = table.cards(f => f.combatProgressCard);
+    expect(progress).toHaveLength(1);
+    expect(progress[0].content).toContain("The track is full: another blow marks nothing");
+    expect(progress[0].content).toContain("⚔ Attempt to Finish the Fight</strong> decides it.");
+  });
+
   it("Clash burned from a miss to a weak hit marks once, stays in the bad spot, and keeps the price it already paid", async () => {
     const boarders = await openTrack("Boarders", { ticks: 0 });
     const card = await roll("clash", { moveTarget: "Boarders", combatRank: "dangerous", dice: MISS_HIGH });

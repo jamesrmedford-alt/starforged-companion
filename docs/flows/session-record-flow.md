@@ -188,7 +188,9 @@ is returned `legacy: true` with the story its page holds and no beats.
 
 Phrasing shared by the views is `src/record/phrasing.js` (a move, a sheet
 change, what play did); a beat's facts are `recapView.js` `beatFacts`, read by
-the recap and the summary alike.
+the recap and the summary alike. The recap's source lines also carry their
+scene's place, `at <place> — `, where it changes (`recapView.js` `placeOfBeat`,
+over `session.scenes`; RECAP-PLACES-AN-EVENT-BY-THE-NEXT, round 8).
 
 **LAST SESSION** — `lifecycle.js` `lastSessionToTell(campaignState)`, the one
 accessor (read by `narrator.js` `previousSessionSummaryFor`, the world

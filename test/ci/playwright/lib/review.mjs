@@ -288,6 +288,12 @@ const REFRAIN_ARTICLES = new Set(["the", "a", "an", "her", "his", "its", "your",
 const REFRAIN_PREPOSITIONS = new Set(["over", "under", "at", "by", "in", "on", "from", "behind", "beside", "across", "against", "through", "above", "below", "toward", "towards", "into", "onto", "along", "around", "near", "past", "inside", "outside", "beyond"]);
 const refrainTokens = (text) => String(text ?? "").toLowerCase().match(/[a-z][a-z'’-]*/g) ?? [];
 const carries = (w) => w.length > 3 && !REFRAIN_STOP.has(w);
+// Three-letter words are counted apart, so the series of counts above stays
+// the one every round was measured by (39 in round 7, 25 in round 8): round
+// 8's cold read found Tamsin's pen in 14 of session 3's 27 narrations, and
+// `carries` never saw it (THE-REFRAINS-THE-LIST-CANNOT-NAME).
+const SHORT_STOP = new Set("its our get got let see saw way new old put set far end met use yes per via ago due lot few big ran sat lay".split(" "));
+const shortWord = (w) => w.length === 3 && !REFRAIN_STOP.has(w) && !SHORT_STOP.has(w);
 const longestRun = (hits, n) => { let best = 0, cur = 0; for (let i = 0; i < n; i++) { cur = hits.has(i) ? cur + 1 : 0; best = Math.max(best, cur); } return best; };
 
 /**
@@ -349,6 +355,7 @@ export function refrainsOf(messages = [], { marks = [] } = {}) {
     const n = narrations.length;
     const words = new Map();
     const grams = new Map();
+    const shorts = new Map();
     const hold = (map, key, i) => { if (!map.has(key)) map.set(key, new Set()); map.get(key).add(i); };
     // A name — a word the session never writes without its capital (Tamsin,
     // Bleakhold) — is counted and said to be one: who a session is about is
@@ -360,7 +367,10 @@ export function refrainsOf(messages = [], { marks = [] } = {}) {
       for (const sentence of sentencesOf(m.text)) {
         const toks = refrainTokens(sentence);
         // A word is counted with its possessive ("Tamsin's" is Tamsin); a phrase is kept as written.
-        for (const w of toks.map(t => t.replace(/['’]s$/, ""))) if (carries(w)) hold(words, w, i);
+        for (const w of toks.map(t => t.replace(/['’]s$/, ""))) {
+          if (carries(w)) hold(words, w, i);
+          else if (shortWord(w)) hold(shorts, w, i);
+        }
         for (let size = 2; size <= 4; size++) {
           for (let j = 0; j + size <= toks.length; j++) {
             const g = toks.slice(j, j + size);
@@ -388,6 +398,9 @@ export function refrainsOf(messages = [], { marks = [] } = {}) {
     });
     const byCount = (a, b) => b.in - a.in || b.run - a.run || a.what.localeCompare(b.what);
     const wordRows = [...words].filter(([, hits]) => hits.size >= 3).map(([w, hits]) => row(w, hits)).sort(byCount);
+    // A name is one the session never writes lowercase (isName reads four-letter words only).
+    const shortRows = [...shorts].filter(([w, hits]) => hits.size >= 3 && lower.has(w))
+      .map(([w, hits]) => { const r = row(w, hits); delete r.name; return r; }).sort(byCount);
     // A phrase a longer one holds, in no more narrations than it: the longer says it.
     const kept = [...grams].filter(([, hits]) => hits.size >= 3);
     const phraseRows = kept
@@ -417,6 +430,8 @@ export function refrainsOf(messages = [], { marks = [] } = {}) {
       phase, narrations: n, counted, sceneAnswers: answers.length, scenes,
       words: wordRows.slice(0, 20), phrases: phraseRows.slice(0, 20),
       refrains: counted ? { words: wordRows.filter(r => r.in >= floor), phrases: phraseRows.filter(r => r.in >= floor) } : { words: [], phrases: [] },
+      // Three-letter words, apart from the series ("pen", round 8).
+      short: counted ? shortRows.filter(r => r.in >= floor) : [],
       endings: { waiting: endings.filter(e => e.waiting).length, of: n, steps: endings.filter(e => e.waiting).map(e => ({ step: e.step, sentence: e.sentence })) },
     });
   }
@@ -1626,6 +1641,7 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       else out.push("Nothing is in a third of them.", "");
       const below = x.phrases.filter(r => !x.refrains.phrases.includes(r)).slice(0, 6);
       if (below.length) out.push(`Phrases in fewer: ${below.map(r => `"${r.what}" ${r.in} (${r.steps.join(" ")})`).join("; ")}.`, "");
+      if ((x.short ?? []).length) out.push(`Three-letter words in a third or more, counted apart from the rows above: ${x.short.map(r => `"${r.what}" ${r.in} of ${r.of} (${r.steps.join(" ")})`).join("; ")}.`, "");
       out.push(`Endings that leave someone waiting, watching or still: ${x.endings.waiting} of ${x.endings.of}${x.endings.steps.length ? ` — ${x.endings.steps.map(e => `${e.step}: …${cell(e.sentence.slice(-90))}`).join("; ")}` : ""}.`, "");
     }
   }

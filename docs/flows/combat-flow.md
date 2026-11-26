@@ -384,6 +384,19 @@ ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
 The marks land before the move's roll card is built; the "Combat progress"
 card that says so is posted after it (`afterMoveCard`, above) — for a held
 result too: the marks are the roll's, only its price and narration wait.
+Since round 8 (FIGHT-PAST-ITS-END), a full track (40 ticks) is said in three
+places:
+- The "Combat progress" card adds "The track is full: another blow marks nothing
+  — ⚔ Attempt to Finish the Fight decides it" (`index.js`
+  `postCombatProgressCard`).
+- The reader's situation reads "its track full: only Take Decisive Action ends
+  it" (`readerSituation.js`).
+- The narration of a Gain Ground, Strike, Clash or React Under Fire carries NOT
+  SO [foe] (`table.js` `obliges: ["foe"]`, `obligations.js`). The fight is not
+  decided, and on a full track the foe is beaten in all but the deciding blow,
+  which is the player's. `narrator.js` `fightStandingOf` reads the track after
+  the marks. "destroyed", "dead", "fled", "beaten" or "hulk" in the prose trips
+  the judge, and a breach is asked again.
 A move's marks never begin a fight (overhaul 4, D6 — "Combat is offered, not
 forced"): only Enter the Fray's commit, ⚔ Begin the fight on its threshold
 card, makes a combat track (`createCombatTrackFromThreshold` →

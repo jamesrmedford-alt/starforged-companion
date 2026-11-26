@@ -430,6 +430,9 @@ async function main() {
           scripted.push({ step: stepNow, beat: a.beat ?? null, move: a.note, faces: a.scripted, ...(a.price ? { price: a.price } : {}), rehearsalOnly: a.beat == null });
         }
         if (a.notScripted) log(`      not scripted: ${a.notScripted}`);
+        // The current beat's own roll the GM could not script: its beat reads
+        // it (beats.mjs `burned` — moot, not eight actions of attacks).
+        if (a.notScripted && a.notScriptedBeat != null && cur?.beat.n === a.notScriptedBeat) cur.state.unscripted = a.notScripted;
       },
     });
 

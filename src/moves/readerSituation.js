@@ -305,7 +305,9 @@ export function buildReaderSituationBlock(situation) {
   if (unknown.has("the open tracks")) {
     lines.push("- Open fights, scene challenges and expeditions: unknown.");
   } else {
-    const fights = (s.fights ?? []).map(f => trackText(f, f.position && who ? `${who} is ${POSITION_WORDS[f.position]}` : null));
+    // A full fight is ended only by Take Decisive Action (FIGHT-PAST-ITS-END: round 8's attacks on a full track).
+    const fights = (s.fights ?? []).map(f => trackText(f, [f.position && who ? `${who} is ${POSITION_WORDS[f.position]}` : null,
+      Number(f.ticks) >= 40 ? "its track full: only Take Decisive Action ends it" : null].filter(Boolean).join(", ") || null));
     lines.push(
       `- Open fights: ${fights.length ? capped(fights) : "none"}.`,
       `- Scene challenges: ${(s.challenges ?? []).length ? capped(s.challenges.map(c => trackText(c))) : "none"}.`,

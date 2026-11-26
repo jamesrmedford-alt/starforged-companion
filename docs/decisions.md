@@ -6,6 +6,57 @@ rejected.
 
 ---
 
+## After the eighth live round: a fight ends only by its move, a complication is the place's, the culprit is someone met, a quiet thread comes back, and the long haul's caps (2026-11-26)
+
+**Decision** (the maintainer: "Fix the fixable things. What needs my call? Also, raise the max calls from 100 to 400", then the recommended answer to each of four questions). Issue #396's findings were fixed where the record gives a definite answer. The four calls are recorded as decided.
+
+**The long haul's caps and its checks** (amends issue #373 decision 1, below):
+- The caps are **400 player actions, 1,600 model calls, 240 minutes and $15**. Calls rose with actions at #373's ratio. The budget did not change, so a run that costs more stops at $15.
+- The charter turns fact continuity's **consistency check on**, and with it the judge. Round 8 told [sheet] and never checked it (HARM-TOLD-WITHOUT-A-COST), and the 400-call cap that kept the judge off is gone.
+- The free rehearsal's stand-in answers `{}` to both calls, and both fail open, so the rehearsal is unchanged.
+- This supersedes the previous entry's "Rejected: turning the judge on in the long haul".
+
+**The one behind a who-vow is someone the story has met, where one fits** (VOW-WON-BY-A-STRANGER; the call "prefer someone met; show a new one first"):
+- A who-vow's DECIDE NOW lists the story's people (its connection cards, at most eight) and asks for one of them if one fits, else a new name.
+- A new name is shown in play, by name, before the truth is revealed.
+- A decided who-plan whose truth names someone not yet met is told "Not yet in play: X. Before this truth is revealed, show X in the story — seen, met, or spoken of by name — as one of its clues." The check is `skeletons.js` `strangerNamedIn`.
+- The reason: round 8's vow was won by "Dalen Voss … whose face is not one you have seen". That is a name, as VOW-FULFILLED-UNANSWERED asked, but an answer the player could not have reached.
+
+**A thread gone quiet comes back** (the call "yes, after a few quiet scenes"):
+- On a beat of play, the plan in play that has gone longest without coming up is named under A THREAD GONE QUIET, with its next clue, to be shown in the fiction and recorded in the sidecar.
+- A plan qualifies once it has gone `QUIET_SCENES` (3) scenes without a clue shown or a step played since it was made (`skeletons.js` `quietestPlan`).
+- It is a prompt line, with no extra call. It is the one exception to "a beat that does not touch a subject leaves it alone".
+- The reason: round 8 revealed one of its four hidden plans. The comm voice and the wreck went nowhere.
+
+**Only Take Decisive Action ends a fight** (FIGHT-PAST-ITS-END; the game's own rule):
+- Gain Ground, Strike, Clash and React Under Fire oblige NOT SO [foe]. The foe is never told destroyed, dead, fled, surrendered or beaten. On a full track the line also says the foe is beaten in all but the deciding blow, which is the player's.
+- It is a judge line, not a certain one, because its words ("wrecked", "crippled") also tell real harm short of the end.
+- The combat progress card and the reader's situation say when the track is full.
+- The runner gives up a burn beat whose roll came up unscripted, rather than attacking until one can be scripted.
+
+**A journey's complication is the place's** (PEOPLE-WAITING-AT-THE-ARRIVAL):
+- The follow-up of a complication at the destination is held by [here], its motion reading included. That is stricter than the review's proposal to turn motion off, and simpler.
+- It is told to come from what is at the destination.
+- A Set a Course rolled from a line with no word of travel says the crossing in a sentence ([journey], logged).
+
+**A line of speech is not said twice** (THE-REFRAINS-THE-LIST-CANNOT-NAME):
+- NOT SO [quote] is a certain check: a quoted sentence of six words or more that an earlier narration of the session gave.
+- A line the player's own words hold may be said back.
+- A meter named as the game names it is [apparatus].
+- The worn list leaves out names, filler and the scene's actors.
+
+**The recap's lines say where they happened** (RECAP-PLACES-AN-EVENT-BY-THE-NEXT): each source line is prefixed with its scene's place where it changes.
+
+**Rejected or left for a call:**
+- *A certain check for harm on a beat whose price took no health.* The judge is measured first.
+- *A draft's last frame as whereabouts.* The [here] people reading still sees only the record's people (PEOPLE-WAITING (c)).
+- *Listing devices and beat endings as worn.* Round 8's "unhurried" and the comm voice's eight endings are not listed (THE-REFRAINS (d)).
+- *Changing the charter's scripted progress dice.* They let a 4-of-10 vow be won.
+
+**Measured by** the next live long haul. The fight must be told unbeaten until Take Decisive Action. An arrival's complication must come from the place. The who-vow's culprit must be met before the reveal. Quiet plans must come back with a clue. No line of speech may be said twice. The recap must place each event. The judge's calls and re-asks are counted inside the new caps.
+
+---
+
 ## The narration held to the record in code, before it posts (2026-11-26)
 
 **Decision** (the maintainer: "Do all 6 fixes, open a pr, then another long haul" — the six of the review after seven live rounds). Where the record gives a definite answer, the narration is checked against it in code before it posts, and a draft that disagrees is asked again; where it gives none, the narrator is told what to reach past.
@@ -656,6 +707,9 @@ question"):
 
 1. **Caps per run: 100 player actions, 400 model calls, 60 minutes, $15.** A
    round is three runs. (The memory run: 12 actions, $0.34.)
+   *Amended 2026-11-26 by the maintainer: 400 actions, 1,600 calls,
+   240 minutes, $15, with the consistency check and its judge on — see
+   "After the eighth live round", at the top.*
 2. **The GM is fixed rules, no model.** A second model would add variance to
    the half of the table that must hold still, and a rule replays.
 3. **Six decisive rolls are scripted; the rest are real; all are recorded.**

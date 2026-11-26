@@ -235,7 +235,11 @@ export function startGmRules(gm, { cast = [], pcId, state, onAnswer, draftHolder
             }
           }
           pressOnce(accept);
-          return { did: "accepted the proposed move", note: moveId, scripted: scripted?.faces ?? null, notScripted: scripted?.why ?? null, beat: scripted?.faces ? (armed.beat ?? null) : null, price: scripted?.price ?? null };
+          // `notScriptedBeat`: the beat whose roll this was and could not be
+          // scripted — its burn is then out of reach, and the beat gives up
+          // at once (beats.mjs `burned`; round 8's beat 12 spent eight
+          // actions on it, and the action cap took beats 26 and 27).
+          return { did: "accepted the proposed move", note: moveId, scripted: scripted?.faces ?? null, notScripted: scripted?.why ?? null, notScriptedBeat: scripted?.why ? (armed?.beat ?? null) : null, beat: scripted?.faces ? (armed.beat ?? null) : null, price: scripted?.price ?? null };
         }
 
         // "Who are you interacting with?" — the named NPC when the line names

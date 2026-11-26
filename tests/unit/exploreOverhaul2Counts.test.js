@@ -348,8 +348,8 @@ describe('the long haul\'s three lines for overhaul 2 (design §14)', () => {
     expect(CHARTER.rehearsal.filter(e => e.beat === 22)[0]).toEqual({ beat: 22, action: 'say', text: 'I rest aboard until the next morning.' });
   });
 
-  it('the caps and every beat id as they were; the kept runs carry F8 with the rest of the scoring data', () => {
-    expect(CHARTER.caps).toEqual({ actions: 100, calls: 400, minutes: 60, usd: 15 });
+  it('the caps as the maintainer set them and every beat id as it was; the kept runs carry F8 with the rest of the scoring data', () => {
+    expect(CHARTER.caps).toEqual({ actions: 400, calls: 1600, minutes: 240, usd: 15 });
     expect(CHARTER.beats.map(b => b.id)).toEqual(['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b7a', 'b8', 'b9', 'b10', 'b11', 'b12', 'b13', 'b14', 'b15', 'b16', 'b17', 'b18', 'b19', 'b20', 'b21', 'b22', 'b23', 'b24', 'b25', 'b26']);
     for (const kept of fs.readdirSync(path.join(PLAYWRIGHT, 'explorations')).filter(n => n.startsWith('long-haul-'))) {
       const run = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'explorations', kept, 'replay.json'), 'utf8'));

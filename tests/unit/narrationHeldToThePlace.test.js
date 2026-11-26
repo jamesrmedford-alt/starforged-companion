@@ -71,7 +71,7 @@ const violationsAt = (run, step, here = HERE) => {
 };
 
 describe('NOT SO [here] — where the record has the characters, on every beat of play', () => {
-  it('a paced line and a typed move are told it; a journey\'s own move, a round, an oracle and a set-piece are not', () => {
+  it('a paced line and a typed move are told it; a journey\'s own move, a round and a set-piece are not — an oracle only when given the place', () => {
     for (const mode of ['paced', 'move']) {
       const lines = obligationsFor({ mode, resolution: mode === 'move' ? { moveId: 'develop_your_relationship', outcome: 'strong_hit' } : null, here: HERE });
       expect(lines.find(o => o.kind === 'here'), mode).toMatchObject({ list: 'NOT SO', here: 'Bleakhold Station', places: HERE.places, people: HERE.people });
@@ -81,7 +81,13 @@ describe('NOT SO [here] — where the record has the characters, on every beat o
     for (const moveId of ['set_a_course', 'undertake_an_expedition', 'finish_an_expedition']) {
       expect(obligationsFor({ mode: 'move', resolution: { moveId, outcome: 'strong_hit' }, here: HERE }).map(o => o.kind), moveId).not.toContain('here');
     }
-    for (const mode of ['round', 'oracle', 'set-piece']) expect(obligationsFor({ mode, here: HERE }).map(o => o.kind), mode).not.toContain('here');
+    for (const mode of ['round', 'set-piece']) expect(obligationsFor({ mode, here: HERE }).map(o => o.kind), mode).not.toContain('here');
+    // An oracle follow-up is held to the place only when the narrator gives it one: a journey's complication
+    // at its destination (PEOPLE-WAITING-AT-THE-ARRIVAL, round 8 — arrivalHeldToThePlace.test.js). A question
+    // asked of the oracle is given none.
+    expect(obligationsFor({ mode: 'oracle', here: HERE }).map(o => o.kind)).toContain('here');
+    expect(obligationsFor({ mode: 'oracle', oracle: { kind: 'oracle_yes_no', question: 'Is anyone aboard?', rolledLine: 'd100 = 99 → NO' } })
+      .map(o => o.kind)).not.toContain('here');
   });
 
   it('between places it says so; with no place and no expedition it is not told', () => {

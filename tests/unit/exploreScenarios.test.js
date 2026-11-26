@@ -46,7 +46,7 @@ describe('the scenarios suite, beside the long haul', () => {
     expect(SUITE.scenarios).toEqual(['scenario-fight', 'scenario-connection', 'scenario-vow', 'scenario-recovery', 'scenario-expedition', 'scenario-scene-answer']);
     expect(new Set(SUITE.scenarios).size).toBe(SUITE.scenarios.length);
     expect(SUITE.scenarios).not.toContain('long-haul');
-    expect(LONG_HAUL.caps, 'the long haul\'s caps are a settled decision').toEqual({ actions: 100, calls: 400, minutes: 60, usd: 15 });
+    expect(LONG_HAUL.caps, 'the long haul\'s caps are a settled decision — raised by the maintainer after round 8').toEqual({ actions: 400, calls: 1600, minutes: 240, usd: 15 });
     for (const name of SUITE.scenarios) expect(CHARTERS[name].name, 'a scenario\'s file and its name agree').toBe(name);
   });
 

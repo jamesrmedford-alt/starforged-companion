@@ -8385,9 +8385,14 @@ async function postCombatTrackCard({ track, created }, { actorId = null } = {}) 
 async function postCombatProgressCard({ track, marksApplied }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   const times = marksApplied === 1 ? "once" : `${marksApplied} times`;
+  // A full track is ended only by Take Decisive Action (FIGHT-PAST-ITS-END:
+  // round 8 attacked a full track six times, and no card said it was full).
+  const full = Number(track?.ticks) >= 40
+    ? `<p class="sf-card-hint">The track is full: another blow marks nothing — <strong>⚔ Attempt to Finish the Fight</strong> decides it.</p>`
+    : "";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Combat progress</strong><p>Marked progress ${times} on <strong>${label}</strong>.</p></div>`,
+      content: `<div class="sf-ptp-card"><strong>Combat progress</strong><p>Marked progress ${times} on <strong>${label}</strong>.</p>${full}</div>`,
       flags:   { [MODULE_ID]: { combatProgressCard: true, marksApplied } },
     });
   } catch (err) {

@@ -49,6 +49,7 @@ import { touchesLetGo } from "../../factContinuity/provenance.js";
 import { tellingStems } from "../../world/tellingWords.js";
 import { MOVES } from "../../schemas.js";
 import { moveDisplayName } from "../../system/i18n.js";
+import { quotedLinesOf } from "../../narration/proseVariety.js";
 
 const MODULE_ID = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -63,6 +64,8 @@ export const JUDGE_TIMEOUT_MS = 4000;
 
 const OUTCOME_NAME = /\b(?:strong|weak)[ -]hit\b/i;
 const SHEET_NUMBER = /\b\d+\s+(?:health|spirit|supply|momentum|integrity)\b|[+−-]\d+\s+momentum\b/i;
+// A meter named as the game names it, in the middle of a sentence: round 8's a71, "and Momentum drains out of you".
+const METER_TERM = /(?<=[a-z,;:] )(?:Health|Spirit|Supply|Momentum)\b/;
 // The narration speaking of its own build — the beat-shape hint read back as prose
 // (proseVariety.js BEAT_SHAPES; NARRATION-WRITES-ITS-SHAPE-DIRECTIVE): "The first
 // sentence should be about someone other than Ren: Vance, or Mira." opened a
@@ -104,6 +107,8 @@ export function certainViolations(prose, obligations, { sidecar = null } = {}) {
     if (number) out.push({ tag: "apparatus", quote: quoteAround(body, number.index, number[0].length) });
     const shape = SHAPE_ECHO.exec(body);
     if (shape) out.push({ tag: "apparatus", quote: quoteAround(body, shape.index, shape[0].length) });
+    const meter = METER_TERM.exec(body);
+    if (meter) out.push({ tag: "apparatus", quote: quoteAround(body, meter.index, meter[0].length) });
     for (const name of MULTIWORD_MOVE_NAMES) {
       const at = body.indexOf(name);
       if (at >= 0) { out.push({ tag: "apparatus", quote: quoteAround(body, at, name.length) }); break; }
@@ -117,6 +122,14 @@ export function certainViolations(prose, obligations, { sidecar = null } = {}) {
   if (material) out.push(...materialViolations(bodyOf(text), material));
   const person = (obligations ?? []).find(o => o?.kind === "person");
   if (person) out.push(...personViolations(bodyOf(text), person));
+  // [quote]: a line of speech an earlier narration of the session already
+  // gave (THE-REFRAINS-THE-LIST-CANNOT-NAME, round 8: a92 said a84's line again).
+  const quote = (obligations ?? []).find(o => o?.kind === "quote");
+  if (quote) {
+    const said = new Set(Array.isArray(quote.quotes) ? quote.quotes : []);
+    const again = quotedLinesOf(text).find(q => said.has(q));
+    if (again) out.push({ tag: "quote", quote: again, note: "an earlier narration of this session already gave this line, word for word — say it new, or let it go unsaid" });
+  }
   return out;
 }
 
@@ -392,6 +405,10 @@ export function floorViolations(prose, obligations, { vowName = null, line = "" 
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FIGHT_WORDS = ["fire", "fires", "fired", "shot", "shoots", "salvo", "strike", "strikes", "struck", "blow", "lance", "rake", "slash", "lands", "hit", "hits"];
+// A fight told as over before Take Decisive Action ([foe] — FIGHT-PAST-ITS-END: "drifting dead and hurt", "a dead thing
+// with no guns left", the cutter's "hulk", round 8's a38–a43).
+const FOE_DOWN_WORDS = ["dead", "dies", "died", "killed", "destroyed", "destroy", "wreck", "wrecked", "hulk", "fled", "flees", "retreats",
+  "surrender", "surrenders", "surrendered", "beaten", "defeated", "finished", "explodes", "exploded", "explosion", "crippled"];
 /** A ship told as still docked (overhaul 2 §6.2's [place]). */
 const DOCKED_WORDS = ["docked", "berth", "berthed", "clamps", "clamped", "moored"];
 const HEAL_WORDS  = ["cut", "cuts", "gash", "wound", "wounds", "blood", "bandage", "dressing", "stitch", "antiseptic", "medkit", "sealant", "binding"];
@@ -424,6 +441,7 @@ function tripWords(o, { refusalCode = null, offer = null, question = "", person 
   switch (o?.kind) {
     case "premise": return PREMISE_WORDS[refusalCode] ?? null;
     case "fight":   return FIGHT_WORDS;
+    case "foe":     return FOE_DOWN_WORDS;
     case "offer":   return OFFER_WORDS[offer] ?? null;
     case "cost":    return Object.entries(METER_WORDS).filter(([m]) => new RegExp(m === "supply" ? "supply|resources" : m === "health" ? "health|harm" : m === "spirit" ? "spirit|stress" : m, "i").test(o.text)).flatMap(([, w]) => w);
     case "price":   return contentWords(o.text.replace(/^THE PRICE[^.]*\.\s*/, "")).slice(0, 12);

@@ -579,7 +579,16 @@ one (`truthNamesSomeone` — a story's person, or a name the truth gives that is
 no place's, ship's, faction's or the vow's own) is given one from the name
 oracle as it is filed (`secrets.namedIfAWhoVow`, Given Name + Family Name, "The
 one behind it is …", the deciding narration's version), so THIS BEAT ENDS A VOW
-has a name to tell. No scene
+has a name to tell. Since round 8, the name is someone the story has met where one
+fits (VOW-WON-BY-A-STRANGER, the maintainer's call):
+- DECIDE NOW lists the story's people (`narrator.js storyPeopleOf`, its
+  connection cards, at most eight) and asks for one of them.
+- A new name is shown in play before the truth is revealed.
+- A decided plan whose truth names someone not yet met is told "Not yet in play:
+  X …" (`skeletons.strangerNamedIn`, `extras.strangers`).
+- A plan quiet for three scenes comes back with a clue (A THREAD GONE QUIET,
+  `skeletons.quietestPlan`).
+No scene
 (the setting off, no key, a failure): the request is filed with its roll
 alone (`secrets.fileRequestedPlan`) for a later narration to decide. The
 plan reaches the narrator as [6.6] UNREVEALED while its vow is the one the
