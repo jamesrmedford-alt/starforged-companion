@@ -534,6 +534,10 @@ export function buildLedgerBlock(campaignState, options = {}) {
   if (read.place?.name) placeLines.push(`  Place:    ${read.place.name} — where the characters are, by the table's record`);
   else if (read.between) placeLines.push(`  Place:    none — the characters are between places, ${read.between}, until it arrives`);
   if (read.ship) placeLines.push(`  Ship:     ${read.ship}`);
+  // What the player's line names elsewhere (issue #393 D5): another place, and
+  // the people whose whereabouts are one.
+  for (const p of options?.elsewhere?.people ?? []) placeLines.push(`  Elsewhere: ${p.name} — ${p.where}, not here`);
+  for (const p of options?.elsewhere?.places ?? []) placeLines.push(`  Elsewhere: ${p.name} — another place, reached only by a journey's move`);
   const frameLines = [];
   if (frame) {
     if (read.where)          frameLines.push(`  Where:    ${read.where} — as the narration has it`);
@@ -1333,6 +1337,13 @@ export function formatEntityCard(entity, entityType) {
   if (lastKnown.length) {
     lines.push('', 'LAST KNOWN (from earlier scenes — what this scene says of them now wins):', ...lastKnown);
   }
+  // Where the session record last had them with the characters (issue #393
+  // D5), when no LAST KNOWN location of their own outranks it.
+  const seenAt = entity.lastSeen && typeof entity.lastSeen === 'object' ? entity.lastSeen : null;
+  if (seenAt) {
+    const where = seenAt.place?.name ? `at ${seenAt.place.name}` : 'with the characters, between places';
+    lines.push('', `LAST SEEN with the characters (the session record): ${where}${seenAt.session ? ` (Session ${seenAt.session})` : ''}`);
+  }
 
   // Generative tier — pinned first, then the newest, with slots held for
   // binding traits (selectCardTierEntries).
@@ -1958,7 +1969,7 @@ function formatEntityCardsBlock(entityCards) {
  */
 function formatLedgerSection(campaignState, settings = {}, {
   matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
-  nameChanges = null, progressTracks = [],
+  nameChanges = null, progressTracks = [], elsewhere = null,
 } = {}) {
   const {
     factContinuityEnabled         = true,
@@ -1981,6 +1992,7 @@ function formatLedgerSection(campaignState, settings = {}, {
     playerLine,
     nameChanges,
     underway: expeditionUnderway(progressTracks),
+    elsewhere,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -2647,6 +2659,7 @@ export function buildNarratorSystemBlocks(
     sceneNarrations, playerLine,
     nameChanges: extras?.nameChanges ?? null,
     progressTracks,
+    elsewhere: extras?.elsewhere ?? null,
   });
   if (ledgerBlock) parts.push(ledgerBlock);
 

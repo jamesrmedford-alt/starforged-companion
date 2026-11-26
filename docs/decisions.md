@@ -6,9 +6,9 @@ rejected.
 
 ---
 
-## Overhaul 8, slice 1: the characters' place, as built (issue #393 — 2026-11-26)
+## Overhaul 8: one record of where everyone is, as built (issue #393 — 2026-11-26)
 
-**Decision** (the maintainer: "Do the where characters are overhaul"; #393's D1–D4 at its design's recommendation, built as below — each the maintainer's to take back).
+**Decision** (the maintainer: "Do the where characters are overhaul"; #393's D1–D7 at its design's recommendation, built as below — each the maintainer's to take back).
 
 - **D2 — an arrival is the characters', whatever the ship settings say.** A hit on Set a Course or Finish an Expedition sets `currentLocationId`. Ship Positioning and Auto-Move gate the ship's record and its token, never the arrival. With either off, a hit used to leave the characters where they set out.
 - **D1 — a journey that leaves sets out.** The place is none, aboard and between places, until an arrival, `!at` or the Entities panel sets one:
@@ -18,6 +18,9 @@ rejected.
   An expedition for the place they are at leaves nothing. So does one begun at a site (a vault, a derelict) for no other recorded place: it explores the site, as Starforged's derelict exploration does. THE SCENE and the reader say "Place: none — … between places, on the expedition <label>". A scene begun between places turns at the arrival, as a place; the arrival is not filled into its anchor silently.
 - **D3, as built: no line moves the characters' place.** The scope allowed a walk within a settlement: to the settlement itself, or to a location whose `settlementId` is it. Nothing writes a location's `settlementId`, so "within the settlement" cannot be read. Building it would have left a branch that never fires. Overhaul 2's walk (§6.4, `placeWalkedTo`, `place.arrived` `how: "line"`) is retired; within a place, the frame's `where` names the spot. If records of places within a settlement are wanted, `settlementId` needs a writer first.
 - **D4 — the frame's `where` never names another place.** While the characters are at a recorded place, a narration's `where` that names another recorded settlement, planet or location keeps the scene's last `where`; the rest of the frame is taken. Between places the frame is taken whole ("on approach to Hollow Spire").
+- **D5 (slice 2) — people are where the record last had them.** No store is added. A person (a `connection` card) is at the place of the latest scene whose frames had them present, and their own LAST KNOWN location outranks that. A person counts as elsewhere only when their whereabouts name a recorded place other than the characters' own. A LAST KNOWN naming no recorded place ("in the medbay") may be here, and is not told. A connection's card with no LAST KNOWN location says where the record last had them.
+- **D6 (slice 3) — NOT SO [whereabouts].** A paced line's narration, and a typed move's, are told what the line names elsewhere: the other places, reached only by a journey's move, and the people not here. It is a judge line, tripped by the names' words. A journey's own move (Set a Course, Undertake or Finish an Expedition) carries none. THE SCENE's `Elsewhere:` lines say the same.
+- **D7 (slice 3) — the reader is told it, and reads the seeking as the journey.** Its situation has "- Elsewhere: …". Its travel rule reads a line that seeks someone or something elsewhere as that journey: Set a Course for a charted place, else Undertake an Expedition.
 
 ---
 

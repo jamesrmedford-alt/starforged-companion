@@ -214,7 +214,7 @@ export async function readAndRoute({
 }) {
   let actor = null;
   try { actor = character?.actorId ? (globalThis.game?.actors?.get?.(character.actorId) ?? null) : null; } catch { actor = null; }
-  const situation = readLineSituation(actor, { campaignState });
+  const situation = readLineSituation(actor, { campaignState, line: playerText ?? "" });
   // What the move contracts say can be made now: told to the reader, and its gate (one authority).
   const contracts = moveSituation !== undefined ? moveSituation : await readContractSituation(character?.actorId ?? null, campaignState);
   const available = availableMoves(contracts, CATALOGUE_MOVE_IDS);

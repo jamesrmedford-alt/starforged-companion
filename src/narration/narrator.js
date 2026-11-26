@@ -21,6 +21,7 @@ import {
   sceneForReading,
   resolveNarrationPerspective,
   sessionPerspectiveOf,
+  expeditionUnderway,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern, namesOneWordName } from '../context/relevanceResolver.js';
 import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
@@ -96,6 +97,7 @@ import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, p
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { readRecord } from '../record/read.js';
+import { elsewhereOf, elsewhereWords, lastSeenWith } from '../factContinuity/whereabouts.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
 
@@ -176,6 +178,9 @@ export function diceFactsOf(line, { source } = {}) {
     return [];
   }
 }
+
+/** What the line names elsewhere, with the words that trip its judge (issue #393 D6); null for nothing. */
+const withTripWords = (elsewhere) => (elsewhere ? { ...elsewhere, words: elsewhereWords(elsewhere) } : null);
 
 /** The moves that take the ship somewhere: offered and not rolled, they move her nowhere (issue #389 #8). */
 const JOURNEY_MOVES = new Set(['set_a_course', 'undertake_an_expedition', 'finish_an_expedition']);
@@ -544,6 +549,14 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // retired context assembler ever rendered them, so no narration saw an open
   // fight; vows and bonds reach the CHARACTER block from the sheet.
   extras.progressTracks = (mode === 'campaign_recap') ? [] : await readOpenProgressTracks();
+
+  // What the beat's line names elsewhere (issue #393 D5–D6): the places other
+  // than the characters', and the people whose whereabouts are one — the
+  // scene block's Elsewhere lines and the narration's [whereabouts]. A beat of
+  // play's alone.
+  extras.elsewhere = (mode === 'move_resolution' || mode === 'paced_narrative')
+    ? withTripWords(elsewhereOf(playerNarration, sceneState ?? campaignState, { underway: expeditionUnderway(extras.progressTracks) }))
+    : null;
 
   // The vow this scene serves (issue #353 R3): a linked track's vow, the
   // session's quest focus, or the only vow in play, with its progress — the
@@ -1468,7 +1481,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
   const madeLine = resolution.inputMethod === 'button';
   const moveObligations = [...obligationsFor({ mode: 'move', resolution, situation: touched.situation,
     line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince, madeLine,
-    dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? '') }),
+    dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? ''), whereabouts: extras.elsewhere ?? null }),
     ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const userMessage  = buildNarratorUserMessage(
     resolution,
@@ -5280,7 +5293,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       // the scene obliges (overhaul 2 §10.3).
       pacedObligations = [...obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
         situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince,
-        dice: diceFactsOf(playerText ?? '') }),
+        dice: diceFactsOf(playerText ?? ''), whereabouts: extras.elsewhere ?? null }),
         ...sceneObligationsOf(extras.sceneLedger, campaignState)];
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
@@ -5924,6 +5937,18 @@ export function suppressPcDirectedSocialMove(suggestedMove, playerText, speakerN
 function collectEntityCards(ids, types) {
   if (!Array.isArray(ids) || !ids.length) return [];
   const cards = [];
+  // Where the record last had each person with the characters (issue #393
+  // D5): read once, for the connections' cards — their LAST KNOWN outranks it.
+  let read;
+  const seen = (name) => {
+    if (read === undefined) {
+      try { read = readRecord({ session: 'campaign' }); } catch (err) {
+        read = null;
+        console.debug?.(`${MODULE_ID} | narrator: the record was not read for where people were last seen:`, err?.message ?? err);
+      }
+    }
+    return read ? lastSeenWith(read, name) : null;
+  };
   for (let i = 0; i < ids.length; i++) {
     const journalId = ids[i];
     const type      = types?.[i];
@@ -5938,7 +5963,8 @@ function collectEntityCards(ids, types) {
       continue;
     }
     if (!entity) continue;
-    const card = formatEntityCard(entity, type);
+    const lastSeen = type === 'connection' && !String(entity.lastKnown?.location?.value ?? '').trim() ? seen(entity.name) : null;
+    const card = formatEntityCard(lastSeen ? { ...entity, lastSeen } : entity, type);
     if (card) cards.push(card);
   }
   return cards;

@@ -115,6 +115,12 @@ finish docks there and charts nothing.
   "wake me when we get there" across a journey not yet made is travel. (PR
   #350 gave it the recent scene, so "her coordinates" are read as the
   destination the scene set up.) Prompt rules only — the model decides.
+  Since overhaul 8 (issue #393 D7) the reader is told what the line names
+  elsewhere — "- Elsewhere: Tamsin Okoro is at Hollow Spire, not here; Hollow
+  Spire is another place — reached only by a journey." (`readLineSituation`'s
+  `line`, `whereabouts.js elsewhereOf`) — and its travel rule reads a line
+  that seeks someone or something elsewhere as that journey: Set a Course for
+  a charted place, else Undertake an Expedition, never a walk.
 - **Interpreter** (`src/moves/interpreter.js`): Set a Course is a known route
   to a charted place; Undertake an Expedition any journey toward one that is
   not. A destination without a proper name is named by a working label

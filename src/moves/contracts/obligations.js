@@ -52,6 +52,9 @@
  *                block's own rule, sceneSeeds.js formatMaterial)
  *   [person]     a second-person set-piece's character is "you", never their
  *                name (issue #389 #4, OPENING-IN-THE-THIRD-PERSON)
+ *   [whereabouts] what the line names elsewhere — another place, a person at
+ *                one — is reached only by a journey's move (issue #393 D6;
+ *                factContinuity/whereabouts.js elsewhereOf)
  *   [dice]       what the dice decided of what the player's line names
  *                stands over what the line takes for granted (issue #389 #2,
  *                LINE-CLAIM-OVER-THE-DICE; narrator.js diceFactsOf)
@@ -71,6 +74,9 @@ import { findThresholdCard } from "../combatThreshold.js";
 import { contractFor } from "./table.js";
 
 const MODULE_ID = "starforged-companion";
+
+/** The moves that take the characters to another place: [whereabouts] is not theirs to keep (issue #393 D6). */
+const JOURNEY_MOVES = new Set(["set_a_course", "undertake_an_expedition", "finish_an_expedition"]);
 
 /** The three lists, in the order the block renders them. */
 const OBLIGATION_LISTS = Object.freeze(["TELL", "NOT YET", "NOT SO"]);
@@ -369,6 +375,25 @@ export const OBLIGATION_KINDS = Object.freeze({
       "Tell what the move does, and what the others do and say.",
     judge: () => "The player's character (\"you\") speaks — says, asks, promises or confesses something, in quotes or told (\"you tell her that …\").",
   }),
+  // What the line names elsewhere (issue #393 D6, overhaul 8 —
+  // CHARACTERS-MOVED-BY-THE-NARRATION): the sixth live long haul's a64, "I
+  // find Tamsin at her ledger stall", was narrated "The walk to the Hollow
+  // Spire docks takes the better part of the morning" — another settlement.
+  // Judge-class, tripped by the other place's or person's name (checks.js).
+  whereabouts: Object.freeze({
+    list: "NOT SO", check: "judge",
+    text: ({ here = null, underway = null, places = [], people = [] }) => {
+      const at = here ? `The characters are at ${here}.` : underway ? `The characters are between places, on the expedition ${underway}.` : "";
+      const there = places.length
+        ? `${namesList(places)} ${places.length === 1 ? "is another place" : "are other places"}: they reach ${places.length === 1 ? "it" : "them"} `
+          + "only by a journey's move — never narrate them walking or arriving there."
+        : "";
+      const who = people.map(p => `${p.name} is ${p.where}, not here.`).join(" ");
+      return [at, there, who].filter(Boolean).join(" ");
+    },
+    judge: ({ places = [], people = [] }) => `The narration has the characters walk to, travel to or arrive at ${places.length ? namesList(places) : "another place"}`
+      + `${people.length ? `, or has ${namesList(people)} with them in person` : ""} — with no journey's move.`,
+  }),
   // What the dice decided about what the player's line names (issue #389
   // #2, LINE-CLAIM-OVER-THE-DICE — the maintainer: "Players can't overrule
   // dice"): the sixth live long haul's a77 went "down to the cutter's wreck"
@@ -398,6 +423,12 @@ export const OBLIGATION_KINDS = Object.freeze({
       "not as a name, not as a label, not its words together. Write what it means here, in words of your own.",
   }),
 });
+
+/** Names as a list: "A", "A and B", "A, B and C". */
+const namesList = (xs) => {
+  const names = (Array.isArray(xs) ? xs : []).map(x => String(x?.name ?? x ?? "").trim()).filter(Boolean);
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+};
 
 const line = (kind, input = {}) => {
   const row = OBLIGATION_KINDS[kind];
@@ -703,14 +734,24 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
  *   material?: { words: string[], pairs: string[][], onRecord: string[] }|null,
  *   person?: { names: string[] }|null,
  *   dice?: Array<{ subject: string, fact: string, words: string[] }>,
+ *   whereabouts?: { here: string|null, underway: string|null, places: Array<{ name: string }>,
+ *     people: Array<{ name: string, where: string }>, words: string[] }|null,
  *   madeLine?: boolean }} input — `madeLine`: a move pressed on a card, its line the card's ([unsaid]);
  *   `person`: a second-person set-piece's character, by the names the prose must not call them ([person])
  * @returns {Array<{ kind: string, list: string, text: string }>}
  */
 export function obligationsFor({ mode, resolution = null, refusal = null, offer = null, note = null, oracle = null,
   situation = null, line: said = "", cast = [], speaker = null, chosenSince = [], material = null, person = null, madeLine = false,
-  dice = [] } = {}) {
+  dice = [], whereabouts = null } = {}) {
   const out = [];
+  // What the line names elsewhere (issue #393 D6) — never on a journey's own
+  // move: Set a Course and the expedition moves are how the characters get there.
+  const elsewhere = () => {
+    const w = whereabouts && typeof whereabouts === "object" ? whereabouts : null;
+    if (!w || (!(w.places ?? []).length && !(w.people ?? []).length)) return [];
+    if (mode === "move" && JOURNEY_MOVES.has(resolution?.moveId)) return [];
+    return [{ ...line("whereabouts", w), words: Array.isArray(w.words) ? w.words : [] }];
+  };
   // What the dice decided about what the line names: told after the state (issue #389 #2).
   const decided = () => (Array.isArray(dice) ? dice : []).filter(f => f?.subject && f?.fact)
     .map(f => ({ ...line("dice", f), words: Array.isArray(f.words) ? f.words : [] }));
@@ -723,6 +764,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     if (refusal?.premise) out.push(line("premise", { refusal }));
     if (offer) out.push(line("offer", { offer }));
     out.push(...state());
+    out.push(...elsewhere());
     out.push(...decided());
     out.push(line("sheet", { mode, refused: !!refusal }));
     out.push(line("apparatus", { offer }));
@@ -731,6 +773,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     out.push(...resultObligations(resolution ?? (note ? { gateNote: note } : null), { speaker }));
     if (madeLine === true) out.push(line("unsaid"));
     out.push(...state());
+    out.push(...elsewhere());
     out.push(...decided());
     out.push(line("sheet", { mode }));
     out.push(line("apparatus", {}));

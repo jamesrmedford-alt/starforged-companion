@@ -50,6 +50,7 @@ import { getCommandVehicle } from "../entities/ship.js";
 import { formatShipPositionLine } from "../factContinuity/shipPosition.js";
 import { getCurrentSiteKind } from "../entities/location.js";
 import { sceneForReading, formatSceneForReading } from "../narration/narratorPrompt.js";
+import { elsewhereOf } from "../factContinuity/whereabouts.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -98,7 +99,7 @@ const ticksOf = (value) => Math.max(0, Math.min(TRACK_TICKS, whole(value) ?? 0))
  *   tracks.rollerPosition). `unread`: the parts that could not be read (told
  *   as unknown).
  */
-export function readLineSituation(actor, { campaignState = null } = {}) {
+export function readLineSituation(actor, { campaignState = null, line = "" } = {}) {
   let isPc = false;
   try { isPc = isPlayerCharacterActor(actor); } catch { isPc = false; }
   const speaker = isPc ? { actorId: actor.id ?? null, name: clean(actor.name) || "The character" } : null;
@@ -107,7 +108,7 @@ export function readLineSituation(actor, { campaignState = null } = {}) {
     sheet: isPc ? readSituation(actor, { campaignState }) : null,
     party: [], othersVows: [], vehicles: [], companions: [],
     fights: [], position: null, challenges: [], expeditions: [],
-    place: null, ship: null, frame: null, scene: null, site: null, xCard: campaignState?.xCardActive === true,
+    place: null, ship: null, frame: null, scene: null, site: null, elsewhere: null, xCard: campaignState?.xCardActive === true,
     charted: { shown: [], more: 0 },
     unread: [],
   };
@@ -175,6 +176,8 @@ export function readLineSituation(actor, { campaignState = null } = {}) {
       { underway: situation.expeditions[0]?.label ?? "" })) || null;
   } catch (err) { unread("the scene", err); }
   try { situation.charted = chartedPlaces(campaignState); } catch (err) { unread("the charted places", err); }
+  // What the line names elsewhere (issue #393 D5, D7): another place, or a person at one.
+  situation.elsewhere = elsewhereOf(line, campaignState, { underway: situation.expeditions[0]?.label ?? "" });
 
   return situation;
 }
@@ -329,6 +332,14 @@ export function buildReaderSituationBlock(situation) {
   const charted = s.charted ?? { shown: [], more: 0 };
   lines.push(unknown.has("the charted places") ? "- Charted places: unknown."
     : `- Charted places: ${charted.shown.length ? `${charted.shown.join(", ")}${charted.more ? `, +${charted.more} more` : ""}` : "none recorded"}.`);
+  const away = s.elsewhere ?? null;
+  if (away && ((away.people ?? []).length || (away.places ?? []).length)) {
+    const parts = [
+      ...(away.people ?? []).map(p => `${p.name} is ${p.where}, not here`),
+      ...(away.places ?? []).map(p => `${p.name} is another place — reached only by a journey`),
+    ];
+    lines.push(`- Elsewhere: ${parts.join("; ")}.`);
+  }
   if (s.xCard) lines.push("- The X-Card is active: the scene is paused.");
   return lines.join("\n");
 }

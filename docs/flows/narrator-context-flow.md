@@ -1328,7 +1328,23 @@ of the record's name changes says it is ("the cutter's wreck" names the Cinder
 Wren, "raider cutter") — the latest first, at most four. A paced line and a
 typed move's narration carry it (a move made from a card has no line, and
 none); Batch Mode rounds do not yet. The fact block's rules say the same: what
-a line takes for granted against the dice is not tagged "line". A move rolled
+a line takes for granted against the dice is not tagged "line". NOT SO
+`[whereabouts]` (issue #393 D6, overhaul 8): what the line names elsewhere —
+"The characters are at Bleakhold Station. Hollow Spire is another place: they
+reach it only by a journey's move — never narrate them walking or arriving
+there. Tamsin Okoro is at Hollow Spire, not here." It is read once a beat in
+`buildNarratorExtras` (`extras.elsewhere`, `factContinuity/whereabouts.js
+elsewhereOf`): the recorded places other than the characters' that the line
+names whole, and the people (`connection` cards) it names whose whereabouts are
+another recorded place — their own LAST KNOWN location, else the place of the
+latest scene whose frames had them present (`lastSeenWith`, the session
+record); a person in the scene's frame is here. A judge line, tripped by the
+names' words (`elsewhereWords`, generic place words left out); never on a
+journey's own move (Set a Course, Undertake or Finish an Expedition). The same
+read gives THE SCENE its `Elsewhere:` lines ("Tamsin Okoro — at Hollow Spire,
+not here"; "Hollow Spire — another place, reached only by a journey's move"),
+and a connection's card with no LAST KNOWN location says LAST SEEN with the
+characters (the session record). A move rolled
 at the GM's word carries TELL `[overridden]` in its move message; a
 round's entry refused at the roll carries its `[premise]` block in the
 round's message (`####`, under the entry). The paced card says it too
