@@ -414,6 +414,14 @@ export const BEAT_CHECKS = {
     const what = `the ${rankOf(track.rank) ?? track.rank} expedition "${track.label}"`;
     if (!track.ticks) return notYet(`${what} is begun and no progress is marked on it`, 2);
     const looks = v.rolls.filter(r => r.moveId === "explore_a_waypoint" && r.rolled);
+    // Finished before any waypoint: the journey is over, and the beat cannot
+    // be put to the test — moot, so the run goes on. Left open, its last
+    // resort named Undertake an Expedition once more, and the sixth live long
+    // haul's second run began a second expedition for the journey it had
+    // just finished (a27 → a30).
+    if (!looks.length && track.completed) {
+      return { done: false, moot: true, detail: `${what} was finished at ${boxes} of 10 boxes before any waypoint was explored — the waypoint was not exercised` };
+    }
     if (!looks.length) return notYet(`${what} stands at ${boxes} of 10 boxes; no waypoint has been explored`, 3);
     const look = looks.at(-1);
     if (look.card.move.held?.open) return notYet(`${what} stands at ${boxes} of 10 boxes; the waypoint's result is held — nothing comes of it until it is kept`, 4);
@@ -697,6 +705,19 @@ export const BEAT_CHECKS = {
       const before = v.marks[i - 1]?.table.connections.find(x => x.hostId === conn.hostId);
       if (before && before.bonded && before.ticks !== conn.ticks) return failed(`the fulfilment marked the bonded connection's track: ${before.ticks} → ${conn.ticks} ticks`);
       const offers = v.allCards.filter(k => k.picker && v.inWindow(k) && k.picker.pickAction === "develop" && k.picker.choices?.length === 1 && k.picker.choices[0].hostId === conn.hostId);
+      // A vow deepens its connection once (decisions.md, "A vow deepens its
+      // connection once"). A won fight's 🤝 Deepen pressed before the
+      // fulfilment spends it, and the vow records it (`fulfilPayoff.deepen`,
+      // the ledger the fulfilment skips a landed step by), so the fulfilment
+      // offers no roll. The sixth live long haul's second run pressed it at
+      // a63, and its beat 25 was failed for the rule kept. The record is read
+      // on the vow before the fulfilment: only the press writes it there.
+      if (!offers.length) {
+        const sameVow = (x) => (vow.vowId ? x.vowId === vow.vowId : false) || x.id === vow.id;
+        const spentAt = v.marks.slice(0, Math.max(0, i))
+          .find(k => (k.table?.pcs ?? []).some(p => (p.vows ?? []).some(x => sameVow(x) && x.fulfilPayoff?.deepen === true)));
+        if (spentAt) return done(`the vow "${vow.name}" is fulfilled; its deepen of ${conn.name} was spent at ${spentAt.step}, before the fulfilment — a vow deepens its connection once — so no bonded roll is offered${told}`);
+      }
       if (offers.length !== 1) return failed(`the vow was fulfilled for the bonded ${conn.name}; ${offers.length} bonded roll(s) offered, not one`);
       return done(`the vow "${vow.name}" is fulfilled; ${conn.name}'s track is untouched and one bonded roll is offered${told}`);
     }

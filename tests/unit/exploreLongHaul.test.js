@@ -649,6 +649,48 @@ describe('each beat\'s check on the world', () => {
     expect(check('vowFulfilled', {}, [setup, start, done(20, [fulfil])])).toMatchObject({ status: 'failed', detail: expect.stringContaining('0 bonded roll(s) offered') });
   });
 
+  it('a vow whose deepen a won fight\'s 🤝 spent offers no bonded roll at its fulfilment, and is done (the sixth live long haul\'s second run, a63 → a84)', () => {
+    // A vow deepens its connection once: the press records it on the vow
+    // (fulfilPayoff.deepen), and the fulfilment's payoff skips the step. The
+    // run's beat 25 was failed for the rule kept: "0 bonded roll(s) offered".
+    const bonded = { ...conn, name: 'Tamsin Okoro', bonded: true, ticks: 40 };
+    const sworn = { ...vow, linkedConnectionId: 'A1', linkedConnectionName: 'Tamsin Okoro', ticks: 24 };
+    const fulfil = moveCard('r2', 'Fulfill Your Vow', 'Progress: 6 | Challenge: 1, 2', 'strong_hit');
+    const table = (v) => tableOf({ connections: [bonded], pc: { vows: [{ ...sworn, ...v }] } });
+    const pressed = markOf('a1', table({ fulfilPayoff: { deepen: true } }));
+    const fulfilled = markOf('a2', table({ fulfilPayoff: { deepen: true }, completed: true }), [fulfil]);
+    expect(check('vowFulfilled', {}, [setup, pressed, fulfilled])).toMatchObject({
+      status: 'done',
+      detail: 'the vow "Find the raiders" is fulfilled; its deepen of Tamsin Okoro was spent at a1, before the fulfilment — a vow deepens its connection once — so no bonded roll is offered',
+    });
+    // Recorded only at the fulfilment's own step, it is the fulfilment's deepen: one roll is owed.
+    const unspent = markOf('a1', table({}));
+    expect(check('vowFulfilled', {}, [setup, unspent, fulfilled])).toMatchObject({ status: 'failed', detail: expect.stringContaining('0 bonded roll(s) offered') });
+    // Another vow's record is not this one's.
+    const other = markOf('a1', tableOf({ connections: [bonded], pc: { vows: [{ ...sworn }, { ...vow, id: 'v2', vowId: 'v2', name: 'Another', fulfilPayoff: { deepen: true } }] } }));
+    expect(check('vowFulfilled', {}, [setup, other, fulfilled])).toMatchObject({ status: 'failed' });
+  });
+
+  it('an expedition finished before any waypoint is moot — not exercised, and the run goes on (the sixth live long haul\'s second run, a27 → a30)', () => {
+    // Left open, the beat's last resort named Undertake an Expedition once
+    // more after the journey was over, and a second expedition was begun for
+    // the place just reached.
+    const undertake = moveCard('r1', 'Undertake an Expedition', 'Action: 5 + 2 = 7 | Challenge: 4, 9', 'weak_hit');
+    const finish = moveCard('r2', 'Finish an Expedition', 'Progress: 4 | Challenge: 2, 3', 'strong_hit');
+    const track = { id: 't1', type: 'expedition', label: 'The hauler\'s source', rank: 'dangerous', ticks: 16, completed: false };
+    const begun = markOf('a1', tableOf({ tracks: [track] }), [undertake]);
+    expect(check('expedition', { finished: true }, [setup, begun])).toMatchObject({ status: 'current', detail: expect.stringContaining('no waypoint has been explored') });
+    const finished = markOf('a2', tableOf({ tracks: [{ ...track, completed: true }] }), [undertake, finish]);
+    const moot = check('expedition', { finished: true }, [setup, begun, finished]);
+    expect(moot).toMatchObject({ status: 'not-exercised', doneAt: 'a2' });
+    expect(moot.detail).toBe('the dangerous expedition "The hauler\'s source" was finished at 4 of 10 boxes before any waypoint was explored — the waypoint was not exercised');
+    // With a waypoint explored, the finished expedition is the beat done.
+    const look = moveCard('r3', 'Explore a Waypoint', 'Action: 4 + 2 = 6 | Challenge: 3, 8', 'weak_hit');
+    const looked = markOf('a2', tableOf({ tracks: [track] }), [undertake, look]);
+    const ended = markOf('a3', tableOf({ tracks: [{ ...track, completed: true }] }), [undertake, look, finish]);
+    expect(check('expedition', { finished: true }, [setup, begun, looked, ended])).toMatchObject({ status: 'done', detail: expect.stringContaining('a waypoint explored at a2') });
+  });
+
   it('a correction: the old value struck, the new one standing', () => {
     const charter = { facts: [CUTTER] };
     const truths = (...list) => tableOf({ scene: { truths: list.map(([fact, retracted], i) => ({ id: `t${i}`, subject: 'raider cutter', fact, retracted })) } });
