@@ -294,6 +294,8 @@ async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) 
           // produced by the Token-drag affordance instead of the keyboard.
           bypassPacing:   true,
           forcedMoveId:   "set_a_course",
+          // The drag's words, not the player's (issue #388 #10).
+          madeLine:       true,
           forcedMoveTarget: destinationName,
           ...(destActor ? { forcedMoveTargetId: destActor.id } : {}),
           // What the pipeline needs to move this token onto the pin on a

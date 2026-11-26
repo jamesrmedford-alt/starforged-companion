@@ -466,9 +466,15 @@ export function createRollingRehearsal({ charter, forget = false }) {
       prose = `The ship ticks as it cools, and for a moment nothing is asked of anyone. (Scene ${turn}.)`;
       const material = forget ? [] : materialOf(user);
       if (material.length) {
-        prose += ` ${material.map(r => `${r.result}.`).join(" ")}`;
+        // A rolled pair in words of its own — never its two words together,
+        // as a label or as a name (the module's [material] check, issue #388
+        // #11); a record's name or a place as it is given.
+        const told = (r) => (/^(?:Action \+ Theme|Descriptor \+ Focus)$/.test(r.source)
+          ? `Something of ${r.result.toLowerCase().split(/\s+/).join(", something of ")}`
+          : r.result);
+        prose += ` ${material.map(r => `${told(r)}.`).join(" ")}`;
         // "The three to eight words of your prose that are it."
-        sidecar.builtFrom = material.map(r => ({ n: r.n, words: r.result.split(/\s+/).slice(0, 8).join(" ") }));
+        sidecar.builtFrom = material.map(r => ({ n: r.n, words: told(r).split(/\s+/).slice(0, 8).join(" ") }));
       }
     } else if (entry.plants?.length) {
       const said = statementsOf(entry.plants);

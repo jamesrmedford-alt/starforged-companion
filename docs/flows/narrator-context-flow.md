@@ -249,9 +249,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   `recordedStop` — `readRecord({ session })` of the session
   `lastSessionToTell` names, else of the newest earlier session the record
   says a table began, as a summary never made leaves it to the record): its
-  last scene's place (`scene.started`'s, else
+  last scene the characters played — a closing or spotlight cutaway
+  (`scene.started` `cause: 'cutaway'`) passed over (issue #388 #1,
+  OPENING-TOLD-FROM-THE-CUTAWAY) — its place (`scene.started`'s, else
   the session's end's), who was with them at the end (its last frame's
-  `present`), what binds there (the truths its beats established — the
+  `present`, the PCs left out), what binds there (the truths its beats established — the
   player's, the dice's, the GM's, the premise's, labelled; never colour), the
   question still open (the last frame's, unanswered) and what play let go,
   the ship from its live record — "WHERE THE LAST SESSION STOPPED — session
@@ -272,7 +274,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   pick up?" (D8: the `pickUp` payload, cleaned on both clients, shown on the
   Begin card) — is told above it and outranks it. **The opening is built from
   rolled material** (`session/sceneSeeds.js`, the one draw site, `drawDie`):
-  Action + Theme for what the characters are doing in this lull, Descriptor +
+  Action + Theme for what the characters are doing in this lull (in second
+  person "What you (Mira Kestrel) are doing in this lull", issue #389 #4 —
+  `rollOpeningSeeds`'s `perspective`, resolved as the system prompt's is), Descriptor +
   Focus for what the scene's eye rests on, each with a second result drawn at
   once; a place aboard (Derelict Zone (Starship), then that zone's area table —
   an instruction row drawn again, up to three times) only when nothing says
@@ -321,7 +325,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   only the plot ("No turn of the plot happens in it: the first move is the
   players'"). The MATERIAL says a result's words are the oracle's, never the
   prose's (a record's name or place is written as it is): told "Never the
-  words themselves", six results were written as their own word.
+  words themselves", six results were written as their own word. The
+  narration is held to it before it posts ([material], a certain check —
+  see the checks below; issue #388 #11). An opening's and a closing's
+  MATERIAL also say what the characters hold, owe and have said stays as the
+  records have it (issue #388 #12); the spotlight's does not.
   **The Spotlight Vignette is narrated** (issue #381 D3): where Begin was
   pressed the d100 is rolled for the Begin card as before, and — when a
   narration will follow (`narrationEnabled`, a keyed GM connected, the
@@ -731,8 +739,14 @@ and the request carries them as separate `system` blocks
   prose mode, call after call; cached for an hour.
 - **world snapshot** (`## WORLD SNAPSHOT`, issue #357 — "The world snapshot",
   below) — when the narration has one: the whole world state as it stood when
-  the snapshot was taken, stored text sent byte for byte. The same for every
-  prose mode until a new one is taken; cached for an hour.
+  the snapshot was taken, stored text sent byte for byte — in the names the
+  table uses now: a name change's old name is written new as it is sent
+  (`narratorPrompt.js` `inTheNamesNow`, `writeNewNames`; issue #389 #2 — a77's
+  Lore read "Ashen Wake: driven off the docking ring…" beside "'Ashen Wake' is
+  now 'Cinder Wren'"). The Lore block sent with no snapshot is written the same
+  way; NAMES THE TABLE CHANGED reads both as kept, so it is told as before. The
+  same for every prose mode until a new one is taken or a name changes; cached
+  for an hour.
 - **this narration** (`## THIS NARRATION`) — [0m] the mode's role
   description, HOW A BEAT ENDS, perspective and length; [2]; the opening
   scene's sidecar addendum (`sidecarModeAddendum`). The same for one mode at
@@ -1020,7 +1034,10 @@ CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 entries, each clipped, `extras.pinnedChronicle`: the Chronicle panel's pin
 was saved onto a flag nothing read, issue #345 AA07) · [8b]
 party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
-P2-21, P2-22, P2-27 — the move, paced and round modes only; its shape is
+P2-21, P2-22, P2-27 — the move, paced and round modes only; with DETAILS
+ALREADY WORN since round 7 — `beatVariety`'s `wornDetails` over the same six
+cards, names, the scene frame's words and the player's line apart,
+NARRATION-REFRAINS-RISING — beside IMAGES ALREADY USED; its shape is
 said as the narrator's instruction about the narration, under `BEAT_SHAPE_LABEL`,
 never as a director's "Open on…", which came back as prose — issue #377 item 2:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
@@ -1255,14 +1272,35 @@ around it). `first-session.json` / `batch-round.json` declare each narrating
 step's own kind optional, for a re-ask. A re-ask that throws keeps the first
 draft.
 The reply's prose is read (`sidecarParser.extractSidecar`, before any fact
-block is applied) and held to its lines by class: **certain** —
+block is applied — the prose ends at the first sidecar block, so a note the
+model writes after it, or a corrected block, is never narration: issue #389
+#3, SIDECAR-NOTE-IN-THE-PROSE) and held to its lines by class: **certain** —
 [apparatus] (an outcome's name, a sheet number, a two-word move's name
-outside the closing offer line) and [match] (the word); **floor** — [vow]
+outside the closing offer line), [match] (the word) and, on a session
+set-piece (`narrateSessionVignette`, mode `set-piece`), [material] (a rolled
+word written as a label, as a name no record holds, or a result's words
+together — `materialViolations`, issue #388 #11; label
+`narrateSessionVignette:reask`) and, in second person on an opening or a
+spotlight, [person] (the character's name outside quoted speech —
+`personViolations`, issue #389 #4; a closing cuts away and is not held to
+it) — and on every paced and move narration told in the second person
+(`narrator.js beatPersonOf`, BEAT-IN-THE-THIRD-PERSON, round 7) — and, on every
+beat of play but a journey's move, [here] (`hereViolations`, which reads the
+fact block too: its frame naming another recorded settlement or planet, its
+present holding in person someone the record has at one, a sentence taking
+"you" or their craft there — each with the note the re-ask carries; the data
+from `whereabouts.js hereOf`, `extras.here`; CHARACTERS-MOVED-BY-THE-NARRATION,
+round 7 — a [here] re-ask on a paced line makes its card's Roll Set a Course
+for the place it found, `journeyOfferOf`); **floor** — [vow]
 (a word of the vow's name, or what is still not known) and [chosen]
 (logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
 in the prose ([premise] by its refusal's code — "starts on the cuts" under
 a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
-[oracle], [state]) sends one Haiku call (`api-proxy.js`, label
+[oracle], [state]; [unsaid] by speech words, on a move made from a button or
+the map — its line the table's own (`madeLine`), shown as "THE MOVE — made
+from a button or the map; the player wrote no line", issue #388 #10; [dice]
+by a word of its subject's name, or of what a name change says it is, the
+possessive too) sends one Haiku call (`api-proxy.js`, label
 `obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
 consistency check on). A failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels
@@ -1289,8 +1327,40 @@ is only offered (SUGGESTED MOVE's "It has not been made…" half, moved here);
 NOT SO `[sheet]`: no sheet changes in narration (the instruction's "Nor does
 anything…" sentence, moved here — for a refused line, "No move was rolled for
 this line, and none will be"); NOT SO `[apparatus]`: no dice, no sheet number,
-no outcome's or move's name. A move rolled at the GM's word carries TELL
-`[overridden]` in its move message; a
+no outcome's or move's name. NOT SO `[dice]` (issue #389 #2,
+LINE-CLAIM-OVER-THE-DICE; decisions.md: players can't overrule dice): what the
+dice decided of what the line names stands — "What the dice decided stands —
+Cinder Wren: engines hit and burning; driven off the docking ring with her guns
+silent. A line that takes otherwise for granted does not make it so: tell what
+is there." `narrator.js` `diceFactsOf` reads the record (`readRecord({ session:
+'campaign' })`, its names corrected): every session's established truths of
+basis `dice` whose subject the line names — a word of its name, or of what one
+of the record's name changes says it is ("the cutter's wreck" names the Cinder
+Wren, "raider cutter") — the latest first, at most four. A paced line and a
+typed move's narration carry it (a move made from a card has no line, and
+none); Batch Mode rounds do not yet. The fact block's rules say the same: what
+a line takes for granted against the dice is not tagged "line". NOT SO
+`[whereabouts]` (issue #393 D6, overhaul 8): what the line names elsewhere —
+"The characters are at Bleakhold Station. Hollow Spire is another place: they
+reach it only by a journey's move — never narrate them walking or arriving
+there. Tamsin Okoro is at Hollow Spire, not here." It is read once a beat in
+`buildNarratorExtras` (`extras.elsewhere`, `factContinuity/whereabouts.js
+elsewhereOf`): the recorded places other than the characters' that the line
+names whole, and the people (`connection` cards) it names whose whereabouts are
+another recorded place — their own LAST KNOWN location, else the place of the
+latest scene whose frames had them present (`lastSeenWith`, the session
+record); a person in the scene's frame is here. A judge line, tripped by the
+names' words (`elsewhereWords`, generic place words left out); never on a
+journey's own move (Set a Course, Undertake or Finish an Expedition). With
+[here] beside it (every beat of play since round 7), its first sentence is
+[here]'s. A voice over a comm is the frame's `remote`, never `present` (the
+fact block's rule; a "(on comms)" mark the parser moves there), so it is no
+one "in the scene's frame"; THE SCENE shows it as `Remote:`. The same
+read gives THE SCENE its `Elsewhere:` lines ("Tamsin Okoro — at Hollow Spire,
+not here"; "Hollow Spire — another place, reached only by a journey's move"),
+and a connection's card with no LAST KNOWN location says LAST SEEN with the
+characters (the session record). A move rolled
+at the GM's word carries TELL `[overridden]` in its move message; a
 round's entry refused at the roll carries its `[premise]` block in the
 round's message (`####`, under the entry). The paced card says it too
 (`<p class="sf-cannot-make">`, flag `cannotMake` — the runner's check reads
@@ -1520,7 +1590,11 @@ and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself (only once decided — a "truth" reveal of a plan still waiting
 for its decision changes nothing, issue #362 AC16 — and only when the prose
 told it: `secrets.withoutUntoldTruths`, run in `applyNarratorSidecar` on the
-narration's own reveals before the ledger and the plans read them, takes
+narration's own reveals before the ledger and the plans read them — and, after
+it, `sheetClaims.withoutMeterClaims`, which drops a new truth or state change
+telling a PC's (or their ship's) health, spirit, supply or momentum changing:
+the sheet is the only source of meters (PRICE-TOLD-WITH-A-COST-NOT-PAID, round
+7's "the effort cost Mira supply") — takes
 "truth" off a reveal whose prose has none of the truth's own words
 (`skeletons.proseTellsTruth`, the plan's subject and question left out; the
 reveal's clues, step and ending stand, and the GM's console names the plan).
@@ -1677,25 +1751,38 @@ Starship" took the facts, the scene's place and relevance, issue #345 AA06), shi
 `position` stateChanges routed to the §20 ship record — a beat of play's only
 (overhaul 2 §6.3: a move's, a paced line's, a round's, an oracle follow-up's,
 and the inciting incident's starting position; a bookend's, a clock
-vignette's and the oath scene's are dropped and logged) — `applySceneFrame`
+vignette's and the oath scene's are dropped and logged), and of those only a
+change whose basis binds (`factBasis` with `about: ['ship']` — the line's, the
+dice's, the GM's, the premise's; the narrator's colour never moves her), and
+one that restates where she already is (the same settlement or location, its
+words all in the record's line — `restatesWhereSheIs`) keeps the record, so
+"docked at" is not turned into "near" (issue #388 #2, D17 amended). A paced
+beat that offers a journey move (`ctx.offer` in `JOURNEY_MOVES`: Set a
+Course, Undertake or Finish an Expedition) moves her nowhere before its roll,
+and `inferShipPosition` reads a position only from the words before a
+destination's ("bound for", "toward", "en route to" — `whereSheIsOf`; issue
+#389 #8, SHIP-BOUND-FOR-READ-AS-NEAR) — `applySceneFrame`
 full-replacement snapshot — a session vignette's with its question taken off
 (`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
 play — it sets no question and changes none); every beat's frame is first
 read against the beat's player words (`playersFrame`, overhaul 2 §7.2–7.3:
 `ctx.ground` — `provenance.js groundOf`, the move's written line, the paced
-line, a round's lines, the oracle's typed question — and `ctx.mode`): a
+line, a round's lines, the oracle's typed question, and `rolled` — whether a
+rolled move decided the beat, whose `result` facts then bind as the dice's
+(`rolledMove`; a move with no roll decides nothing — issue #388 #5) — and
+`ctx.mode`): a
 question the frame does not already hold stands only when the mode may set
 one (`QUESTION_MODES`), it shares a telling word with those words (the PCs'
 and the command vehicle's names are no evidence — `namesNoEvidence`) and it
 is no let-go question again (`playersQuestion`); a Now line that carries a
-let-go question is stored empty (`touchesLetGo`). A beat of play whose frame
-names exactly one recorded place that is not the current location, and whose
-player words name it too, walks the characters there: the current location
-moves in the frame's persist (`persistSceneLedgerFields`' `onto`, while the
-store is on the scene it was read in) and on the caller's copy, the arrival is
-recorded (`place.arrived`, `how: "line"`), and the next beat turns the scene
-(`sceneLifecycle.js placeWalkedTo` — overhaul 2 §6.4; the ship stays, D17).
-Every beat is then counted
+let-go question is stored empty (`touchesLetGo`). The frame's `where` is a
+spot within the characters' place (issue #393 D4): while they are at a
+recorded place, a `where` naming another recorded settlement, planet or
+location keeps the scene's last `where` (`sceneLifecycle.js
+framedAtThePlace`, before `applySceneFrame`; between places it is taken
+whole), and no beat walks the characters anywhere (D3 — overhaul 2 §6.4's
+walk is retired: only an arrival, `!at` and the Entities panel write the
+current location). Every beat is then counted
 against the question the frame keeps (`countSceneQuestionBeat` →
 `sceneFrame.questionBeats`; at `SCENE_QUESTION_BEATS` the question is let go:
 onto the frame's code-kept `letGo` list — its text and telling stems — and
@@ -1938,7 +2025,9 @@ expedition / scene-challenge tracks — `sceneTurns.js sceneAnchorOf`, from the
 stores as `sceneStoresNow` reads them), and at a beat of play
 (`ensureCurrentScene`'s move, paced, round and oracle follow-up sites)
 `turnSceneIfDue` turns the scene when the stores moved off it
-(`sceneTurnDue`: place → ship → fight → expedition → challenge → time;
+(`sceneTurnDue`: place → ship → fight → expedition → challenge → time — the
+ship's cause not while an expedition is under way, its legs being that
+journey's: issue #389 #9, EXPEDITION-LEGS-TURN-THE-SCENE;
 begun before the narration, ended after the beat whose `endingTrackIds`
 name the track) — `endScene({ turn: true })`, which keeps the unanswered
 mysteries (carried by `secrets.js carrySceneMysteries`) and the `!pace`

@@ -21,6 +21,7 @@ import {
   sceneForReading,
   resolveNarrationPerspective,
   sessionPerspectiveOf,
+  expeditionUnderway,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern, namesOneWordName } from '../context/relevanceResolver.js';
 import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
@@ -33,20 +34,19 @@ import { proseToHtml } from '../audio/segments.js';
 import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
-import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS } from './proseVariety.js';
+import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS, wornDetails } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
-import { markSeedsUsed } from '../session/sceneSeeds.js';
+import { markSeedsUsed, rolledWordsOf } from '../session/sceneSeeds.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
 import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js';
 import { narrateKeepingObligations } from '../moves/contracts/checks.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
-import { inferShipPosition }  from '../factContinuity/shipPosition.js';
-import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, placeWalkedTo } from '../factContinuity/sceneLifecycle.js';
-import { recordPlaceArrival } from '../record/tableSnapshot.js';
+import { inferShipPosition, formatShipPositionLine }  from '../factContinuity/shipPosition.js';
+import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, framedAtThePlace } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
-import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, COLOUR_BEATS } from '../factContinuity/provenance.js';
+import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, rolledMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
 import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
 import { readMoveSituation } from '../moves/situation.js';
 import { sceneObligations } from '../factContinuity/sceneTurns.js';
@@ -96,6 +96,9 @@ import { withoutUntoldTruths } from '../world/secrets.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
+import { readRecord } from '../record/read.js';
+import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf } from '../factContinuity/whereabouts.js';
+import { withoutMeterClaims } from '../factContinuity/sheetClaims.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
 
@@ -119,6 +122,69 @@ const MODULE_ID      = 'starforged-companion';
 
 /** campaignState fields a narrator sidecar writes (applySidecar + applySceneFrame). */
 const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']);
+
+/** The most a beat is told of what the dice decided about what its line names (issue #389 #2). */
+const DICE_FACTS_MAX = 4;
+const DICE_STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'into', 'their', 'there', 'where', 'what', 'have',
+  'been', 'were', 'they', 'them', 'your', 'about', 'over', 'down', 'back', 'still', 'then', 'than', 'just', 'some']);
+const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
+  .filter(w => w.length >= 4 && !DICE_STOP.has(w));
+
+/**
+ * What the dice decided about what the player's line names (issue #389 #2,
+ * LINE-CLAIM-OVER-THE-DICE; decisions.md: players can't overrule dice). Every
+ * session's record (record/read.js readRecord, in the names the table uses
+ * now — a correction's old name is read as the new one), its truths of the
+ * dice (basis "dice": a rolled move's result), whose subject the line names:
+ * by a word of its name, or of what one of the record's name changes says it
+ * is — "raider cutter" for the Cinder Wren, the sixth live long haul's "the
+ * cutter's wreck" — or the name of what a change says the subject is. The
+ * latest first, at most DICE_FACTS_MAX. Never throws: a record that cannot be
+ * read tells nothing.
+ *
+ * @param {string} line
+ * @param {{ source?: Object }} [opts] — the record to read (default: the stored pages)
+ * @returns {Array<{ subject: string, fact: string, words: string[] }>}
+ */
+export function diceFactsOf(line, { source } = {}) {
+  try {
+    const said = new Set(diceWords(line));
+    if (!said.size) return [];
+    const record = readRecord({ session: 'campaign' }, source);
+    const changes = Array.isArray(record?.names) ? record.names : [];
+    const same = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+    const facts = [];
+    const seen = new Set();
+    for (const session of [...(record?.sessions ?? [])].reverse()) {
+      for (const t of [...(session?.open?.established ?? [])].reverse()) {
+        if (t?.basis !== 'dice') continue;
+        // As the record's views read it (summaryView.js subjectText): its words, or the name read gave it.
+        const subject = typeof t.subject === 'string' ? t.subject.trim()
+          : String(t.subject?.text ?? t.subject?.name ?? '').trim();
+        const fact = String(t.fact ?? '').trim();
+        if (!subject || !fact) continue;
+        const also = changes.flatMap(c => (same(c?.to, subject) ? [c.about] : same(c?.about, subject) ? [c.to] : []));
+        const words = [...new Set([subject, ...also].flatMap(diceWords))];
+        if (!words.some(w => said.has(w))) continue;
+        const key = `${subject.toLowerCase()}|${fact.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        facts.push({ subject, fact, words });
+        if (facts.length >= DICE_FACTS_MAX) return facts;
+      }
+    }
+    return facts;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: what the dice decided could not be read — none told:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/** What the line names elsewhere, with the words that trip its judge (issue #393 D6); null for nothing. */
+const withTripWords = (elsewhere) => (elsewhere ? { ...elsewhere, words: elsewhereWords(elsewhere) } : null);
+
+/** The moves that take the ship somewhere: offered and not rolled, they move her nowhere (issue #389 #8). */
+const JOURNEY_MOVES = new Set(['set_a_course', 'undertake_an_expedition', 'finish_an_expedition']);
 
 /**
  * What the scene obliges a beat of play's narration (sceneTurns.js
@@ -446,7 +512,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // only; rendered as [8d] THIS BEAT'S PROSE. A narration that posts the
   // beat's card hands its `beatClaim` (narrateWithBeatClaim): the shape is
   // its own while it is being written (issue #364 BEAT-SHAPE-SIMULTANEOUS).
-  if (BEAT_VARIETY_MODES.has(mode)) Object.assign(extras, beatVariety(campaignState?.currentSessionId ?? null, beatClaim));
+  // …and the details they kept coming back to, names, the scene's own words
+  // and the player's line apart (NARRATION-REFRAINS-RISING, round 7): listed
+  // as worn, to reach past.
+  if (BEAT_VARIETY_MODES.has(mode)) {
+    Object.assign(extras, beatVariety(campaignState?.currentSessionId ?? null, beatClaim, {
+      names: storyNamesOf(campaignState),
+      keep: [sceneState?.sceneFrame?.location, sceneState?.sceneFrame?.situation, playerNarration].filter(t => typeof t === 'string'),
+    }));
+  }
 
   // Rolling session summary (architecture §8.6) — the cached text. It is
   // regenerated after a narrator card posts (registerRollingSummaryRefreshHook),
@@ -484,6 +558,21 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // retired context assembler ever rendered them, so no narration saw an open
   // fight; vows and bonds reach the CHARACTER block from the sheet.
   extras.progressTracks = (mode === 'campaign_recap') ? [] : await readOpenProgressTracks();
+
+  // What the beat's line names elsewhere (issue #393 D5–D6): the places other
+  // than the characters', and the people whose whereabouts are one — the
+  // scene block's Elsewhere lines and the narration's [whereabouts]. A beat of
+  // play's alone.
+  extras.elsewhere = (mode === 'move_resolution' || mode === 'paced_narrative')
+    ? withTripWords(elsewhereOf(playerNarration, sceneState ?? campaignState, { underway: expeditionUnderway(extras.progressTracks) }))
+    : null;
+  // Where the record has the characters, the other places and the people at
+  // one — the beat's certain [here] (CHARACTERS-MOVED-BY-THE-NARRATION, round
+  // 7): its frame, its present and its prose are read against it before it posts.
+  extras.here = (mode === 'move_resolution' || mode === 'paced_narrative')
+    ? hereOf(sceneState ?? campaignState, { underway: expeditionUnderway(extras.progressTracks),
+      vehicle: getCommandVehicle(campaignState ?? {})?.name ?? null })
+    : null;
 
   // The vow this scene serves (issue #353 R3): a linked track's vow, the
   // session's quest focus, or the only vow in play, with its progress — the
@@ -885,9 +974,10 @@ function shapeNotBeingWritten(shape, sessionId) {
  * @param {string|null} sessionId
  * @param {{ sessionId: string|null, shapeId: string|null }|null} [claim] — the
  *   narration's claim (narrateWithBeatClaim); none claims nothing
- * @returns {{ usedImages: string[], beatShape: { id: string, hint: string } }}
+ * @param {{ names?: string[], keep?: string[] }} [worn] — the story's names and the scene's own words, never listed as worn
+ * @returns {{ usedImages: string[], wornDetails: string[], beatShape: { id: string, hint: string } }}
  */
-function beatVariety(sessionId, claim = null) {
+function beatVariety(sessionId, claim = null, { names = [], keep = [] } = {}) {
   let variety;
   try {
     const cards = sessionNarratorCards(sessionId);
@@ -896,12 +986,13 @@ function beatVariety(sessionId, claim = null) {
       .filter(t => typeof t === 'string' && t.trim());
     const beats = (game.messages?.contents ?? []).filter(m => isSessionBeatCard(m, sessionId)).length;
     variety = {
-      usedImages: recentImages(prose),
-      beatShape:  beatShapeAfter(lastBeatShapeId(sessionId)) ?? pickBeatShape({ beatIndex: beats, seed: sessionId }),
+      usedImages:  recentImages(prose),
+      wornDetails: wornDetails(prose, { names, keep }),
+      beatShape:   beatShapeAfter(lastBeatShapeId(sessionId)) ?? pickBeatShape({ beatIndex: beats, seed: sessionId }),
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the recent narrations could not be read for this beat's shape and images:`, err?.message ?? err);
-    variety = { usedImages: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
+    variety = { usedImages: [], wornDetails: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
   }
   variety.beatShape = shapeNotBeingWritten(variety.beatShape, sessionId);
   if (claim) {
@@ -1164,6 +1255,8 @@ function loreQueryText(playerNarration, campaignState, extras) {
     playerNarration,
     frame.location,
     ...(Array.isArray(frame.present) ? frame.present : []),
+    // Over a comm, not here in person — still in the scene (round 7's a57).
+    ...(Array.isArray(frame.remote) ? frame.remote : []),
     frame.situation,
     ...names,
     currentLocationName(campaignState),
@@ -1188,9 +1281,11 @@ function loreQueryText(playerNarration, campaignState, extras) {
 function addSceneFrameCast(extras, campaignState) {
   try {
     if (!sceneFrameEnabledFromSettings()) return;
-    const present = Array.isArray(campaignState?.sceneFrame?.present)
-      ? campaignState.sceneFrame.present.filter(p => typeof p === 'string' && p.trim())
-      : [];
+    // Who the scene engages: here in person, and over a comm (`remote` — in
+    // the scene, not here; round 7's a57) — each one's card is in scope.
+    const frame   = campaignState?.sceneFrame;
+    const present = [...(Array.isArray(frame?.present) ? frame.present : []), ...(Array.isArray(frame?.remote) ? frame.remote : [])]
+      .filter(p => typeof p === 'string' && p.trim());
     if (!present.length) return;
 
     const roster    = collectAllEntities(campaignState);
@@ -1404,8 +1499,12 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // One list for the block and its checks (overhaul 4, slice 4) — with what
   // the scene obliges: TELL [scene] on the beat that opens one, NOT SO [letgo]
   // (overhaul 2 §10.3; kinds checks.js trips on nothing — they are told only).
+  // A move pressed on a card has no line of the player's (issue #388 #10).
+  const madeLine = resolution.inputMethod === 'button';
   const moveObligations = [...obligationsFor({ mode: 'move', resolution, situation: touched.situation,
-    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince }),
+    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince, madeLine,
+    dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? ''), whereabouts: extras.elsewhere ?? null,
+    here: extras.here ?? null, person: beatPersonOf(settings, campaignState, character) }),
     ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const userMessage  = buildNarratorUserMessage(
     resolution,
@@ -1417,7 +1516,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
       { scene: ringSceneOf(extras.sceneLedger ?? campaignState) },
     ),
-    { audio: extras.audioMarkupEnabled === true, situation: touched.situation, cast: touched.cast, obligations: moveObligations },
+    { audio: extras.audioMarkupEnabled === true, situation: touched.situation, cast: touched.cast, obligations: moveObligations,
+      // An offer's Roll (issue #388 #14): its line was narrated on the offer's card.
+      toldBefore: resolution.inputMethod === 'offer', madeLine },
   );
   // The card keeps the line the player wrote (B5) — not the marker a burn /
   // improve re-narration carries in its place.
@@ -1434,7 +1535,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
   let sideDataApplied = false;
   // What its fact block is checked against: the line the player wrote — a
   // burn's or an improve's re-narration has none (overhaul 2 §5.2, §7.2).
-  const ground = groundOf({ line: writtenLine(resolution), decided: decidedOfMove(resolution, { moveTarget: options?.moveTarget ?? null }) });
+  const ground = groundOf({ line: writtenLine(resolution), decided: decidedOfMove(resolution, { moveTarget: options?.moveTarget ?? null }),
+    rolled: rolledMove(resolution) });
 
   try {
     // Checked against its obligations before it posts (overhaul 4, slice 4 —
@@ -1572,8 +1674,10 @@ function withCardsAnswered(input) {
  * @returns {Promise<{ situation: Object|null, cast: string[] }>}
  */
 async function beatSituation(actorId, campaignState) {
-  const cast = Array.isArray(campaignState?.sceneFrame?.present)
-    ? campaignState.sceneFrame.present.filter(n => typeof n === 'string' && n.trim()) : [];
+  // The scene's cast: here in person, and over a comm (`remote`, round 7's a57).
+  const frame = campaignState?.sceneFrame;
+  const cast = [...(Array.isArray(frame?.present) ? frame.present : []), ...(Array.isArray(frame?.remote) ? frame.remote : [])]
+    .filter(n => typeof n === 'string' && n.trim());
   try {
     return { situation: actorId ? await readMoveSituation(actorId, { campaignState }) : null, cast };
   } catch (err) {
@@ -1976,7 +2080,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       const narration = applyNarratorSidecar(raw, campaignState, { obligations: roundObligations,
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
         endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text),
-          decided: entries.flatMap(e => (e.input?.kind === 'move' ? decidedOfMove(e.input) : [])) }),
+          decided: entries.flatMap(e => (e.input?.kind === 'move' ? decidedOfMove(e.input) : [])),
+          rolled: entries.some(e => e.input?.kind === 'move' && rolledMove(e.input)) }),
       });
       if (!narration?.trim()) {
         failure = EMPTY_REPLY_REASON;
@@ -2625,13 +2730,14 @@ export async function postNarrationCard(narrationText, resolution, campaignState
 /**
  * The line a player wrote for this move — '' when the resolution's
  * playerNarration is not one: the marker a Burn Momentum / Improve Result
- * re-narration carries, or the one a Sojourn miss resolved as a strong hit
- * carries ('resolved' — moves/sojournNeed.js). What the narration card keeps
+ * re-narration carries, the one a Sojourn miss resolved as a strong hit
+ * carries ('resolved' — moves/sojournNeed.js), or a card's own words for a
+ * move pressed on it ('button' — issue #388 #10). What the narration card keeps
  * as the player's line (B5), and what the Chronicle scribe reads with the
  * prose (issue #374 A2).
  */
 function writtenLine(resolution) {
-  return ['burn', 'improve', 'resolved'].includes(resolution?.inputMethod) ? '' : (resolution?.playerNarration ?? '');
+  return ['burn', 'improve', 'resolved', 'button'].includes(resolution?.inputMethod) ? '' : (resolution?.playerNarration ?? '');
 }
 
 /**
@@ -4596,6 +4702,71 @@ export function sessionVignetteWillRun(campaignState) {
 }
 
 /**
+ * The names a second-person set-piece must not call its character outside
+ * quoted speech: the full name and the first (issue #389 #4). Null with no
+ * character.
+ *
+ * @param {Object|null} character — the CHARACTER block's
+ * @returns {{ names: string[] }|null}
+ */
+function personNamesOf(character) {
+  const name = String(character?.name ?? '').replace(/\s+/g, ' ').trim();
+  if (!name) return null;
+  return { names: [name, name.split(' ')[0]] };
+}
+
+/**
+ * A beat of play's [person] (BEAT-IN-THE-THIRD-PERSON — the seventh live
+ * round told a11 "Mira turns the brass star-compass over in her palm" under a
+ * second-person PERSPECTIVE): its character's names when the beat is told in
+ * the second person — the perspective its system prompt was told
+ * (buildNarratorSystemPrompt: no round, the session's recorded one). Null in
+ * the third person, and with no character.
+ *
+ * @param {Object} settings — getNarratorSettings()
+ * @param {Object} campaignState
+ * @param {Object|null} character — the beat's PC (getActiveCharacter)
+ * @returns {{ names: string[] }|null}
+ */
+function beatPersonOf(settings, campaignState, character) {
+  const perspective = resolveNarrationPerspective(settings?.narrationPerspective, {
+    sessionPerspective: sessionPerspectiveOf(campaignState),
+  });
+  return perspective === 'second_person' ? personNamesOf(character) : null;
+}
+
+/**
+ * The story's names — its people, places, ships and factions, the player
+ * characters and their ship — which a worn-details list never holds: a name
+ * is the story's, not a refrain (proseVariety.js wornDetails). Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @returns {string[]}
+ */
+function storyNamesOf(campaignState) {
+  const names = [...meterOwnersOf(campaignState)];
+  try { for (const e of collectAllEntities(campaignState ?? {})) if (e?.name) names.push(e.name); }
+  catch (err) { console.debug?.(`${MODULE_ID} | the story's names were not read for the worn details:`, err?.message ?? err); }
+  return names;
+}
+
+/**
+ * Whose meters a fact block may never record (sheetClaims.js): the player
+ * characters, by name, and their command vehicle. Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @returns {string[]}
+ */
+function meterOwnersOf(campaignState) {
+  const names = [];
+  try { for (const actor of getPlayerActors() ?? []) if (actor?.name) names.push(actor.name); }
+  catch (err) { console.debug?.(`${MODULE_ID} | the player characters were not read for the fact block's meters:`, err?.message ?? err); }
+  try { const ship = getCommandVehicle(campaignState ?? {})?.name; if (ship) names.push(ship); }
+  catch (err) { console.debug?.(`${MODULE_ID} | the command vehicle was not read for the fact block's meters:`, err?.message ?? err); }
+  return names;
+}
+
+/**
  * Render a Begin Session opening vignette via the narrator API and return the
  * prose text. The caller is responsible for posting the chat card; see
  * `src/session/galleyVignette.js` for the participant-enumeration + card-post
@@ -4661,13 +4832,32 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
     campaignState, settings, character, '', extras,
   );
 
+  // Held to its MATERIAL's rule before it posts: a rolled word written as a
+  // label, a name or its pair is asked again once, failing open (issue #388
+  // #11, ORACLE-WORD-WRITTEN-AS-ROLLED — checks.js materialViolations). A
+  // local `ask`, so the playthrough harness files the call as this one's.
+  // …and, in second person, to its character's "you" where they are in it —
+  // an opening, a spotlight; a closing cuts away from them (issue #389 #4,
+  // OPENING-IN-THE-THIRD-PERSON — checks.js personViolations). The
+  // perspective is the one its system prompt was told.
+  const perspective = resolveNarrationPerspective(settings.narrationPerspective, {
+    actingCharacters: Array.isArray(roundCharacters) ? roundCharacters.filter(Boolean).length : 0,
+    sessionPerspective: sessionPerspectiveOf(campaignState),
+  });
+  const closing = /^\s*CLOSING VIGNETTE\b/i.test(String(userMessage ?? ''));
+  const person = perspective === 'second_person' && !closing ? personNamesOf(character) : null;
+  const obligations = obligationsFor({ mode: 'set-piece', material: rolledWordsOf(seeds, { told: `${systemPrompt}\n${userMessage}` }), person });
+  const checking = { judge: false, onVerdict: (v) => logObligationVerdict('session_vignette', v, campaignState, narrationId) };
+  const ask = (addendum) => (addendum && xCard.interrupted('narrateSessionVignette') ? null : callNarratorAPI({
+    label: addendum ? 'narrateSessionVignette:reask' : 'narrateSessionVignette',
+    apiKey, systemPrompt,
+    userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+    model:     settings.narrationModel,
+    maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
+  }));
+
   try {
-    const raw = await callNarratorAPI({
-      label: 'narrateSessionVignette',
-      apiKey, systemPrompt, userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
-    });
+    const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
     if (xCard.interrupted('narrateSessionVignette')) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette' });
     if (!text?.trim()) return null;
@@ -4677,12 +4867,8 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
-        const raw = await callNarratorAPI({
-      label: 'narrateSessionVignette',
-          apiKey, systemPrompt, userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(16000),
-        });
+        // Checked as the first try is.
+        const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
         if (xCard.interrupted('narrateSessionVignette')) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette' });
         if (!text?.trim()) return null;
@@ -5182,7 +5368,9 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       // One list for the block and its checks (overhaul 4, slice 4) — with what
       // the scene obliges (overhaul 2 §10.3).
       pacedObligations = [...obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
-        situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince }),
+        situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince,
+        dice: diceFactsOf(playerText ?? ''), whereabouts: extras.elsewhere ?? null,
+        here: extras.here ?? null, person: beatPersonOf(settings, campaignState, character) }),
         ...sceneObligationsOf(extras.sceneLedger, campaignState)];
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
@@ -5220,7 +5408,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       }
       const text = applyNarratorSidecar(raw, campaignState, { obligations: pacedObligations,
         moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-        mode: 'paced_narrative', ground: groundOf({ line: playerText }),
+        mode: 'paced_narrative', ground: groundOf({ line: playerText }), offer: suggestedMove ?? null,
       });
 
       if (!text?.trim()) {
@@ -5229,9 +5417,14 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         return null;
       }
 
-      const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
-      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null,
-        offerReadingFor(options?.offerReading, buttonMove));
+      // The line sought another place and the narration was held to this one
+      // ([here]): the card offers the journey there (journeyOfferOf).
+      const journey = journeyOfferOf(kept, suggestedMove);
+      const buttonMove = journey ? journey.moveId
+        : pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
+      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null,
+        journey ? journey.placeId : (options?.suggestedTargetId ?? null), extras.beatShape?.id ?? null, options.refusal ?? null,
+        journey ? null : offerReadingFor(options?.offerReading, buttonMove));
       await markChosenCostsTold(pacedChosenSince, narrationId);
       schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
       schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
@@ -5249,12 +5442,13 @@ export async function narratePacedInput(playerText, campaignState, options = {},
             userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
             model: settings.narrationModel, maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
           }));
-          const raw = (await narrateKeepingObligations(ask,
+          const keptAgain = await narrateKeepingObligations(ask,
             pacedObligations,
             { apiKey, judge: obligationJudgeOn(),
               ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
               onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
-          )).raw;
+          );
+          const raw = keptAgain.raw;
           if (xCard.interrupted('narratePacedInput')) {
             await postPacedNarrationPausedCard(campaignState);
             return null;
@@ -5264,9 +5458,12 @@ export async function narratePacedInput(playerText, campaignState, options = {},
             mode: 'paced_narrative', ground: groundOf({ line: playerText }),
           });
           if (text?.trim()) {
-            const buttonMove = pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
-            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null, extras.beatShape?.id ?? null, options.refusal ?? null,
-        offerReadingFor(options?.offerReading, buttonMove));
+            const journey = journeyOfferOf(keptAgain, suggestedMove);
+            const buttonMove = journey ? journey.moveId
+              : pacedButtonMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null, refusal: options.refusal ?? null });
+            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null,
+              journey ? journey.placeId : (options?.suggestedTargetId ?? null), extras.beatShape?.id ?? null, options.refusal ?? null,
+              journey ? null : offerReadingFor(options?.offerReading, buttonMove));
             await markChosenCostsTold(pacedChosenSince, narrationId);
             schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId, playerText });
             schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
@@ -5475,6 +5672,29 @@ function pacedButtonMove(text, suggestedMove, { playerText, speakerName, refusal
   return refusal?.moveId && move === refusal.moveId ? (suggestedMove === refusal.moveId ? null : suggestedMove) : move;
 }
 
+/** The moves that take the characters to another place (obligations.js JOURNEY_MOVES). */
+const JOURNEY_MOVE_IDS = new Set(['set_a_course', 'undertake_an_expedition', 'finish_an_expedition']);
+
+/**
+ * The journey a paced beat's card offers when its [here] check broke on
+ * another place (CHARACTERS-MOVED-BY-THE-NARRATION — round 7's a60, "I fly
+ * the Kobayashi IV's skiff to her stall", read as Develop Your Relationship
+ * and narrated as a flight to Hollow Spire): Set a Course, for the place the
+ * check found, in place of the card's offer — unless that offer is already a
+ * journey. Its target rides on the card, its stat is read at the press. Null
+ * when no [here] re-ask named a place.
+ *
+ * @param {{ verdicts?: Array<Object> }|null} kept — narrateKeepingObligations' result
+ * @param {string|null} suggestedMove — the card's offer
+ * @returns {{ moveId: 'set_a_course', placeId: string, placeName: string|null }|null}
+ */
+export function journeyOfferOf(kept, suggestedMove) {
+  if (JOURNEY_MOVE_IDS.has(suggestedMove)) return null;
+  const v = (Array.isArray(kept?.verdicts) ? kept.verdicts : [])
+    .find(x => x?.tag === 'here' && x.action === 'reask' && typeof x.placeId === 'string' && x.placeId);
+  return v ? { moveId: 'set_a_course', placeId: v.placeId, placeName: v.placeName ?? null } : null;
+}
+
 /**
  * The offer's reading, for the card whose Roll is that move (issue #384,
  * slice 3): the press reads nothing again. Null when the button is another
@@ -5537,9 +5757,10 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         // The scene challenge a scene-challenge Roll is part of (the router's
         // resolution of the classifier's pick): its Roll's target. None for
         // any other move — a hint may have made the button one
-        // (PACED-VARIANT-NO-TARGET).
-        suggestedMoveTargetId: SCENE_CHALLENGE_VARIANTS[suggestedMove] && typeof suggestedTargetId === 'string' && suggestedTargetId
-          ? suggestedTargetId : null,
+        // (PACED-VARIANT-NO-TARGET) — but the journey a [here] re-ask offers,
+        // whose target is the place its check found (journeyOfferOf).
+        suggestedMoveTargetId: (SCENE_CHALLENGE_VARIANTS[suggestedMove] || suggestedMove === 'set_a_course')
+          && typeof suggestedTargetId === 'string' && suggestedTargetId ? suggestedTargetId : null,
         sessionId:        sessionId ?? null,
         // The scene's matched entities, as the move narration card stamps
         // them: the audio picks an NPC's pronoun-keyed voice from them
@@ -5826,6 +6047,18 @@ export function suppressPcDirectedSocialMove(suggestedMove, playerText, speakerN
 function collectEntityCards(ids, types) {
   if (!Array.isArray(ids) || !ids.length) return [];
   const cards = [];
+  // Where the record last had each person with the characters (issue #393
+  // D5): read once, for the connections' cards — their LAST KNOWN outranks it.
+  let read;
+  const seen = (name) => {
+    if (read === undefined) {
+      try { read = readRecord({ session: 'campaign' }); } catch (err) {
+        read = null;
+        console.debug?.(`${MODULE_ID} | narrator: the record was not read for where people were last seen:`, err?.message ?? err);
+      }
+    }
+    return read ? lastSeenWith(read, name) : null;
+  };
   for (let i = 0; i < ids.length; i++) {
     const journalId = ids[i];
     const type      = types?.[i];
@@ -5840,7 +6073,8 @@ function collectEntityCards(ids, types) {
       continue;
     }
     if (!entity) continue;
-    const card = formatEntityCard(entity, type);
+    const lastSeen = type === 'connection' && !String(entity.lastKnown?.location?.value ?? '').trim() ? seen(entity.name) : null;
+    const card = formatEntityCard(lastSeen ? { ...entity, lastSeen } : entity, type);
     if (card) cards.push(card);
   }
   return cards;
@@ -6624,7 +6858,10 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // block's say alone (VOW-FULFILLED-WITH-NOBODY-NAMED): "truth" comes off a
   // reveal of the narration's own whose prose told none of it, before the
   // ledger and the plans read the block. A step the code forced is left.
-  const written = withoutUntoldTruths(parsedBlock.sidecar, prose);
+  // …and a character's meters are the sheet's (PRICE-TOLD-WITH-A-COST-NOT-PAID,
+  // round 7: a25's "the effort cost Mira supply" was filed as the dice's, and
+  // came back as a [dice] line and in the recap — a cost no one took).
+  const written = withoutMeterClaims(withoutUntoldTruths(parsedBlock.sidecar, prose), { owners: meterOwnersOf(campaignState) });
   // The forced reveals go first: the reveals are capped at
   // REVEALS_PER_SIDECAR, and a fact block that held four of its own cut the
   // step the beat was made to play — its clock then stayed full though the
@@ -7075,7 +7312,6 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // new position from the Ship Actor on the next turn.
   const shipPositionChanges = [];
   const otherChanges = [];
-  let walked = null;
   for (const c of sidecar.stateChanges ?? []) {
     const subject   = typeof c?.subject === 'string' ? c.subject.trim().toLowerCase() : '';
     const attribute = typeof c?.attribute === 'string' ? c.attribute.trim().toLowerCase() : '';
@@ -7174,23 +7410,17 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       const prior = campaignState.sceneFrame ?? null;
       const about = noEvidence;
       const line = !bookend && QUESTION_MODES.has(ctx.mode) ? (ctx.ground?.line ?? '') : '';
-      const framed = playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
+      // Its where is a spot within the characters' place, never another place
+      // (issue #393 D4); no line walks them to one (D3) — only travel, `!at`
+      // and the Entities panel move them.
+      // Nor is anyone present in person whom the record has at another place
+      // — the beat's [here] people (CHARACTERS-MOVED-BY-THE-NARRATION, round 7).
+      const away = (Array.isArray(ctx.obligations) ? ctx.obligations : []).find(o => o?.kind === 'here')?.people ?? [];
+      const framed = framedAtThePlace(playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
         sceneId: campaignState.currentSceneId ?? null, line, about,
-      });
+      }), prior, campaignState, { elsewhere: away.map(p => p?.name).filter(Boolean) });
       if (framed && applySceneFrame(framed, campaignState, { narrationId })) {
         campaignState.sceneFrame = countSceneQuestionBeat(campaignState.sceneFrame, prior, { bookend, about });
-        // A line that walks them to another recorded place (overhaul 2 §6.4):
-        // the frame names it and so do the player's words — the current
-        // location moves with the frame, on this copy and in its persist
-        // (a later write of this copy keeps it), and the next beat turns.
-        // Never a Set a Course's: its arrival is the move's own — the outcome
-        // decides it, and the auto-move or the GM's drag applies it with the
-        // ship (a miss's frame "en route to Hollow Spire" arrives nowhere).
-        walked = line && ctx.moveId !== 'set_a_course' ? placeWalkedTo(campaignState.sceneFrame, line, campaignState) : null;
-        if (walked) {
-          campaignState.currentLocationId   = walked.id;
-          campaignState.currentLocationType = walked.type;
-        }
       }
     }
 
@@ -7201,20 +7431,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     // ledgers whole dropped a mid-narration `!truth` correction or oracle
     // truth and resurrected a scene End a Session had just closed — so the
     // ledgers are unioned by id, and skipped when the scene changed.
-    // A walk is written onto the store's state in the same persist, while the
-    // scene it was read in is still the store's; once landed, recorded.
-    const walkedIn = campaignState.currentSceneId ?? null;
-    let arrived = false;
-    const onto = walked ? (target) => {
-      if ((target.currentSceneId ?? null) !== walkedIn) return;
-      target.currentLocationId   = walked.id;
-      target.currentLocationType = walked.type;
-      arrived = true;
-    } : null;
-    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar', { onto }).then(written => {
-      if (walked && arrived && written) void recordPlaceArrival(campaignState, { how: 'line' });
-      return written;
-    }).catch(err =>
+    persisted = persistSceneLedgerFields(campaignState, SIDECAR_FIELDS, 'narrator sidecar').catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: campaignState persist failed:`, err),
     );
   } catch (err) {
@@ -7229,11 +7446,32 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // fourth live run's frames and the ship's record disagreed after narrations
   // that were no beat of play (SHIP-POSITION-AND-FRAME-DISAGREE).
   const movesTheShip = ctx.bookend !== true && (QUESTION_MODES.has(ctx.mode) || ctx.mode === 'inciting_incident');
-  if (shipPositionChanges.length && !movesTheShip) {
+  // …and only by what binds (D17, issue #388 #2): the player's line, the
+  // dice's result on a rolled move's narration, the premise. The narrator's
+  // colour never moves the ship — the fifth live long haul's a25 moved her "at
+  // the source of the distress call, in a drift of frozen asteroids" on no tag
+  // at all, and its a26 restated the expedition's arrival as colour.
+  const shipGround = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '', decided: '' };
+  const shipBinds = (c) => ctx.mode === 'inciting_incident'
+    || factBinds({ basis: factBasis(c?.from ?? null, String(c?.value ?? ''), shipGround, { about: ['ship'] }) });
+  // A journey's arrival is its move's own (the walk rule's, above): a line
+  // that sets out on one, offered and not yet rolled, moves the ship nowhere —
+  // the sixth live long haul's a31, "take the Kobayashi IV to Bleakhold
+  // Station", was offered Set a Course and recorded her "near Bleakhold
+  // Station" before the roll (issue #389 #8, SHIP-BOUND-FOR-READ-AS-NEAR).
+  const journeyOffered = JOURNEY_MOVES.has(String(ctx.offer ?? ''));
+  const bindingShipChanges = journeyOffered ? [] : shipPositionChanges.filter(shipBinds);
+  if (shipPositionChanges.length && journeyOffered) {
+    console.debug?.(`${MODULE_ID} | shipPosition: ${shipPositionChanges.length} ship/position change(s) dropped — `
+      + `${ctx.offer} is offered, and its roll decides where the ship goes.`);
+  } else if (shipPositionChanges.length && !movesTheShip) {
     console.debug?.(`${MODULE_ID} | shipPosition: ${shipPositionChanges.length} ship/position change(s) of a `
       + `${ctx.mode ?? 'non-play'} narration dropped — only a beat of play moves the ship.`);
-  } else if (shipPositionChanges.length) {
-    applyShipPositionChanges(shipPositionChanges, campaignState, { narrationId: ctx.narrationId ?? null }).catch(err =>
+  } else if (shipPositionChanges.length && !bindingShipChanges.length) {
+    console.debug?.(`${MODULE_ID} | shipPosition: ${shipPositionChanges.length} ship/position change(s) dropped — `
+      + 'the narration\'s colour never moves the ship.');
+  } else if (bindingShipChanges.length) {
+    applyShipPositionChanges(bindingShipChanges, campaignState, { narrationId: ctx.narrationId ?? null }).catch(err =>
       console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
     );
   }
@@ -7689,9 +7927,10 @@ function buildPartyContext(speakingName = null, actingActorIds = null) {
 async function resolvePathRelevance(playerText, campaignState) {
   const empty = { entityIds: [], entityTypes: [], entityCards: [], entityNamesById: new Map() };
   try {
-    const present = Array.isArray(campaignState?.sceneFrame?.present)
-      ? campaignState.sceneFrame.present.filter(p => typeof p === 'string' && p.trim())
-      : [];
+    // Here in person, and over a comm (`remote`, round 7's a57): both in the scene.
+    const frame = campaignState?.sceneFrame;
+    const present = [...(Array.isArray(frame?.present) ? frame.present : []), ...(Array.isArray(frame?.remote) ? frame.remote : [])]
+      .filter(p => typeof p === 'string' && p.trim());
     const matchText = present.length
       ? `${playerText ?? ''}\n${present.join(', ')}`
       : (playerText ?? '');
@@ -7946,6 +8185,36 @@ function shipPositionRecord(cvActorId, getShipFn) {
   }
 }
 
+/** Words a narration restating a ship's place may use beside the place's own name. */
+const RESTATE_WORDS = new Set(['a', 'an', 'the', 'at', 'in', 'on', 'to', 'of', 'her', 'its', 'their', 'still', 'safely',
+  'docked', 'berthed', 'moored', 'clamped', 'tied', 'up', 'berth', 'dock', 'docks', 'docking', 'bay', 'aboard', 'there', 'here']);
+
+/**
+ * Whether a narration's ship position only says where her record already has
+ * her: the same recorded place, in no words but its name and how a ship sits
+ * at a place ("Bleakhold Station", "docked at Bleakhold Station"). Any other
+ * word — "drifting clear of the ring", "off the station's far side" — is a
+ * move, and is applied. Never throws.
+ *
+ * @param {string} dest — the change's value
+ * @param {Object} position — inferShipPosition's reading of it
+ * @param {Object|null} prior — her record as it stands
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+function restatesWhereSheIs(dest, position, prior, campaignState) {
+  try {
+    if (!prior || !position) return false;
+    const same = (k) => typeof position[k] === 'string' && position[k] && position[k] === prior[k];
+    if (!same('nearestSettlementId') && !same('nearestLocationId')) return false;
+    const held = new Set(String(formatShipPositionLine(prior, campaignState) ?? '').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+    const said = String(dest ?? '').toLowerCase().replace(/[’']s\b/gu, '').match(/[\p{L}\p{N}]+/gu) ?? [];
+    return said.length > 0 && said.every(w => held.has(w) || RESTATE_WORDS.has(w));
+  } catch {
+    return false;
+  }
+}
+
 /** A position with its `previous` chain cut to SHIP_POSITION_HISTORY − 1 links. */
 function trimPositionHistory(position, depth = 1) {
   if (!position || typeof position !== 'object') return null;
@@ -8055,6 +8324,16 @@ async function applyShipPositionChanges(changes, campaignState, { narrationId = 
     const cvActorId = getCommandVehicleActorId(campaignState);
     if (!cvActorId) return;
     const position = inferShipPosition(dest, campaignState, { source: 'narrator_sidecar' });
+    // A narration that says where she already is keeps her record — a move's
+    // arrival ("docked at", set_a_course / expedition) is not demoted to the
+    // narrator's "near" by its own narration restating the place: the fifth
+    // live long haul's a27 wrote "Bleakhold Station" over Set a Course's
+    // docking, and every narration after it had her berthed against a record
+    // that said "near" (issue #388 #2, SHIP-POSITION-BY-THE-NARRATION).
+    if (restatesWhereSheIs(dest, position, shipPositionRecord(cvActorId, getShip), campaignState)) {
+      console.debug?.(`${MODULE_ID} | shipPosition: "${dest}" restates where the ship is — her record kept.`);
+      return;
+    }
     const { syncCommandVehicleTokenToPosition, commandVehicleTokenSpotBeforeSync } = await import('../sectors/sectorSceneHooks.js');
     // The narration that moved the ship, and where it was before: an X-Card
     // on that narration puts it back (restoreShipPositionAfterXCard, issue

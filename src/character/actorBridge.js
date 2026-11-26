@@ -1651,15 +1651,17 @@ export async function setVowLinkedConnection(vowId, connectionName, connectionId
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
-      if (isVowCopy(item, vowId) && item.setFlag) {
+      if (isVowCopy(item, vowId) && typeof item.update === "function") {
         copies += 1;
         try {
-          await staleChecked('setVowLinkedConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", connectionName));
+          const change = { [`flags.${MODULE_ID}.linkedConnectionName`]: connectionName };
           // With no card id the link is by this name alone: an id left from
           // an earlier link would go on naming that link's card.
-          if (cardId || vowLinkedConnectionId(item)) {
-            await staleChecked('setVowLinkedConnection', () => item.setFlag(MODULE_ID, "linkedConnectionId", cardId));
-          }
+          if (cardId || vowLinkedConnectionId(item)) change[`flags.${MODULE_ID}.linkedConnectionId`] = cardId;
+          // One write: the name and the id as one link. Written apart, the
+          // session record saw a new tie twice, and a move to another card
+          // first as a rename of this one (issue #388 #9).
+          await staleChecked('setVowLinkedConnection', () => item.update(change));
         } catch (err) {
           refused = true;
           console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err);

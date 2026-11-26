@@ -66,12 +66,12 @@ let prevScenes;
 /** A move narration as the narrator makes one: the sidecar applied with its id, then its card. */
 async function narrate(narrationId, prose, sidecar) {
   const raw = `${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
-  const text = applyNarratorSidecar(raw, stored(), { narrationId, mode: 'move_resolution' });   // a move's narration: a beat of play moves the ship (overhaul 2 §6.3)
+  const text = applyNarratorSidecar(raw, stored(), { narrationId, mode: 'move_resolution', ground: { line: '', decided: '', rolled: true } });   // a rolled move's result: it binds, and moves the ship (overhaul 2 §6.3; issue #388 #2)
   await postNarrationCard(text, { moveId: 'set_a_course', outcome: 'strong_hit', _id: `res-${narrationId}` },
     stored(), { playerText: 'We burn for the outpost.', playerName: 'Kira', narrationId });
 }
 
-const shipTo = (value) => ({ newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value }] });
+const shipTo = (value) => ({ newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value, from: 'result' }] });
 const TO_KRELL = shipTo("Krell's Den");
 
 beforeEach(() => {

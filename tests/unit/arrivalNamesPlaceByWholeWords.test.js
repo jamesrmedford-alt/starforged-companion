@@ -157,8 +157,11 @@ describe('issue #345 AA23 — an arrival named by a word another place\'s name h
     await setACourse('home', 'We set a course for home.');
     expect(table.cards(f => f.moveResolution)).toHaveLength(1);
     const now = where();
+    // A course for a place no record holds is an expedition for it
+    // (COURSE-NEW-LABEL-CONTAINS-SETTLEMENT), and an expedition sets out
+    // (issue #393 D2): between places — never at Rockhome.
     expect({ currentLocation: now.currentLocation, dockedAtRockhome: now.docked === 'actor-rock', token: now.token })
-      .toEqual({ currentLocation: 'actor-port', dockedAtRockhome: false, token: PORT_XY });
+      .toEqual({ currentLocation: null, dockedAtRockhome: false, token: PORT_XY });
   }, 60_000);
 
   // "the docks of Rockhome" until issue #364 COURSE-NEW-LABEL-CONTAINS-SETTLEMENT:

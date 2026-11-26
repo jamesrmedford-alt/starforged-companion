@@ -18,6 +18,7 @@ import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
 import { lengthPhrase, sentenceRule } from './proseVariety.js';
 import { obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
 import { connectionStanding } from '../moves/situation.js';
+import { vowAsksWho } from '../world/tellingWords.js';
 
 /**
  * The scene's own lines for a beat's obligations block (overhaul 2 §10.3 —
@@ -107,7 +108,8 @@ export function appendSidecarInstruction(options = {}) {
     exampleLines.push(
       '      "sceneFrame": {',
       '        "location":  "Lyra\'s orbital graveyard",',
-      '        "present":   ["Venri Quint", "Vance"],',
+      '        "present":   ["Venri Quint"],',
+      '        "remote":    ["Vance"],',
       '        "situation": "Hailing Vance\'s shuttle across the debris field",',
       '        "question":  "Will Vance let them board?"',
       '      }',
@@ -157,6 +159,12 @@ export function appendSidecarInstruction(options = {}) {
     '  { "subject": "Kael Dros", "fact": "holds the datapad the PC handed him",',
     '  "from": "line" } and { "subject": "Kael Dros", "attribute": "location",',
     '  "value": "in the cargo bay with the PC", "from": "line" }.',
+    // Players can't overrule dice (issue #389 #2): the line binds the
+    // character's own acts and words, never what the dice decided otherwise.
+    '- A line that takes for granted what the dice decided otherwise — the',
+    '  wreck of a ship the dice sent fleeing, a dead man talking — does not',
+    '  make it so: narrate what the dice made true, and tag none of what the',
+    '  line assumed "line".',
     '- REQUIRED: when your prose establishes or changes WHERE a named',
     '  character is (their location, the vessel or structure they are',
     '  aboard) or their physical condition (wounded, dying, well), you MUST',
@@ -231,12 +239,14 @@ export function appendSidecarInstruction(options = {}) {
       '  player\'s line moves it. "location": where the characters are, in a',
       '  few words — a room, a street, a deck, a stall — never where the ship',
       '  is in space: the ship\'s position says that, and a move of the ship is',
-      '  a ship/position change. "present": every named character present or',
-      '  directly engaged (include characters on comms); "situation": the',
+      '  a ship/position change. "present": every named character here in',
+      '  person; "remote": a named character heard or seen over a comm, a',
+      '  screen or a call — never in "present"; "situation": the',
       '  situation in one sentence. Include it on EVERY response — it replaces',
       '  the previous snapshot. Keep names exactly as established. When the',
-      '  player\'s line has moved the scene, write it where the line put it, and',
-      '  never explain a difference in the prose.',
+      '  player\'s line has moved the scene within the characters\' place, write',
+      '  it where the line put it, and never explain a difference in the prose;',
+      '  a line never takes them to another place — that is a journey\'s move.',
       // Known-issues NARRATOR-REFRAINS: the rule read "Set it on the scene's
       // first beat; afterwards copy it unchanged … it is kept for the scene",
       // and nothing ends a scene but the table — a session's opening hook was
@@ -514,6 +524,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // are told the scene by one renderer, from one read.
   const read = sceneForReading(campaignState, {
     sceneBeats: options?.sceneBeats, sceneFrameEnabled, nameChanges: options?.nameChanges ?? null,
+    underway: options?.underway ?? '',
   });
   const what = read.began?.what ?? '';
   const beats = read.began?.beats ?? null;
@@ -525,11 +536,18 @@ export function buildLedgerBlock(campaignState, options = {}) {
   const vehicle = commandVehicleLines(campaignState);
   const placeLines = [];
   if (read.place?.name) placeLines.push(`  Place:    ${read.place.name} — where the characters are, by the table's record`);
+  else if (read.between) placeLines.push(`  Place:    none — the characters are between places, ${read.between}, until it arrives`);
   if (read.ship) placeLines.push(`  Ship:     ${read.ship}`);
+  // What the player's line names elsewhere (issue #393 D5): another place, and
+  // the people whose whereabouts are one.
+  for (const p of options?.elsewhere?.people ?? []) placeLines.push(`  Elsewhere: ${p.name} — ${p.where}, not here`);
+  for (const p of options?.elsewhere?.places ?? []) placeLines.push(`  Elsewhere: ${p.name} — another place, reached only by a journey's move`);
   const frameLines = [];
   if (frame) {
     if (read.where)          frameLines.push(`  Where:    ${read.where} — as the narration has it`);
     if (read.present.length) frameLines.push(`  Present:  ${read.present.join(', ')}`);
+    // Heard or seen over a comm — not here in person (round 7's a57).
+    if (read.remote.length)  frameLines.push(`  Remote:   ${read.remote.join(', ')} — over a comm, not here in person`);
     if (read.now)            frameLines.push(`  Now:      ${read.now} — as the narration has it`);
     // What the scene is deciding (issue #353 R2) — the player's (overhaul 2
     // §7.2). With none standing, a narration that can set one is asked for
@@ -672,7 +690,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
  * @returns {{ began: { cause: string, what: string, beats: number|null }|null, place: { id: string, name: string }|null,
  *   ship: string, where: string, present: string[], now: string, question: string, letGo: string[] }}
  */
-export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null } = {}) {
+export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null, underway = '' } = {}) {
   const anchor = campaignState?.sceneBegan && typeof campaignState.sceneBegan === 'object'
     && campaignState.sceneBegan.sceneId && campaignState.sceneBegan.sceneId === (campaignState.currentSceneId ?? null)
     ? campaignState.sceneBegan : null;
@@ -680,6 +698,10 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
   const began = anchor ? { cause: anchor.cause ?? 'first', what: typeof anchor.what === 'string' ? anchor.what.trim() : '', beats } : null;
   const placeName = currentPlaceName(campaignState);
   const place = placeName ? { id: campaignState.currentLocationId, name: placeName } : null;
+  // No place, on an expedition: the characters set out — aboard, between
+  // places, until its arrival (issue #393 D1).
+  const journey = typeof underway === 'string' ? underway.trim() : '';
+  const between = !campaignState?.currentLocationId && journey ? `on the expedition ${journey}` : '';
   const ship = commandVehicleLines(campaignState).position.replace(/^SHIP POSITION:\s*/, '');
   const frame = sceneFrameEnabled !== false && campaignState?.sceneFrame && typeof campaignState.sceneFrame === 'object'
     ? campaignState.sceneFrame : null;
@@ -694,9 +716,11 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
   return {
     began,
     place,
+    between,
     ship,
     where: fresh(frame?.location),
     present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
+    remote: (Array.isArray(frame?.remote) ? frame.remote : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
     now: fresh(frame?.situation),
     question: fresh(question),
     letGo: frame ? normaliseLetGo(frame.letGo).map(e => e.text) : [],
@@ -716,7 +740,9 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
 export function formatSceneForReading(scene) {
   if (!scene || typeof scene !== 'object') return '';
   const ship = /^not yet established\b/i.test(scene.ship ?? '') ? 'not yet established' : (scene.ship ?? '');
-  const head = [scene.place?.name ? `Place: ${scene.place.name}.` : '', ship ? `Ship: ${ship}.` : '']
+  const place = scene.place?.name ? `Place: ${scene.place.name}.`
+    : scene.between ? `Place: none — between places, ${scene.between}.` : '';
+  const head = [place, ship ? `Ship: ${ship}.` : '']
     .filter(Boolean).join(' ');
   const bits = [];
   if (scene.began?.what) {
@@ -725,6 +751,7 @@ export function formatSceneForReading(scene) {
   }
   if (scene.where) bits.push(`where: ${scene.where}`);
   if (Array.isArray(scene.present) && scene.present.length) bits.push(`present: ${scene.present.join(', ')}`);
+  if (Array.isArray(scene.remote) && scene.remote.length) bits.push(`over a comm, not here: ${scene.remote.join(', ')}`);
   if (scene.now) bits.push(`now: ${scene.now}`);
   if (scene.question) bits.push(`turns on: ${scene.question}`);
   if (Array.isArray(scene.letGo) && scene.letGo.length) bits.push(`play let go: ${scene.letGo.map(t => `"${t}"`).join(', ')}`);
@@ -1318,6 +1345,13 @@ export function formatEntityCard(entity, entityType) {
   if (lastKnown.length) {
     lines.push('', 'LAST KNOWN (from earlier scenes — what this scene says of them now wins):', ...lastKnown);
   }
+  // Where the session record last had them with the characters (issue #393
+  // D5), when no LAST KNOWN location of their own outranks it.
+  const seenAt = entity.lastSeen && typeof entity.lastSeen === 'object' ? entity.lastSeen : null;
+  if (seenAt) {
+    const where = seenAt.place?.name ? `at ${seenAt.place.name}` : 'with the characters, between places';
+    lines.push('', `LAST SEEN with the characters (the session record): ${where}${seenAt.session ? ` (Session ${seenAt.session})` : ''}`);
+  }
 
   // Generative tier — pinned first, then the newest, with slots held for
   // binding traits (selectCardTierEntries).
@@ -1751,16 +1785,18 @@ export const BEAT_SHAPE_LABEL = 'How this narration is built:';
  * shape picked for this beat (extras.beatShape; pickBeatShape — never the one
  * before's), and the levity permission. '' when there is none of them.
  *
- * @param {{ usedImages?: string[], beatShape?: { hint?: string }|null, levity?: string }} [beat]
+ * @param {{ usedImages?: string[], wornDetails?: string[], beatShape?: { hint?: string }|null, levity?: string }} [beat] —
+ *   `wornDetails`: what the recent narrations kept coming back to (proseVariety.js wornDetails)
  * @returns {string}
  */
-export function formatBeatProseBlock({ usedImages = [], beatShape = null, levity = 'default' } = {}) {
+export function formatBeatProseBlock({ usedImages = [], wornDetails = [], beatShape = null, levity = 'default' } = {}) {
   const images = (Array.isArray(usedImages) ? usedImages : [])
     .filter(i => typeof i === 'string' && i.trim())
     .map(i => i.replace(/\s+/g, ' ').trim());
+  const worn = (Array.isArray(wornDetails) ? wornDetails : []).filter(w => typeof w === 'string' && w.trim()).map(w => w.trim());
   const hint = typeof beatShape?.hint === 'string' ? beatShape.hint.trim() : '';
   const levityLine = LEVITY_BEAT_LINES[levity] ?? '';
-  if (!images.length && !hint && !levityLine) return '';
+  if (!images.length && !worn.length && !hint && !levityLine) return '';
 
   const lines = ["## THIS BEAT'S PROSE"];
   if (hint) {
@@ -1778,6 +1814,19 @@ export function formatBeatProseBlock({ usedImages = [], beatShape = null, levity
       'The recent narrations made these comparisons. Do not use any of them again, or another',
       'drawn from the same source:',
       ...images.map(i => `- ${i}`),
+    );
+  }
+  // The details the recent narrations kept coming back to (NARRATION-REFRAINS-RISING,
+  // round 7: Tamsin's pen, the ledger boy, the data chit, beat after beat).
+  if (worn.length) {
+    lines.push(
+      '',
+      '### DETAILS ALREADY WORN',
+      '',
+      'The recent narrations kept coming back to these. Reach for something else this beat —',
+      'another sense, another person, another thing in the place; use one again only where the',
+      'player\'s line turns on it:',
+      ...worn.map(w => `- ${w}`),
     );
   }
   return lines.join('\n');
@@ -1943,7 +1992,7 @@ function formatEntityCardsBlock(entityCards) {
  */
 function formatLedgerSection(campaignState, settings = {}, {
   matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
-  nameChanges = null,
+  nameChanges = null, progressTracks = [], elsewhere = null,
 } = {}) {
   const {
     factContinuityEnabled         = true,
@@ -1965,6 +2014,8 @@ function formatLedgerSection(campaignState, settings = {}, {
     sceneBeats:   Number.isInteger(sceneNarrations?.beats) ? sceneNarrations.beats : null,
     playerLine,
     nameChanges,
+    underway: expeditionUnderway(progressTracks),
+    elsewhere,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -2234,6 +2285,7 @@ const ANSWER_BLOCK =
  *   Selects the role description and downstream wording. Defaults to
  *   "move_resolution" for back-compat with existing call sites and tests.
  * @param {string[]} [extras.usedImages]       — the comparisons the recent narrations made ([8d])
+ * @param {string[]} [extras.wornDetails]      — the details the recent narrations kept coming back to ([8d])
  * @param {{ hint: string }|null} [extras.beatShape] — the shape picked for this beat ([8d])
  * @param {{ text: string, changesText?: string }|null} [extras.worldSnapshot] — the world snapshot's
  *   block and what changed since, rendered (issue #357)
@@ -2293,6 +2345,7 @@ export function buildNarratorSystemBlocks(
     decideNowRequests    = null,
     plannedSubjects      = [],
     usedImages           = [],
+    wornDetails          = [],
     beatShape            = null,
     worldSnapshot        = null,
     inPlay               = null,
@@ -2534,6 +2587,9 @@ export function buildNarratorSystemBlocks(
   //      With a world snapshot (issue #357) all four are in it, whole — every
   //      threat, the whole landscape, all confirmed lore — and IN PLAY NOW
   //      names the threats in motion; nothing is sent twice.
+  // The Lore sent with no snapshot, as kept: NAMES THE TABLE CHANGED reads
+  // the old names in it, though it is sent in the new ones (issue #389 #2).
+  let loreAsKept = '';
   if (!isMetaMode) {
     if (!snapshot) {
       const threatsBlock = formatActiveThreatsBlock(activeThreats);
@@ -2541,7 +2597,10 @@ export function buildNarratorSystemBlocks(
       const factionsBlock = formatFactionLandscapeBlock(factionLandscape);
       if (factionsBlock) parts.push(factionsBlock);
       const loreBlock = formatEstablishedLoreBlock(confirmedLore);
-      if (loreBlock) parts.push(loreBlock);
+      if (loreBlock) {
+        loreAsKept = loreBlock;
+        parts.push(inTheNamesNow(loreBlock, extras?.nameChanges ?? campaignState?.nameChanges));
+      }
       const recapBlock = formatWorldLoreRecapBlock(loreRecap);
       if (recapBlock) parts.push(recapBlock);
     }
@@ -2624,6 +2683,8 @@ export function buildNarratorSystemBlocks(
     askSceneQuestion: sidecarEnabled && factContinuitySceneFrame ? (SCENE_QUESTION_ASK[resolvedMode] ?? '') : '',
     sceneNarrations, playerLine,
     nameChanges: extras?.nameChanges ?? null,
+    progressTracks,
+    elsewhere: extras?.elsewhere ?? null,
   });
   if (ledgerBlock) parts.push(ledgerBlock);
 
@@ -2685,7 +2746,7 @@ export function buildNarratorSystemBlocks(
   // for the beat, the levity permission said again where the outcome is, and
   // the comparisons the recent narrations already made. The beat modes only.
   if (BEAT_PROSE_MODES.has(resolvedMode)) {
-    const beatProse = formatBeatProseBlock({ usedImages, beatShape, levity: narrationLevity });
+    const beatProse = formatBeatProseBlock({ usedImages, wornDetails, beatShape, levity: narrationLevity });
     if (beatProse) parts.push(beatProse);
   }
 
@@ -2701,7 +2762,7 @@ export function buildNarratorSystemBlocks(
   const namesBlock = formatNameChangesBlock(extras?.nameChanges ?? campaignState?.nameChanges, {
     sessionId: campaignState?.currentSessionId ?? null,
     texts: [
-      ...standing, snapshot?.text ?? '', ...modeParts, ...parts,
+      ...standing, snapshot?.text ?? '', loreAsKept, ...modeParts, ...parts,
       ...(Array.isArray(extras?.nameChangeTexts) ? extras.nameChangeTexts : []),
     ],
   });
@@ -2714,7 +2775,11 @@ export function buildNarratorSystemBlocks(
 
   return {
     standing: standing.join(SECTION_RULE),
-    snapshot: snapshot ? snapshot.text.trim() : '',
+    // In the names the table uses now (issue #389 #2): a correction's old
+    // name in its Lore read "Ashen Wake: driven off the docking ring…", and
+    // the sixth live long haul's a77 narrator wrote the wreck of the "Cinder
+    // Wren" beside it. NAMES THE TABLE CHANGED still tells the change.
+    snapshot: snapshot ? inTheNamesNow(snapshot.text.trim(), extras?.nameChanges ?? campaignState?.nameChanges) : '',
     mode:     modeParts.join(SECTION_RULE),
     beat:     parts.join(SECTION_RULE),
     cached:   !isMetaMode,
@@ -3051,18 +3116,23 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       'that result\'s place — once — and add "rerolled": "<the result it replaces>" to that entry.',
     );
     const rerollOf = (x) => (typeof x?.reroll === 'string' && x.reroll ? ` Re-roll: ${x.reroll}.` : '');
+    // A vow that asks who is won by a name (VOW-FULFILLED-UNANSWERED): its
+    // truth names the one behind it — and one that names no one is given a
+    // name from the name oracle when it is filed (secrets.js namedIfAWhoVow).
+    const whoOf = (kind, name) => (kind === 'vow' && vowAsksWho(name)
+      ? ' Its truth names the one behind it — a person, by name: someone the story has met, or a new name.' : '');
     for (const q of requests) {
       const seeds = Array.isArray(q.oracleSeeds) && q.oracleSeeds.length ? ` Oracle: ${q.oracleSeeds.join('; ')}.` : '';
       const journey = q.kind === 'expedition'
         ? ' Its truth is what waits at the end, its clues are 2-4 waypoints in order, its escalation the danger along the way.'
         : '';
-      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${journey}${seeds}${rerollOf(q)}`);
+      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${journey}${whoOf(q.kind, q.label)}${seeds}${rerollOf(q)}`);
     }
     for (const r of pending) {
       const seeds = Array.isArray(r.oracleSeeds) && r.oracleSeeds.length ? ` Oracle: ${r.oracleSeeds.join('; ')}` : '';
       const what = r.kind === 'mystery' && r.question
         ? `the hidden answer to ${skeletonHeading(r).replace(/^Mystery — /, '')}.${seeds}${seeds ? ' — use the pair that fits.' : ''}`
-        : `${skeletonHeading(r)}.${seeds}`;
+        : `${skeletonHeading(r)}.${whoOf(r.kind, r.subject?.name)}${seeds}`;
       lines.push(`- id ${r.id}: ${what}${rerollOf(r)}`);
     }
     // Issue #354 P2-30: one enemy named three ways got three plans. Names
@@ -3193,11 +3263,35 @@ export function formatEstablishedLoreBlock(lore) {
     return v.length > 160 ? `${v.slice(0, 157)}…` : v;
   };
   const lines = ['## ESTABLISHED LORE', ''];
-  for (const l of list) {
-    const text = clip(l.text);
-    lines.push(`- ${l.title ?? 'Lore'}${text ? `: ${text}` : ''}`);
-  }
+  for (const l of list) lines.push(loreLine(String(l.title ?? '').trim(), clip(l.text)));
   return lines.join('\n');
+}
+
+/**
+ * One Lore entry as a line — `- title: text` — its fact said once (issue
+ * #388 #18, LORE-LINE-SAID-TWICE). A truth's Lore entry is titled
+ * "Subject: fact" and holds the fact again: the fifth live long haul's
+ * narrator read "- Mira Kestrel: promised Tamsin Vey she would be back before
+ * the next cargo arrives: promised Tamsin Vey she would be back before the
+ * next cargo arrives" for every one. A title that holds its text is the line;
+ * one that opens on it cut short ("Subject: the first words…") gives way to
+ * its subject and the whole text. The world snapshot's lore and this block
+ * write it the same way.
+ *
+ * @param {string} title
+ * @param {string} text
+ * @returns {string}
+ */
+export function loreLine(title, text) {
+  const t = String(title ?? '').trim();
+  const x = String(text ?? '').trim();
+  if (!x) return `- ${t || 'Lore'}`;
+  if (!t) return `- Lore: ${x}`;
+  const low = (s) => s.toLowerCase().replace(/\s+/g, ' ');
+  if (low(t) === low(x) || low(t).endsWith(`: ${low(x)}`)) return `- ${t}`;
+  const cut = /^(.+?):\s+(.+?)\s*(?:…|\.\.\.)$/.exec(t);
+  if (cut && low(x).startsWith(low(cut[2]))) return `- ${cut[1]}: ${x}`;
+  return `- ${t}: ${x}`;
 }
 
 /**
@@ -3613,7 +3707,9 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
  * @param {number} sentenceTarget   — the Length setting: a word budget (proseVariety.js lengthBudget)
  * @param {string|null} [speakerName]
  * @param {string} [recentContext]  — the last few ring entries (may be empty)
- * @param {{ audio?: boolean }} [opts] — `audio`: the narration is read aloud (shorter sentences)
+ * @param {{ audio?: boolean, toldBefore?: boolean, madeLine?: boolean }} [opts] — `audio`: the narration is read
+ *   aloud (shorter sentences); `toldBefore`: the line was narrated before the roll — an offer's Roll (issue #388
+ *   #14); `madeLine`: the line is a card's words for a move pressed on it, not the player's (issue #388 #10)
  * @returns {string}
  */
 export function buildNarratorUserMessage(resolution, playerNarration, sentenceTarget, speakerName = null, recentContext = '', opts = {}) {
@@ -3635,10 +3731,25 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     ? speakerName.trim()
     : null;
   const cleanedPlayerNarration = sanitizePlayerText(playerNarration);
-  if (cleanedPlayerNarration) {
+  if (cleanedPlayerNarration && opts?.madeLine === true) {
+    // A move pressed on a card or a panel (issue #388 #10): its line is the
+    // card's words for the move, never the character's — [unsaid] says so.
+    parts.push(
+      `## THE MOVE — made from a button or the map; the player wrote no line\n\n` +
+      `Its words on the table: "${cleanedPlayerNarration}"`,
+    );
+  } else if (cleanedPlayerNarration) {
     parts.push(
       `## PLAYER NARRATION${speaker ? ` — spoken by ${speaker}` : ''}\n\n` +
-      `${speaker ? `${speaker}: ` : ''}"${cleanedPlayerNarration}"`,
+      `${speaker ? `${speaker}: ` : ''}"${cleanedPlayerNarration}"` +
+      // A move rolled from its offer (issue #388 #14, BEAT-TOLD-TWICE): the
+      // line was narrated before the roll, and each offered Develop of the
+      // fifth live long haul told its line twice — the pen given three times.
+      (opts?.toldBefore === true
+        ? `\n\nThis line was narrated before the move was made: that narration is in RECENT SCENE, above. ` +
+          `It is told. Go on from where it ends — tell what the move decides, and do not tell the line, ` +
+          `or anything that narration already told, again.`
+        : ''),
     );
   }
 
@@ -3660,7 +3771,7 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   // kept their words in it.
   const obligations = formatObligationsBlock(Array.isArray(opts?.obligations) ? opts.obligations : obligationsFor({
     mode: 'move', resolution, situation: opts?.situation ?? null, line: playerNarration ?? '',
-    cast: opts?.cast ?? [], speaker, chosenSince: opts?.chosenSince ?? [],
+    cast: opts?.cast ?? [], speaker, chosenSince: opts?.chosenSince ?? [], madeLine: opts?.madeLine === true,
   }));
   if (obligations) parts.push(obligations);
 
@@ -4066,4 +4177,24 @@ function toLabel(key) {
     .replace(/\band\b/gi, '&')
     .replace(/^\w/, c => c.toUpperCase())
     .trim();
+}
+
+/** A prompt's text in the names the table uses now (nameChanges.js writeNewNames); unchanged with none (issue #389 #2). */
+function inTheNamesNow(text, nameChanges) {
+  const changes = Array.isArray(nameChanges) ? nameChanges : [];
+  if (!text || !changes.length) return text;
+  return writeNewNames(text, changes, { otherNames: actorNames() });
+}
+
+/**
+ * The open expedition the characters are under way on, by its label, or ''
+ * (issue #393 D1: with no place recorded, they are between places on it).
+ * The first open one — the tracks as the narration was given them.
+ *
+ * @param {Array<{ type?: string, label?: string, completed?: boolean }>} tracks
+ * @returns {string}
+ */
+export function expeditionUnderway(tracks) {
+  const open = (Array.isArray(tracks) ? tracks : []).find(t => t?.type === 'expedition' && t.completed !== true);
+  return open ? String(open.label ?? '').trim() : '';
 }

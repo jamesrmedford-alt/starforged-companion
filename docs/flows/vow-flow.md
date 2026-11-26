@@ -283,7 +283,8 @@ All real progress lands on **item ticks** (`system.current`) via
 - **Reach a Milestone** (no-roll): pipeline branch →
   `applyReachMilestone(rollerActor, moveTarget)` on the **roller's** vows —
   a named or sole open vow auto-marks (`postReachMilestoneCard`,
-  `src/moves/milestonePicker.js`); several → a picker card whose
+  `src/moves/milestonePicker.js` — posted after the move's own card, the
+  pipeline's `post`; CARDS-STILL-ABOVE-THEIR-ROLL); several → a picker card whose
   `flags.choices` record the offered (vowId, actorId) pairs and the marks
   the pick applies (a won fight's ×N falls here when its vow was renamed —
   issue #326 W43; a plain Reach a Milestone's picker marks once). Any user's click
@@ -321,7 +322,9 @@ All real progress lands on **item ticks** (`system.current`) via
     "reach_a_milestone"` and its Roll button (the narrator's own closing hint,
     when it names another move, takes the button instead —
     `reconcileSuggestedMove`) → the press relays `paced.roll` →
-    `cardActions.applyPacedRoll` posts the line again as its speaker with
+    `cardActions.applyPacedRoll` posts the move, rolled from the offer, as its
+    speaker — the line on its flags as `offerLine`, read by `offerLine.js lineOf`
+    (OFFER-FLOW-FRICTION, round 7; it posted the line again until then) — with
     `forcedMoveId` → `readMove`'s forced interpretation (the move has no
     stat, so no model is asked) → the confirm dialog → the pipeline branch
     above: the roller's sole open vow is marked by its rank, several ask on
@@ -551,7 +554,11 @@ quest, though `isBackground` labels it "Background vow" for the narrator.
 - **End a Session**: the open vows (`vowChoices`, one per vow) and the PCs'
   connections (`tableConnectionNames`, a severed one left out) are one-click
   choices beside the two focus fields, which stay free text. The quest focus
-  chosen there is `sessionFocus.quest` at the next Begin — rung 2 above.
+  chosen there is `sessionFocus.quest` at the next Begin — rung 2 above —
+  unless it is the name of a vow already fulfilled or forsaken
+  (`openThreads.js closedVowNamed`; issue #388 #13): End's card says so while
+  End again can note another, Begin's dialog and card mark it "a vow already
+  fulfilled", and `sessionFocus` carries no quest.
 
 **The vow's hidden plan (issue #353 Phase 4).** `narrateAndPostVowSwearing`
 asks its scene what is really behind the vow (`resolver.vowPlanRequest`: an
@@ -564,7 +571,15 @@ went by name alone, so a reworded vow lost its plan, issue #362 AC14); a
 typed swear with no vow Item behind it stays name-only); the scene's sidecar `plans` decides
 it into the GM-only Secrets journal (`secrets.applyPlanSideData` — a request
 about a subject that already has a plan, the same vow sworn again, files no
-second one, issue #362 AC14). No scene
+second one, issue #362 AC14). A vow that asks who (`tellingWords.vowAsksWho` —
+"Find who…", "whose", "unmask", "identify") is won by a name
+(VOW-FULFILLED-UNANSWERED, five live rounds running): DECIDE NOW tells its plan
+"Its truth names the one behind it", and a decided plan whose truth names no
+one (`truthNamesSomeone` — a story's person, or a name the truth gives that is
+no place's, ship's, faction's or the vow's own) is given one from the name
+oracle as it is filed (`secrets.namedIfAWhoVow`, Given Name + Family Name, "The
+one behind it is …", the deciding narration's version), so THIS BEAT ENDS A VOW
+has a name to tell. No scene
 (the setting off, no key, a failure): the request is filed with its roll
 alone (`secrets.fileRequestedPlan`) for a later narration to decide. The
 plan reaches the narrator as [6.6] UNREVEALED while its vow is the one the
@@ -825,7 +840,8 @@ earned" only once it lands). Each returns `{ ok }`; each that lands is
 recorded on every copy (`flags.fulfilPayoff.<legacy|deepen|reward>`) — the
 won-fight card's 🤝 Deepen records `deepen` there too, so a vow deepens its
 connection once, whichever lands first (`deepenVowConnectionOnce`, issue
-#326 D1) — and
+#326 D1; the fulfilment that finds it landed says so on its own note —
+`postDeepenAlreadyPaidCard`, issue #389 #7) — and
 those that do not go on one card whispered to the GMs
 (`postPayoffFailureCard`, flagged `payoffFailureCard` with the steps a retry
 needs) showing each value as it stands now. Its "↻ Retry these steps"

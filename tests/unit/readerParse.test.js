@@ -32,6 +32,17 @@ describe('a reply the reader can read', () => {
     });
   });
 
+  it('a no-move reading names the move NOT NOW blocked, when the reply says so — never one it does not know (issue #388 #7)', () => {
+    const r = parseReading(JSON.stringify({ move: null, blocked: 'hearten', category: 'downtime', confidence: 'high',
+      reason: 'Hearten cannot be made now: her spirit is full and she is not shaken.' }));
+    expect(r).toMatchObject({ moveId: null, blocked: 'hearten', category: 'downtime' });
+    expect(parseReading(JSON.stringify({ move: null, blocked: 'Hearten', category: 'downtime', confidence: 'high', reason: 'r' })).blocked).toBe('hearten');
+    expect(parseReading(JSON.stringify({ move: null, blocked: 'a nap', category: 'downtime', confidence: 'high', reason: 'r' }))).not.toHaveProperty('blocked');
+    expect(parseReading(JSON.stringify({ move: null, category: 'social', confidence: 'high', reason: 'Talk.' }))).not.toHaveProperty('blocked');
+    // A reading with a move carries no blocked.
+    expect(parseReading(reading({ blocked: 'hearten' }))).not.toHaveProperty('blocked');
+  });
+
   it('reads past fences and prose around the object', () => {
     expect(parseReading(`\`\`\`json\n${reading()}\n\`\`\``).moveId).toBe('face_danger');
     expect(parseReading(`Here is my reading:\n${reading({ move: 'gather_information', stat: 'wits' })}\nThat is all.`).moveId).toBe('gather_information');

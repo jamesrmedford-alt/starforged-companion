@@ -1,0 +1,283 @@
+{
+  "schema": 1,
+  "charter": "long-haul",
+  "mode": "live",
+  "questions": [
+    "Where the characters are (#393 slice 1): does any frame name another recorded place than the record's, does any narration move the characters between places with no journey's move, and does an expedition set out (between places) and its arrival turn the scene as a place?",
+    "People elsewhere (#393 slices 2-3): when a line names someone or somewhere elsewhere, is the narration told [whereabouts] and true to it, and does the reader offer the journey for a line that seeks them (run 6's a64)?",
+    "Dice over lines (LINE-CLAIM-OVER-THE-DICE): when a line takes for granted what the dice decided otherwise, does the narration tell what the dice made true, and how many [dice] judge calls and re-asks were made?",
+    "Openings in the second person (OPENING-IN-THE-THIRD-PERSON): is every second-person opening and spotlight told as \"you\", and did the [person] check re-ask any?",
+    "The fact block (SIDECAR-NOTE-IN-THE-PROSE): does any posted narration carry text written after its fact block?",
+    "The ship and the scene (SHIP-BOUND-FOR-READ-AS-NEAR, EXPEDITION-LEGS-TURN-THE-SCENE): does a narration that names a destination move the ship's record, and is each expedition one scene from its start to its arrival?",
+    "Cards (CARDS-STILL-ABOVE-THEIR-ROLL, REPAIR-POINTS-UNREACHABLE, FULFILMENT-SILENT-ON-A-SPENT-DEEPEN): does any card post above its roll, and is a Repair hit's spend or a fulfilment after a spent deepen handled as fixed, where they occur?",
+    "Memory (F3-C reworded): are the charter's planted facts recalled, with F3-C answered as the manifest left in Tamsin's keeping?",
+    "Beats done, checks violated, cost, judge calls and waits against runs 6 and 7."
+  ],
+  "startedAt": "2026-11-26T03:06:46.376Z",
+  "finishedAt": "2026-11-26T03:40:02.630Z",
+  "commit": "126a547f76a741aebd9fb400ffc5cf1d119fdec4",
+  "versions": {
+    "foundry": "13.351",
+    "system": "foundry-ironsworn 1.28.4",
+    "module": "1.1.1",
+    "browser": "chromium 157.0.8103.78"
+  },
+  "models": {
+    "player": {
+      "model": "claude-sonnet-5-5",
+      "effort": "low",
+      "maxTokens": 6000
+    },
+    "module": [
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5"
+    ]
+  },
+  "prices": {
+    "asOf": "2026-11-23",
+    "notes": "Standard rates, read from Anthropic's price list on the date above. A cache write is charged at 1.25 times input when it is kept five minutes and twice input when it is kept an hour, by the split the response reports (lib/budget.mjs); a write that does not say is priced as an hour's. Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "usdPerMillionTokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01
+      }
+    }
+  },
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "gm": {
+    "draftHolder": "none"
+  },
+  "classification": "pass",
+  "because": "27 of 27 beats done; no check violated, no fact lost or refused",
+  "playerStopped": "every beat has been walked",
+  "goal": {
+    "status": "walked",
+    "reason": "27 of 27 beats done, 0 failed, 0 not exercised",
+    "beats": {
+      "beats": 27,
+      "done": 27,
+      "failed": 0,
+      "notExercised": 0
+    },
+    "checks": {
+      "made": 1381,
+      "violated": 0
+    },
+    "ledger": {
+      "facts": 8,
+      "recalled": 4,
+      "carriedUnasked": 4,
+      "lost": 0,
+      "refused": 0,
+      "notProbed": 0,
+      "notPlanted": 0,
+      "probesAsked": 18,
+      "probesCounted": 7,
+      "probesRecalled": 7,
+      "bands": {
+        "near": 3,
+        "mid": 3,
+        "far": 1
+      },
+      "refusals": 0
+    },
+    "scripted": [
+      {
+        "step": "a6",
+        "beat": 2,
+        "move": "make_a_connection",
+        "faces": [
+          1,
+          2,
+          6
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a25",
+        "beat": 8,
+        "move": "finish_an_expedition",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a32",
+        "beat": 11,
+        "move": "strike",
+        "faces": [
+          10,
+          9,
+          1
+        ],
+        "price": 78,
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a33",
+        "beat": 12,
+        "move": "clash",
+        "faces": [
+          1,
+          6,
+          1
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a35",
+        "beat": 14,
+        "move": "take_decisive_action",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a68",
+        "beat": 23,
+        "move": "forge_a_bond",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a75",
+        "beat": 25,
+        "move": "fulfill_your_vow",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      }
+    ],
+    "interruptions": [
+      {
+        "step": "x13",
+        "beat": 13,
+        "did": "the GM's page reloaded",
+        "result": "the page came back and the world went quiet"
+      },
+      {
+        "step": "x15",
+        "beat": 15,
+        "did": "End a Session was opened on the player's screen and closed unanswered",
+        "result": "closed by its close control"
+      },
+      {
+        "step": "x16",
+        "beat": 16,
+        "did": "the X-Card was played from the player's client (!x); the GM resumed (!x clear)",
+        "result": "the X-Card went up and came down"
+      },
+      {
+        "step": "x19",
+        "beat": 19,
+        "did": "the GM renamed Tamsin Vey's card to Tamsin Okoro",
+        "result": "renamed"
+      }
+    ]
+  },
+  "health": {
+    "failures": [],
+    "waitingOnGm": [],
+    "costsOwed": [],
+    "knownFailures": [
+      "PLAYER-CLIENT-ITEM-CREATE-REFUSED"
+    ],
+    "errors": 2,
+    "uncaught": [
+      {
+        "client": "player",
+        "message": "User Playthrough Player lacks permission to create Item [WwDkeQBASJY43YOM] in parent Actor [xPwo0r5QRYEOFR7U]",
+        "stack": "Error: User Playthrough Player lacks permission to create Item [WwDkeQBASJY43YOM] in parent Actor [xPwo0r5QRYEOFR7U]\n    at ServerDatabaseBackend._createDocuments (file:///home/node/resources/app/dist/database/backend/server-backend.mjs:1:3810)\n    at async #try (file:///home/node/resources/app/common/utils/semaphore.mjs:98:17)"
+      }
+    ],
+    "refused": [
+      {
+        "client": "player",
+        "method": "createDocuments",
+        "document": "Item",
+        "message": "User Playthrough Player lacks permission to create Item [WwDkeQBASJY43YOM] in parent Actor [xPwo0r5QRYEOFR7U]",
+        "parent": null,
+        "data": [
+          {
+            "type": "bondset",
+            "name": "bonds",
+            "id": null,
+            "keys": [
+              "type",
+              "name"
+            ]
+          }
+        ],
+        "stack": "    at Object.fn (http://localhost:30000/systems/foundry-ironsworn/ironsworn.js:240846:18)\n    at #call (http://localhost:30000/scripts/foundry.mjs:23832:20)\n    at Hooks.callAll (http://localhost:30000/scripts/foundry.mjs:23791:17)\n    at http://localhost:30000/scripts/foundry.mjs:58663:17\n    at http://localhost:30000/scripts/foundry.mjs:58668:41\n    at Array.map (<anonymous>)\n    at #handleCreateDocuments (http://localhost:30000/scripts/foundry.mjs:58668:31)"
+      }
+    ]
+  },
+  "budget": {
+    "caps": {
+      "actions": 100,
+      "calls": 400,
+      "minutes": 60,
+      "usd": 15
+    },
+    "stopped": null,
+    "actions": 90,
+    "calls": 332,
+    "minutes": 33.2,
+    "usd": 2.8519,
+    "inFlightUsd": 0,
+    "byRole": {
+      "player": {
+        "calls": 90,
+        "usd": 0.9049,
+        "input": 287188,
+        "output": 25266,
+        "cacheRead": 607870,
+        "cacheWrite": 6830
+      },
+      "module": {
+        "calls": 242,
+        "usd": 1.947,
+        "input": 660945,
+        "output": 58255,
+        "cacheRead": 909009,
+        "cacheWrite": 134510
+      }
+    }
+  },
+  "replay": "EXPLORE_MODE=replay EXPLORE_REPLAY=artifacts/explore/long-haul-live-20261126-030646 node explore.mjs"
+}

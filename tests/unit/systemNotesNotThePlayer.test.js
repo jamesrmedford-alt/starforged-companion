@@ -225,7 +225,9 @@ describe('PT14 — a paced card\'s Roll keeps the speaker its line was typed und
     const [post] = table.cards(f => f.forcedMoveId === 'face_danger');
     // It spoke as the GM who pressed — "We're in" under "Gina".
     expect(post.speaker?.alias).toBe('Pat');
-    expect(post.content).toBe(LINE);
+    // The Roll posts the move rolled from the offer, its line on the flags (OFFER-FLOW-FRICTION, offerLine.js).
+    expect(post.content).toContain('rolled from the offer above');
+    expect(post.flags[MID].offerLine).toBe(LINE);
   }, 30_000);
 });
 

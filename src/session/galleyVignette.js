@@ -47,6 +47,7 @@ import { proseToHtml } from "../audio/segments.js";
 import { earlierVignettes, formatEarlierVignettes } from "./vignetteHistory.js";
 import { lastSessionToTell } from "./lifecycle.js";
 import { drawDie, rollOpeningSeeds, formatMaterial, seedsForFlags, factBlockWritten } from "./sceneSeeds.js";
+import { resolveNarrationPerspective, sessionPerspectiveOf } from "../narration/narratorPrompt.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -333,7 +334,8 @@ const STOP_BASIS = Object.freeze({ player: "the player", dice: "the dice", gm: "
 
 /**
  * Where the last session stopped, by its record (overhaul 2 §9): its last
- * scene — the place it began at (`scene.started`'s place, else the session's
+ * scene that was played — never a cutaway's (a closing's or a spotlight's,
+ * `cause: "cutaway"`) — the place it began at (`scene.started`'s place, else the session's
  * end's), who was with them at the end (its last frame's `present`), what binds
  * there (the truths its beats established — the player's, the dice's, the
  * GM's, the premise's; never the narration's colour, which no view tells), the
@@ -359,10 +361,22 @@ async function recordedStop(sessionId, campaignState) {
     if (!id) return null;
     const session = readRecord({ session: id }, source).sessions[0] ?? null;
     if (!session || session.legacy) return null;
-    const scene = Array.isArray(session.scenes) && session.scenes.length ? session.scenes[session.scenes.length - 1] : null;
+    // The last scene that was played. A closing or spotlight cutaway starts a
+    // scene of its own (narrator.js narrateSessionVignette, cause `cutaway`),
+    // and the closing is the session's last: read as where play stopped, it
+    // told every opening of the fifth live long haul the cutaway's company and
+    // none of the last scene's binds (issue #388 #1, OPENING-TOLD-FROM-THE-CUTAWAY).
+    const played = (Array.isArray(session.scenes) ? session.scenes : []).filter(sc => sc?.cause !== "cutaway");
+    const scene = played.length ? played[played.length - 1] : null;
     const where = scene?.last ?? scene?.where ?? null;
     const place = oneLine(scene?.place?.name) || oneLine(session.ended?.place?.name);
-    const present = (Array.isArray(where?.present) ? where.present : []).map(oneLine).filter(Boolean);
+    // Who was with them: the frame's Present line, less the player characters
+    // themselves — "them" are the characters (the frame lists Mira beside
+    // Tamsin; told "With them at the end: Mira Kestrel, Tamsin Okoro" the
+    // opening would be told the character was with herself).
+    const pcs = new Set((() => { try { return getPlayerActors() ?? []; } catch { return []; } })()
+      .map(a => oneLine(a?.name).toLowerCase()).filter(Boolean));
+    const present = (Array.isArray(where?.present) ? where.present : []).map(oneLine).filter(n => n && !pcs.has(n.toLowerCase()));
     const inScene = (b) => !b.removed && (!scene?.sceneId || b.scene === scene.sceneId);
     const binds = (Array.isArray(session.beats) ? session.beats : []).filter(inScene).flatMap(b => b.established ?? [])
       .map(t => ({ subject: oneLine(t.subject?.text ?? t.subject?.name ?? ""), fact: oneLine(t.fact), basis: t.basis }))
@@ -517,11 +531,25 @@ export async function composeOpeningScene(participants, campaignState, { pickUp 
     present:    participants.active.map(nameOf).filter(Boolean),
     absent:     participants.absent.map(nameOf).filter(Boolean),
     placeKnown: !!(lastSession || picked),
+    perspective: openingPerspective(participants, campaignState),
   }, draw);
   const userMessage = buildGalleyVignetteUserMessage(participants, campaignState, {
     lastSession, seeds, pickUp: picked, account: factBlockWritten(),
   });
   return { userMessage, seeds };
+}
+
+/**
+ * The perspective the opening's narration is told — as its system prompt
+ * resolves it (narratorPrompt.js resolveNarrationPerspective: two characters
+ * or more are third person; Auto keeps the session's).
+ */
+function openingPerspective(participants, campaignState) {
+  let setting = "auto";
+  try { setting = game.settings.get(MODULE_ID, "narrationPerspective") ?? "auto"; }
+  catch (err) { console.debug?.(`${MODULE_ID} | opening: the perspective setting could not be read — Auto:`, err?.message ?? err); }
+  const acting = Array.isArray(participants?.active) ? participants.active.length : 0;
+  return resolveNarrationPerspective(setting, { actingCharacters: acting > 1 ? acting : 0, sessionPerspective: sessionPerspectiveOf(campaignState) });
 }
 
 /** True when `user` owns `actor` (Foundry's permission test, else the ownership map). */

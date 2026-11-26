@@ -468,7 +468,15 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   stated whatever the model. The offer's Roll (`cardActions.applyPacedRoll`)
   forces the move with no target and asks no reader, so the connection is
   found from the player's line — the next bullet's `enrichBondedDevelop`
-  (`favourPacedRollDevelopsNamedConnection.test.js` walks it).
+  (`favourPacedRollDevelopsNamedConnection.test.js` walks it); the line rides
+  on the Roll's flags as `offerLine` (`offerLine.js lineOf` — the Roll posts
+  the move, rolled from the offer above, not the line again: OFFER-FLOW-FRICTION,
+  round 7). It carries
+  `fromOffer`: the move's narration is told the line was narrated on the
+  offer and goes on from there (issue #388 #14, BEAT-TOLD-TWICE;
+  `offeredRollGoesOnFromItsOffer.test.js`). A plea for trust or a tie is
+  talk to a connection; to someone not yet a connection it is Make a
+  Connection's trigger (the reader's rule 4, issue #388 #4).
 - **`develop_your_relationship` / `test_your_relationship`** (GM-gated
   pipeline branch): `selectConnection` (a picker's host id → exact →
   one name inside the other as whole words, either way — "Lorenzo" is not Ren,
@@ -700,7 +708,7 @@ vow's link to a connection is the NPC card, by its id"):
 |---|---|
 | canonical | `flags[MODULE].linkedConnectionId` on the vow Item — the connection's host Actor id |
 | mirror | `flags[MODULE].linkedConnectionName` — the card's name, as the vow's cards say it |
-| writers | the vow card's 🤝 Link (`swearVow.applyPlayerVowLinkFromRelay` → `actorBridge.setVowLinkedConnection(vowId, name, id)` — the card's row lists the table's connections as they are now: `createConnection`, a card's rename (`renameVowLinks`) and its deletion (`clearDeletedConnectionReferences`) each call `swearVow.refreshVowCardLinkRows`, so a vow recorded before its connection was met can still be linked, known-issues VOW-CARD-LINK-ONLY-AT-POSTING); the crew's opening vow (`swearSharedVowForAll` → `connection.reconcileVowLinks` once the target's card exists) |
+| writers | the vow card's 🤝 Link (`swearVow.applyPlayerVowLinkFromRelay` → `actorBridge.setVowLinkedConnection(vowId, name, id)` — the name and the id as one Item update, so the sheet watch records one `vow.linked` per link (issue #388 #9); the card's row lists the table's connections as they are now: `createConnection`, a card's rename (`renameVowLinks`) and its deletion (`clearDeletedConnectionReferences`) each call `swearVow.refreshVowCardLinkRows`, so a vow recorded before its connection was met can still be linked, known-issues VOW-CARD-LINK-ONLY-AT-POSTING); the crew's opening vow (`swearSharedVowForAll` → `connection.reconcileVowLinks` once the target's card exists) |
 | mirror upkeep | a rename of the card, both paths (`index.js syncEntityRecordNameOnUpdate`, `connection.updateConnection`) → `connection.renameVowLinks` → `actorBridge.renameVowLinksToConnection`; the world-load pass (`connection.reconcileVowLinks`, canonical GM) gives a link by name alone its card's id when one card has the name, and a link whose card was renamed its name |
 | readers | the fulfilment's payoff (`payFulfilledVowCopies`), the won-fight card (`postFightVowMilestoneCard` puts `connectionId` on the card; `deepenVowConnectionOnce`), a payoff card's Retry (`runPayoffStep`, the step's `connectionId`) — all through `deepenLinkedConnection(name, marks, { connectionId, actorId })` → `findOpenConnection`: by id when there is one, never falling back to the name; by name (`strict`) for a link with a name alone. `actorId` is the vow's roller, whom a bonded connection's roll is offered to |
 | teardown | deleting the card: `clearVowLinksToConnection` and the two chat-card retirements, by the card's id (and by name for name-only links when no namesake is left) |

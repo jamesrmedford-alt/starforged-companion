@@ -157,7 +157,8 @@ describe('issue #364 EXPEDITION-NEW-LABEL-CONTAINS-SETTLEMENT — an expedition 
       expect(site).toMatchObject({ name: siteName, type: 'uncharted', discovered: false });
       expect(expeditions()).toHaveLength(1);
       expect(expeditions()[0].siteId, 'the expedition is for that site').toBe(site.id);
-      expect(state().currentLocationId, 'nobody has arrived anywhere yet').toBe('actor-vigil');
+      // The expedition set out (issue #393 D2): between places until its finish.
+      expect(state().currentLocationId, 'nobody has arrived anywhere yet').toBeNull();
 
       await finishExpedition(label);
 

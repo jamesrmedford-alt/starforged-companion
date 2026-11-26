@@ -27,6 +27,22 @@ const TRUTH_COMMON = new Set([
   "will", "with", "within", "without", "would", "your", "yours",
 ]);
 
+/**
+ * Whether a vow's name asks who — "Find who is raiding the Cinder Expanse
+ * lanes", "Learn whose hand signed the tasking", "Unmask the broker". Such a
+ * vow is won by a name (VOW-FULFILLED-UNANSWERED: five live long hauls running
+ * fulfilled theirs with "No name is written yet" — the plan's truth held none,
+ * and the fulfilment may tell nothing more than its truth). Read by the plan's
+ * decision (narratorPrompt.js DECIDE NOW) and its filing (secrets.js); words
+ * only, so its readers read no plan.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function vowAsksWho(name) {
+  return /\b(?:who|whom|whose)\b|\b(?:unmask|identify)\b/i.test(String(name ?? ""));
+}
+
 /** The words of a name or a passage, lower-cased, for whole-word matching. */
 export function words(value) {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);

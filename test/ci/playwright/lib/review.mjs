@@ -689,12 +689,17 @@ function recordSizesResult(r) {
 
 /**
  * Lines the narrator spoke for the player's character: quoted speech in a
- * sentence that gives it to "you" ("…," you say). A count to start the
- * reading from, with each sentence quoted.
+ * sentence that gives it to "you" ("…," you say), or speech told for them —
+ * "You tell Tamsin plainly that she is the one person…", "you promise her
+ * that…", "you ask him why…" (issue #388 #10: the fifth live run's a82, a
+ * button's Develop, spoke so for Mira, and the count, reading quotes alone,
+ * found 0). Not what "you" tell yourself. A count to start the reading from,
+ * with each sentence quoted.
  */
 export function spokenFor(messages = []) {
   const out = [];
   const VERBS = "say|said|tell|told|ask|asked|answer|answered|reply|replied|murmur|mutter|whisper|call|shout|add|admit|explain|snap|growl|hear yourself";
+  const told = /\byou\s+(?:tell|told|promise|promised|assure|assured|admit|admitted|confess|confessed|swear|swore|explain|explained|ask|asked|warn|warned|insist|insisted)\s+(?!yourself\b)(?:[^.!?"“]{0,40}?\s)?(?:that|whether|if|why|who|what|how|where|when)\b/i;
   // The speech is given to "you": «"…," you say», or «You answer the hatch.
   // "…"» — the verb outside the quote. «"Careful what you tell her," the
   // voice says» is somebody else speaking.
@@ -706,6 +711,7 @@ export function spokenFor(messages = []) {
     const sentences = sentencesOf(m.text);
     sentences.forEach((s, i) => {
       if (quote.test(s) && tagged.test(s)) out.push({ step: m.step, scene: m.vignette ?? null, sentence: s.slice(0, 240) });
+      else if (!quote.test(s) && told.test(s)) out.push({ step: m.step, scene: m.vignette ?? null, sentence: s.slice(0, 240) });
       else if (leads.test(s) && /^\s*["“]/.test(sentences[i + 1] ?? "") && !new RegExp(`["”][,.]?\\s+(?!you\\b)\\S+(?:\\s+\\S+)?\\s+(?:says|said|asks|answers|replies)\\b`, "i").test(sentences[i + 1])) {
         out.push({ step: m.step, scene: m.vignette ?? null, sentence: `${s} ${sentences[i + 1]}`.slice(0, 240) });
       }
@@ -754,6 +760,11 @@ const replyJson = (exchange) => {
   const found = replyText(exchange).match(/\{[\s\S]*\}/);
   if (!found) return null;
   try { return JSON.parse(found[0]); } catch { return null; }
+};
+/** Two lines in the same words: case, spacing and closing punctuation aside. */
+const sameWords = (a, b) => {
+  const plain = (t) => String(t ?? "").toLowerCase().replace(/[\s"“”'‘’]+/g, " ").replace(/[.!?…\s]+$/, "").trim();
+  return plain(a) !== "" && plain(a) === plain(b);
 };
 /** A reader's account that it narrated a recovery because there was nothing to recover — its own, or the module's (router.js nothingToRecover: "[nothing to recover: …]"). */
 const NOTHING_TO_RECOVER = /\[nothing to recover\b|\bnothing (?:(?:for \w+ )?to (?:recover|heal|restock|restore|mend|treat|repair|resupply|hearten)|left to (?:recover|heal|restock|restore|mend))\b/i;
@@ -866,7 +877,8 @@ function routedOf(posted, reading) {
  * own replies (`exchanges` are a run's recorded calls with their replies) —
  * whether the line named a move (lib/moveNames.mjs), and — where the line's
  * beat wants a move (the charter beat's `wants`, or its check's moves; its
- * first `setupLines` lines want none) — whether that is the move it got.
+ * first `setupLines` lines want none, nor a line in its `setupWords`, the
+ * words its tell asks for as they are) — whether that is the move it got.
  *
  * A run reads whichever readers it had. Before the switch (overhaul 1), the
  * pacing reader's decision and the move reader's move — the kept runs are
@@ -879,8 +891,9 @@ function routedOf(posted, reading) {
  *
  * A line whose beat wants a recovery, narrated because the sheet had nothing
  * for the recovery it set about (`nothingToRecover`: the meters — as the
- * pacing reader said and its sheet bore out, nothingToRecoverOf; or as the
- * move contracts refused it, the paced card's `cannotMake`), is read right.
+ * pacing reader, or the line reader, said and its sheet bore out,
+ * nothingToRecoverOf; or as the move contracts refused it, the paced card's
+ * `cannotMake`), is read right.
  *
  * A count to start reading from: whether a line *should* have been a move is
  * the charter's say for its move beats and the reader's everywhere else.
@@ -899,7 +912,12 @@ export function freeformOf({ messages = [], exchanges = [], beats = [], charter 
     // A memory question typed as a line of play: one of the charter's, in a
     // beat that asks them (a line that *states* a fact holds its words too).
     const question = asks.some(p => isProbeLine(m.text, p)) && (beat ? beat.check?.type === "probesAsked" : /\?\s*$/.test(m.text));
-    const wanted = !beat || question || nth <= (beat.setupLines ?? 0) ? []
+    // A line the beat's tell gives word for word, to set something up — beat
+    // 22's "I rest aboard until the next morning.", the night's passing — is
+    // no attempt at the move the beat wants (the fifth live run counted a56 a
+    // recovery unread).
+    const setUp = (beat?.setupWords ?? []).some(w => sameWords(w, m.text));
+    const wanted = !beat || question || setUp || nth <= (beat.setupLines ?? 0) ? []
       : [...new Set([...(beat.wants ?? []), ...(beat.check?.moves ?? []), ...(beat.check?.move ? [beat.check.move] : [])])];
     const pacingCall = call(m.step, /classifyInput$/);
     const pacing = pacingReadOf(pacingCall);
@@ -914,7 +932,13 @@ export function freeformOf({ messages = [], exchanges = [], beats = [], charter 
     if (line) {
       const routed = routedOf(messages.filter(x => x.step === m.step && !x.fromPlayer), line);
       ({ became, move } = routed);
-      recovery = became === "narrated" && wanted.some(id => RECOVER_MOVE_IDS.includes(id)) ? routed.refusedRecovery : null;
+      // A recovery the contracts refused (the card's `cannotMake`), or one the
+      // line reader itself read as no move for having nothing to recover — its
+      // reason says so, and the sheet in its SITUATION bears it out (the fifth
+      // live run's a58: "Hearten cannot be made now: Mira's spirit is full …").
+      const readCall = exchanges.find(x => x.step === m.step && /readLine$/.test(x.kind ?? "") && lineReadOf(x)) ?? null;
+      recovery = became === "narrated" && wanted.some(id => RECOVER_MOVE_IDS.includes(id))
+        ? (routed.refusedRecovery ?? nothingToRecoverOf(line.reasoning, readCall?.user)) : null;
     } else {
       if (pacing?.decision === "MOVE") became = read?.noMove ? (pacing.suggested ? "offered" : "narrated") : "rolled";
       else if (pacing?.decision === "NARRATIVE_WITH_MOVE_AVAILABLE") became = "offered";

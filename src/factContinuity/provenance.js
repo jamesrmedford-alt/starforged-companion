@@ -67,10 +67,10 @@ const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
  * @param {{ line?: string, lines?: string[], decided?: string[] }} [words]
  * @returns {{ line: string, decided: string }}
  */
-export function groundOf({ line = '', lines = [], decided = [] } = {}) {
+export function groundOf({ line = '', lines = [], decided = [], rolled = false } = {}) {
   const all = [line, ...(Array.isArray(lines) ? lines : [])].map(clean).filter(Boolean).join('\n');
   const dice = (Array.isArray(decided) ? decided : [decided]).map(clean).filter(Boolean).join('\n');
-  return { line: all.slice(0, GROUND_MAX_CHARS), decided: dice.slice(0, GROUND_MAX_CHARS) };
+  return { line: all.slice(0, GROUND_MAX_CHARS), decided: dice.slice(0, GROUND_MAX_CHARS), rolled: rolled === true };
 }
 
 /**
@@ -82,7 +82,7 @@ export function groundOf({ line = '', lines = [], decided = [] } = {}) {
 export function normaliseGround(ground) {
   const line = ground && typeof ground === 'object' && typeof ground.line === 'string' ? ground.line : '';
   const decided = ground && typeof ground === 'object' && typeof ground.decided === 'string' ? ground.decided : '';
-  return groundOf({ line, decided: [decided] });
+  return groundOf({ line, decided: [decided], rolled: !!ground && typeof ground === 'object' && ground.rolled === true });
 }
 
 /** The telling stems of `text` that are not the stems of a name it is about. */
@@ -244,10 +244,15 @@ export function binds(entry) {
 /**
  * The basis a narrator fact earns (overhaul 2 §5.2, D5): its tag, checked
  * against the beat's own words — a `line` fact binds as the player's when one
- * of its own telling words is in the beat's player words, a `result` fact as
- * the dice's when one is in what the dice decided; a name is no evidence (the
+ * of its own telling words is in the beat's player words; a `result` fact as
+ * the dice's on the narration of a rolled move (`ground.rolled` — an action or
+ * a progress roll told), else when one of its words is in what the dice
+ * decided (an oracle's answer, a filled clock); a name is no evidence (the
  * fact's subject, the PCs, the ship). Anything else — no tag, a tag the words
  * do not bear out, a beat with no such ground — is the narrator's colour.
+ * The word test alone refused five results of a roll in the fifth live long
+ * haul (a71 "the bond between them is formed") and bound two colours by an
+ * accident of words (issue #388 #5, RESULT-FLOOR-BY-SHARED-WORD).
  *
  * @param {"line"|"result"|null} from — the parser's normalised tag
  * @param {string} text — the fact's own words (a truth's fact, a state change's value)
@@ -257,8 +262,25 @@ export function binds(entry) {
  */
 export function factBasis(from, text, ground, { about = [] } = {}) {
   if (from === 'line' && sharesTellingWord(ground?.line ?? '', text, { about })) return 'player';
-  if (from === 'result' && sharesTellingWord(ground?.decided ?? '', text, { about })) return 'dice';
+  if (from === 'result' && (ground?.rolled === true || sharesTellingWord(ground?.decided ?? '', text, { about }))) return 'dice';
   return 'narrator';
+}
+
+/** The outcomes of a move whose dice were rolled — an action roll's or a progress roll's. */
+const ROLLED_OUTCOMES = new Set(['strong_hit', 'weak_hit', 'miss']);
+
+/**
+ * Whether a resolution is a rolled move's — its dice decided an outcome.
+ * A move with no roll (Develop Your Relationship before a bond, Reach a
+ * Milestone) decides nothing by dice: what its narration tags `result` is
+ * the narrator's colour (issue #388 #5: a64's "Tamsin asks how the Cinder
+ * Wren got Mira's berth number" bound as the dice's by the target's name).
+ *
+ * @param {Object|null} resolution
+ * @returns {boolean}
+ */
+export function rolledMove(resolution) {
+  return ROLLED_OUTCOMES.has(resolution?.outcome ?? null);
 }
 
 /**
@@ -307,14 +329,17 @@ export function inColourWindow(entry, window) {
 /**
  * What a move's dice decided, for its narration's ground (overhaul 2 §5.2):
  * the stakes line its outcome delivered — the hit stated before the roll on a
- * hit, the miss on a miss (moves/stakes.js) — and the move's target. A
- * `result` fact binds as the dice's when one of its own words is here.
+ * hit, the miss on a miss (moves/stakes.js) — and the move's target. A move
+ * with no roll decided nothing (rolledMove). On a rolled move's narration a
+ * `result` fact binds as the dice's (factBasis, `ground.rolled`); this is the
+ * ground a round's narration and a relayed one carry.
  *
  * @param {Object|null} resolution — a move's (or a round entry's input)
  * @param {{ moveTarget?: string|null }} [opts]
  * @returns {string[]}
  */
 export function decidedOfMove(resolution, { moveTarget = null } = {}) {
+  if (!rolledMove(resolution)) return [];
   const outcome = resolution?.outcome ?? null;
   const stakes = resolution?.stakes && typeof resolution.stakes === 'object' ? resolution.stakes : null;
   const delivered = outcome === 'strong_hit' || outcome === 'weak_hit' ? stakes?.hit : (outcome === 'miss' ? stakes?.miss : null);

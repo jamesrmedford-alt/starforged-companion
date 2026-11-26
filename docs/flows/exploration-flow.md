@@ -115,6 +115,12 @@ finish docks there and charts nothing.
   "wake me when we get there" across a journey not yet made is travel. (PR
   #350 gave it the recent scene, so "her coordinates" are read as the
   destination the scene set up.) Prompt rules only — the model decides.
+  Since overhaul 8 (issue #393 D7) the reader is told what the line names
+  elsewhere — "- Elsewhere: Tamsin Okoro is at Hollow Spire, not here; Hollow
+  Spire is another place — reached only by a journey." (`readLineSituation`'s
+  `line`, `whereabouts.js elsewhereOf`) — and its travel rule reads a line
+  that seeks someone or something elsewhere as that journey: Set a Course for
+  a charted place, else Undertake an Expedition, never a walk.
 - **Interpreter** (`src/moves/interpreter.js`): Set a Course is a known route
   to a charted place; Undertake an Expedition any journey toward one that is
   not. A destination without a proper name is named by a working label
@@ -181,9 +187,14 @@ finish docks there and charts nothing.
 - **`set_a_course`** (a known route to a charted place — §0.5): strong hit +1
   momentum ("Arrived, situation favors you"), weak hit arrives with a suffer
   choice, miss routes Pay the Price. On a non-miss the pipeline treats it as
-  **arrival**: `maybeUpdateShipPositionFromName` writes the ship-position
-  flag on the command vehicle and the sector-scene token syncs (its `report`
-  says whether the token moved). Whatever Ship Positioning says, the narrator
+  **arrival**: the current location is the destination, whatever Ship
+  Positioning and Auto-Move say (issue #393 D2 — travel is the only way to
+  another place; with either off, a hit left the characters where they set
+  out), and with both on `maybeUpdateShipPositionFromName` writes the
+  ship-position flag on the command vehicle and the sector-scene token syncs
+  (its `report` says whether the token moved). A **miss sets out** (D1):
+  waylaid, the characters are between places — the current location none
+  (`index.js setOut`) — until an arrival. Whatever Ship Positioning says, the narrator
   is told: the MOVE OUTCOME gains `[ARRIVAL: The ship has ARRIVED at <place>.
   Open the scene there …]` — a strong hit's favouring the crew, ending on
   something unresolved there (`arrivalNarratorLine`; issue #348 PT08: it got
@@ -478,13 +489,28 @@ finish docks there and charts nothing.
   as the site ladder does (U48): generated site names repeat across sectors,
   and the older sector's derelict became the current location, the ship's
   position and its token's place on that sector's map (issue #342 Z15).
-  Since overhaul 2 (§6.4) a narration of play is a current-location writer
-  too, the current location alone: a beat whose frame names exactly one
-  recorded settlement, planet or location and whose player words name it
-  ("I take the lift down to Hollow Spire") moves it there with the frame
-  (`sceneLifecycle.js placeWalkedTo`; `place.arrived`, `how: "line"`) — the
-  ship stays where its record says (D17). A Set a Course's beat walks
-  nowhere: its arrival is the move's own (above). And only a beat of play's
+  No narration writes the current location (issue #393, overhaul 8 — D3):
+  overhaul 2's walk (§6.4: a frame and a line both naming a recorded place,
+  "I take the lift down to Hollow Spire", moved it there) is retired — the
+  sixth live long haul's a64 walked the characters between two stations. A
+  location records no settlement (its `settlementId` has no writer), so
+  "within the settlement" cannot be read: a line moves nobody, and the
+  frame's `where` is a spot within the place — a frame naming another
+  recorded place keeps the scene's last `where` (D4, `sceneLifecycle.js
+  framedAtThePlace`); between places it is taken whole. Since round 7 the
+  prose is held to it too, before it posts: NOT SO [here] (certain,
+  `checks.js hereViolations`) asks again a narration whose frame, present or
+  prose puts the characters at another recorded settlement or planet, and a
+  paced card then offers Set a Course for it (`narrator.js journeyOfferOf`) —
+  a60's skiff flight to Hollow Spire (CHARACTERS-MOVED-BY-THE-NARRATION). An expedition's new
+  track for another place **sets out** (D2): the current location is none —
+  aboard, between places — until its finish arrives; one for the place they
+  are at, or begun at a site (vault, derelict) for no other recorded place,
+  leaves them where they are (it explores the site). The scene block and the
+  reader say "Place: none — … between places, on the expedition <label>"
+  (`narratorPrompt.js expeditionUnderway`, `sceneForReading`'s `underway`),
+  and a scene begun between places turns at the arrival, as a place
+  (`sceneTurns.js anchorFilled`'s `beat`). And only a beat of play's
   ship/position moves the ship (§6.3).
 - **Narrator awareness**: the §6.5 ship block renders `COMMAND VEHICLE` +
   `SHIP POSITION` lines — every arrival recorder writes only after arrival,

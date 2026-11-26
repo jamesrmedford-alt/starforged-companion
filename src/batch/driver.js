@@ -122,6 +122,7 @@ import {
   recoveryPlan,
   markModeOffAfter,
 } from "./round.js";
+import { lineOf } from "../moves/offerLine.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -2266,7 +2267,7 @@ async function joinRound(message, userId) {
   try {
     written = await queueRoundWrite((latest) => {
       const res = offerForcedMove(latest, {
-        userId, text: stripHtml(String(message?.content ?? "")), forced, submissionId: randomId(), now: nowIso(),
+        userId, text: stripHtml(lineOf(message)), forced, submissionId: randomId(), now: nowIso(),
         messageId: message?.id ?? null,
       });
       read = res.read;

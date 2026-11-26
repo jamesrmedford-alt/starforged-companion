@@ -119,7 +119,16 @@ export function resolveRepairActorId(message = null) {
 // Dialog
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function openRepairDialog(message = null) {
+/**
+ * The repair dialog. Opened by `!repair`, or by a Repair card's "🔧 Spend
+ * repair points" (index.js wireRepairSpendButton), which passes the roll's
+ * outcome to start from and the card to stamp once its points are spent
+ * (issue #389 #5, REPAIR-POINTS-UNREACHABLE).
+ *
+ * @param {ChatMessage|Object|null} [message] — the `!repair` message, or the Repair card
+ * @param {{ outcome?: "strong"|"weak"|null, sourceMessageId?: string|null }} [opts]
+ */
+export async function openRepairDialog(message = null, { outcome = null, sourceMessageId = null } = {}) {
   const { DialogV2 } = foundry.applications.api;
 
   // The trade is Sacrifice Resources: an unprepared PC has no supply to give
@@ -149,8 +158,8 @@ export async function openRepairDialog(message = null) {
         <label>
           <span>Outcome</span>
           <select name="outcome">
-            <option value="strong">Strong hit</option>
-            <option value="weak">Weak hit</option>
+            <option value="strong"${outcome === "weak" ? "" : " selected"}>Strong hit</option>
+            <option value="weak"${outcome === "weak" ? " selected" : ""}>Weak hit</option>
           </select>
         </label>
         <label>
@@ -219,6 +228,7 @@ export async function openRepairDialog(message = null) {
           extra:     alloc.extra,
           spends:    alloc.spends,
           actorId,
+          ...(typeof sourceMessageId === "string" && sourceMessageId ? { sourceMessageId } : {}),
         });
       },
     },
@@ -328,6 +338,18 @@ export async function applyRepairSpends(payload = {}, ctx = {}) {
     actions.push("No spends allocated.");
   }
   await postRepairCard(alloc, actions);
+  // The roll's points are spent: its card's button says so, and is spent
+  // once (issue #389 #5). Bookkeeping — a refused stamp is warned, not fatal.
+  await stampRepairSpent(payload.sourceMessageId);
+}
+
+/** Mark the Repair card whose points were just spent (its "🔧 Spend repair points"). */
+async function stampRepairSpent(messageId) {
+  if (typeof messageId !== "string" || !messageId) return;
+  const card = game.messages?.get?.(messageId);
+  if (!card?.flags?.[MODULE_ID]?.repairPoints || typeof card.update !== "function") return;
+  await card.update({ [`flags.${MODULE_ID}.repairSpent`]: true }).catch(err =>
+    console.warn(`${MODULE_ID} | repair: the card's spent stamp was refused:`, err?.message ?? err));
 }
 
 /** The Repair card — what actually happened, never what was merely allocated. */

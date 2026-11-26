@@ -294,7 +294,8 @@ mechanics together:
   an item given and then left (beat 5's dock-fee slip, read by its refusals
   alone: it has no probe, so the kept runs' beat checks stand) —
   each asked about in every later session, scored stored / in the prompt / in
-  the answer, with the words that would contradict it; read against the
+  the answer, with the words that would contradict it (a rename's old name
+  told as what it was — "renamed her from" — contradicts nothing); read against the
   narrator's answers **and** against every summary, Chronicle entry and recap
   the helpers wrote.
 - **Mechanical checks after every action**, from the game's text: each roll
@@ -374,6 +375,28 @@ with the expedition beat — reviewed the same way (`cold-read.md`,
 `annotated-transcript.md`, `scorecard.md`, `review-notes.md` — its findings,
 issue #383). Its replay diverges from today's module wherever a fix since
 changed what the module does.
+
+**The fifth live run of the long haul** (2026-11-25, $3.19) is kept at
+`playwright/explorations/long-haul-live-20261125-164201/`: the first on the one
+reader, moves as contracts and scenes with provenance, and the first to reach
+all 27 beats — reviewed the same way (its findings, issue #388) and re-scored
+after its three wrong checks were mended (`rescore.mjs`).
+
+**The sixth live round of the long haul** (2026-11-25/26, $4.78 over two runs)
+measured the fifth run's fixes. Its first run stopped at beat 22 on a fault of
+the runner's own and is kept as a partial run at
+`playwright/explorations/long-haul-live-20261125-225635/`; its second played
+all 27 beats with no check violated and is kept, reviewed in full, at
+`playwright/explorations/long-haul-live-20261125-232143/` (its findings, issue
+#389). Both are re-scored by the checks mended after them.
+
+**The seventh live round** (2026-11-26, $2.85, one run) measured #390's fixes,
+overhaul 8 among them. It was the first live long haul to play all 27 beats
+with no check violated and no fact lost, and is kept, reviewed in full, at
+`playwright/explorations/long-haul-live-20261126-030646/`. The record of where
+the characters are held, and the narration did not: a skiff hop took the
+character to another settlement with no journey (its findings are in #390–#392
+and `docs/known-issues.md`, LONG-HAUL-ROUND-7).
 
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about

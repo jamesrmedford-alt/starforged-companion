@@ -111,7 +111,14 @@ export function applySidecar(sidecar, ctx) {
     // here — a scene travels, and that strike is that place's
     // (ACTIVE-SCENE-STRIKE-PLACE-BLIND, AA28's in-scene half).
     const here = { place: sceneLocation };
-    const basis = basisOf(t.from, fact, subjectRef);
+    // A hidden plan's truth the narration revealed (`revealOf`, the code's
+    // marker — secrets.js revealedTruthsOf) is the table's, decided when its
+    // plan was made: it binds as the GM's, never as the narrator's colour.
+    // Held as colour, the fifth live long haul's revealed vow truth was then
+    // filed to Lore at its scene's end — the run's one violation (issue #388
+    // #6, REVEALED-PLAN-TRUTH-AS-COLOUR).
+    const revealed = typeof t.revealOf === 'string' && /^[\w-]{1,64}$/.test(t.revealOf);
+    const basis = revealed ? 'gm' : basisOf(t.from, fact, subjectRef);
     const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact, here)
       ?? findEquivalentTruth(storedTruths, subject, fact, here);
     if (dupe) {
@@ -208,7 +215,20 @@ export function applySidecar(sidecar, ctx) {
     const shown   = subject.kind === 'text' && subject.text ? { subjectText: subject.text } : {};
     // Its basis rides on the value (overhaul 2 §5.1); the `previous` chain
     // keeps each value's own, so an X-Card restores a value with its basis.
-    const basis   = basisOf(c.from, typeof value === 'string' ? value : String(value ?? ''), subjectRef);
+    const offered = basisOf(c.from, typeof value === 'string' ? value : String(value ?? ''), subjectRef);
+    // A value restated as it stands, or cut to its own first words, keeps the
+    // basis it holds, or rises to the restatement's (raisedBasis — a truth's
+    // restatement's rule, overhaul 2 §5.3): a whereabouts the player's line
+    // set is not made colour by a narration that says it again untagged. The
+    // first-session playthrough's re-records (2026-11-26) had "Vance Oduya: at
+    // the berth console at Hollow Spire with the PC" from the line, then the
+    // same words untagged; and "in the dock office at Hollow Spire with the PC,
+    // going through the berth logs", then "in the dock office at Hollow Spire
+    // with the PC" — each time the scene ended on colour, and no LAST KNOWN
+    // was kept. A value that adds words is a new one: what it adds is the
+    // narration's.
+    const held    = idx >= 0 ? list[idx] : null;
+    const basis   = held && restatesStateValue(held.value, value) ? raisedBasis(entryBasis(held), offered) : offered;
     const entry   = { attribute, value, updatedAt: now, basis, ...shown, ...stamp, ...(previous ? { previous } : {}) };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
@@ -216,6 +236,24 @@ export function applySidecar(sidecar, ctx) {
   }
 
   return { truthIds, stateUpdates };
+}
+
+/**
+ * Whether a state value says the held one again: the same words (case and
+ * spacing aside), or the held value's own first words, two or more, ending
+ * where one of its words ends — the rest cut, nothing added.
+ *
+ * @param {*} held — the value the entry holds
+ * @param {*} value — the restatement
+ * @returns {boolean}
+ */
+function restatesStateValue(held, value) {
+  const norm = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const was = norm(held);
+  const now = norm(value).replace(/[\s,;:.]+$/, '');
+  if (!was || !now) return false;
+  if (was === norm(value) || was === now) return true;
+  return now.split(' ').length >= 2 && was.startsWith(now) && /^[^\p{L}\p{N}'’]/u.test(was.slice(now.length));
 }
 
 /**
@@ -524,7 +562,13 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
   const present   = Array.isArray(frame.present)
     ? frame.present.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim())
     : [];
-  if (!location && !situation && !present.length) return false;
+  // Who is heard or seen over a comm, not here in person (sidecarParser.js
+  // normaliseSceneFrame; round 7's CHARACTERS-MOVED-BY-THE-NARRATION) — the
+  // scene block shows them, and no whereabouts reads them as here.
+  const remote    = Array.isArray(frame.remote)
+    ? frame.remote.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim()).slice(0, 8)
+    : [];
+  if (!location && !situation && !present.length && !remote.length) return false;
 
   const sceneId = campaignState.currentSceneId ?? null;
   const prior   = campaignState.sceneFrame;
@@ -539,6 +583,7 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
     location,
     present,
     situation,
+    ...(remote.length ? { remote } : {}),
     ...question,
     ...(letGo.length ? { letGo } : {}),
     sceneId,

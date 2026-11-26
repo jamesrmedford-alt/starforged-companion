@@ -597,6 +597,30 @@ describe('each beat\'s check on the world', () => {
       .toMatchObject({ status: 'done', detail: 'resupply came up strong_hit at a2' });
   });
 
+  it('a recovery beat with nothing spent is moot once the night has passed — not exercised, and the run goes on (the sixth live run, a56–a57)', () => {
+    // The sixth live run's fight cost nothing (its miss paid the miss the
+    // reader stated before the roll), and its player, told to mend only what
+    // is spent, stopped the run at beat 22 (CHARTER-RECOVER-NOTHING-SPENT).
+    const NIGHT = 'I rest aboard until the next morning.';
+    const night = [{ step: 'a1', fromPlayer: true, text: NIGHT }, { step: 'a1', narrator: true, text: 'The night passes quietly in the clamps.' }];
+    const moot = check('recovered', {}, [setup, markOf('a1', tableOf())], { messages: night });
+    expect(moot).toMatchObject({ status: 'not-exercised', doneAt: 'a1' });
+    expect(moot.detail).toBe('nothing to recover — Mira\'s health 5 of 5, spirit 5 of 5, supply 5 of 5 — nothing on the sheet is spent');
+    // Not before the night line is answered: the beat's own line comes first.
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf())], { messages: night.slice(0, 1) })).toMatchObject({ status: 'current' });
+    // Something spent, the beat stands.
+    expect(check('recovered', {}, [setup, markOf('a1', tableOf({ pc: { spirit: 3 } }))], { messages: night }).detail)
+      .toBe('no recover move yet — Mira\'s health 5 of 5, spirit 3 of 5, supply 5 of 5 — spent: spirit');
+    // The pointer moves on to the next beat.
+    const pointer = createPointer([
+      { id: 'r', n: 1, session: 1, title: 'Recover', check: { type: 'recovered' } },
+      { id: 'n', n: 2, session: 1, title: 'Next', check: { type: 'recovered' } },
+    ]);
+    pointer.advance({ marks: [setup], messages: [], actions: [], charter: {} }, 'a0');
+    pointer.advance({ marks: [setup, markOf('a1', tableOf())], messages: night, actions: [], charter: {} }, 'a1');
+    expect(pointer.state.map(b => b.status)).toEqual(['not-exercised', 'current']);
+  });
+
   it('the cast\'s connection is one card, followed by its id: renamed since it was made, its bond is still found', () => {
     const made = markOf('a1', tableOf({ connections: [{ ...conn, name: 'Tamsin Vey', ticks: 0 }] }));
     const renamed = (extra) => tableOf({ connections: [{ ...conn, name: 'Tamsin Okoro', ...extra }] });
@@ -623,6 +647,48 @@ describe('each beat\'s check on the world', () => {
     expect(check('vowFulfilled', {}, [setup, start, done(20, [fulfil, offer])])).toMatchObject({ status: 'done', detail: expect.stringContaining('one bonded roll is offered') });
     expect(check('vowFulfilled', {}, [setup, start, done(28, [fulfil, offer])])).toMatchObject({ status: 'failed', detail: expect.stringContaining('20 → 28') });
     expect(check('vowFulfilled', {}, [setup, start, done(20, [fulfil])])).toMatchObject({ status: 'failed', detail: expect.stringContaining('0 bonded roll(s) offered') });
+  });
+
+  it('a vow whose deepen a won fight\'s 🤝 spent offers no bonded roll at its fulfilment, and is done (the sixth live long haul\'s second run, a63 → a84)', () => {
+    // A vow deepens its connection once: the press records it on the vow
+    // (fulfilPayoff.deepen), and the fulfilment's payoff skips the step. The
+    // run's beat 25 was failed for the rule kept: "0 bonded roll(s) offered".
+    const bonded = { ...conn, name: 'Tamsin Okoro', bonded: true, ticks: 40 };
+    const sworn = { ...vow, linkedConnectionId: 'A1', linkedConnectionName: 'Tamsin Okoro', ticks: 24 };
+    const fulfil = moveCard('r2', 'Fulfill Your Vow', 'Progress: 6 | Challenge: 1, 2', 'strong_hit');
+    const table = (v) => tableOf({ connections: [bonded], pc: { vows: [{ ...sworn, ...v }] } });
+    const pressed = markOf('a1', table({ fulfilPayoff: { deepen: true } }));
+    const fulfilled = markOf('a2', table({ fulfilPayoff: { deepen: true }, completed: true }), [fulfil]);
+    expect(check('vowFulfilled', {}, [setup, pressed, fulfilled])).toMatchObject({
+      status: 'done',
+      detail: 'the vow "Find the raiders" is fulfilled; its deepen of Tamsin Okoro was spent at a1, before the fulfilment — a vow deepens its connection once — so no bonded roll is offered',
+    });
+    // Recorded only at the fulfilment's own step, it is the fulfilment's deepen: one roll is owed.
+    const unspent = markOf('a1', table({}));
+    expect(check('vowFulfilled', {}, [setup, unspent, fulfilled])).toMatchObject({ status: 'failed', detail: expect.stringContaining('0 bonded roll(s) offered') });
+    // Another vow's record is not this one's.
+    const other = markOf('a1', tableOf({ connections: [bonded], pc: { vows: [{ ...sworn }, { ...vow, id: 'v2', vowId: 'v2', name: 'Another', fulfilPayoff: { deepen: true } }] } }));
+    expect(check('vowFulfilled', {}, [setup, other, fulfilled])).toMatchObject({ status: 'failed' });
+  });
+
+  it('an expedition finished before any waypoint is moot — not exercised, and the run goes on (the sixth live long haul\'s second run, a27 → a30)', () => {
+    // Left open, the beat's last resort named Undertake an Expedition once
+    // more after the journey was over, and a second expedition was begun for
+    // the place just reached.
+    const undertake = moveCard('r1', 'Undertake an Expedition', 'Action: 5 + 2 = 7 | Challenge: 4, 9', 'weak_hit');
+    const finish = moveCard('r2', 'Finish an Expedition', 'Progress: 4 | Challenge: 2, 3', 'strong_hit');
+    const track = { id: 't1', type: 'expedition', label: 'The hauler\'s source', rank: 'dangerous', ticks: 16, completed: false };
+    const begun = markOf('a1', tableOf({ tracks: [track] }), [undertake]);
+    expect(check('expedition', { finished: true }, [setup, begun])).toMatchObject({ status: 'current', detail: expect.stringContaining('no waypoint has been explored') });
+    const finished = markOf('a2', tableOf({ tracks: [{ ...track, completed: true }] }), [undertake, finish]);
+    const moot = check('expedition', { finished: true }, [setup, begun, finished]);
+    expect(moot).toMatchObject({ status: 'not-exercised', doneAt: 'a2' });
+    expect(moot.detail).toBe('the dangerous expedition "The hauler\'s source" was finished at 4 of 10 boxes before any waypoint was explored — the waypoint was not exercised');
+    // With a waypoint explored, the finished expedition is the beat done.
+    const look = moveCard('r3', 'Explore a Waypoint', 'Action: 4 + 2 = 6 | Challenge: 3, 8', 'weak_hit');
+    const looked = markOf('a2', tableOf({ tracks: [track] }), [undertake, look]);
+    const ended = markOf('a3', tableOf({ tracks: [{ ...track, completed: true }] }), [undertake, look, finish]);
+    expect(check('expedition', { finished: true }, [setup, begun, looked, ended])).toMatchObject({ status: 'done', detail: expect.stringContaining('a waypoint explored at a2') });
   });
 
   it('a correction: the old value struck, the new one standing', () => {
@@ -1077,6 +1143,11 @@ describe('what a run counts for its review', () => {
     expect(answered[0].sentence).toContain('You answer the hatch. "Before the next cargo tide.');
     expect(spokenFor([{ step: 'a60', narrator: true, text: 'The visitor is listening. "Careful what you tell her," the voice says. "I know that compass."' }]), 'the voice speaks, not you').toEqual([]);
     expect(spokenFor([{ step: 'a51', narrator: true, text: '"Tamsin\'s," you say, and the plating gives back a short pause.' }])).toHaveLength(1);
+    // Speech told for the character (issue #388 #10): the fifth live run's a82, a button's Develop.
+    expect(spokenFor([{ step: 'a82', narrator: true, text: 'You tell Tamsin plainly that she is the one person on these docks you would trust with the ship\'s secrets. She takes it slowly.' }]))
+      .toMatchObject([{ step: 'a82', sentence: expect.stringContaining('You tell Tamsin plainly that she is the one person') }]);
+    expect(spokenFor([{ step: 'a9', narrator: true, text: 'You ask her why the berth was sold.' }])).toHaveLength(1);
+    expect(spokenFor([{ step: 'a9', narrator: true, text: 'You tell yourself that the hull will hold. You know that she is lying.' }]), 'what you tell yourself, or know, is no speech').toEqual([]);
   });
 
   it('counts what the narrator was told and wrote anyway — the first live run\'s own sentences (issue #377 items 2, 4)', () => {

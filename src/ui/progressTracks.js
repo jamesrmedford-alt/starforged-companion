@@ -463,7 +463,8 @@ export async function rollProgress(track) {
       // The row's own id (and label): tick enrichment, scoring and completion
       // act on exactly the track clicked — a label alone took the first
       // same-named track (issue #306 R06).
-      flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId, forcedMoveTarget: track.label, forcedMoveTargetId: track.id } },
+      // `madeLine`: the panel's words, not the player's (issue #388 #10).
+      flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: moveId, forcedMoveTarget: track.label, forcedMoveTargetId: track.id, madeLine: true } },
     });
     return;
   }

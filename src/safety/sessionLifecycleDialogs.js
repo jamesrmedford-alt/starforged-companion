@@ -83,13 +83,14 @@ export async function openBeginSessionDialog() {
   // No vow in play (issue #353 R3): without a quest the session has nothing
   // to play toward in the rules' own terms, and nothing said so.
   const quest = await questStatus(state);
+  const closedQuest = await closedVowOf(cleanFocus(state.questFocus));
 
   const content = `
     <form class="sf-begin-session-form">
       <p class="hint">Identify or adjust flagged content. Review or recap what
       happened last session. Set the scene by envisioning your character's
       current situation and intent.</p>
-      ${renderLastSessionFoci(state)}
+      ${renderLastSessionFoci(state, { closed: closedQuest })}
       ${flagBlock}
       ${quest.inPlay ? "" : renderNoQuestBlock(quest.swearer)}
       <label class="row">
@@ -308,7 +309,7 @@ async function postBeginSessionCard(rollVignette, includeGalley = true, quest = 
     : "";
 
   await ChatMessage.create({
-    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${renderLastSessionFoci(state)}${pickUpBlock}${noQuestBlock}${vignetteBlock}${notRecorded}</div>`,
+    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${renderLastSessionFoci(state, { closed: await closedVowOf(cleanFocus(state.questFocus)) })}${pickUpBlock}${noQuestBlock}${vignetteBlock}${notRecorded}</div>`,
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
 
@@ -476,8 +477,11 @@ async function beginSessionOnce(payload, ctx = {}) {
     beginSession(cs);
     cs.sessionStartedId = cs.currentSessionId ?? null;
     sessionId = cs.currentSessionId ?? null;
-    // The foci go on to the narrator for this session (issue #286 C5).
-    const quest      = cleanFocus(cs.questFocus);
+    // The foci go on to the narrator for this session (issue #286 C5) — a
+    // quest focus that names a vow since closed is no quest of this session's
+    // (issue #388 #13): the card says so, and the narrator is not told it.
+    const noted      = cleanFocus(cs.questFocus);
+    const quest      = noted && !(await closedVowOf(noted)) ? noted : "";
     const connection = cleanFocus(cs.connectionFocus);
     if (quest || connection) cs.sessionFocus = { sessionId: cs.currentSessionId ?? null, quest, connection };
     cs.questFocus      = "";
@@ -871,7 +875,7 @@ export async function openEndSessionDialog() {
 
 async function postEndSessionCard({ questFocus, connectionFocus }) {
   const lines = [];
-  if (questFocus)      lines.push(`<li><strong>Quest focus:</strong> ${escapeHtml(questFocus)}</li>`);
+  if (questFocus)      lines.push(questFocusItem(questFocus, await closedVowOf(questFocus)));
   if (connectionFocus) lines.push(`<li><strong>Connection focus:</strong> ${escapeHtml(connectionFocus)}</li>`);
   const endedBefore = sessionAlreadyEnded(game.settings.get(MODULE_ID, "campaignState") ?? {});
 
@@ -1188,7 +1192,7 @@ async function correctEndedSession(state, { questFocus, connectionFocus }, ctx =
   console.debug?.(`${MODULE_ID} | End a Session: session ${state.currentSessionId} has already ended — ${given ? "focus updated" : "nothing changed"}${bonus ? ", first focus: +1 momentum" : ""}.`);
 
   const lines = [];
-  if (questFocus)      lines.push(`<li><strong>Quest focus:</strong> ${escapeHtml(questFocus)}</li>`);
+  if (questFocus)      lines.push(questFocusItem(questFocus, await closedVowOf(questFocus)));
   if (connectionFocus) lines.push(`<li><strong>Connection focus:</strong> ${escapeHtml(connectionFocus)}</li>`);
   // An award that did not land waits on the GMs' Retry — never "taken".
   const owed = outstandingSessionMomentum(state.currentSessionId ?? null);
@@ -1300,18 +1304,52 @@ function wireFocusChoices(root) {
 }
 
 /**
- * "Focus from last session" block for the Begin a Session dialog and card.
- * Empty string when End a Session recorded no focus.
+ * The closed vow a quest focus names (session/openThreads.js closedVowNamed),
+ * or null. Fail-open: a focus that cannot be checked stands as written.
  *
- * @param {Object} state — campaignState
+ * @param {string} quest — cleaned
+ * @returns {Promise<{ name: string, how: string }|null>}
+ */
+async function closedVowOf(quest) {
+  if (!quest) return null;
+  try {
+    const { closedVowNamed } = await import("../session/openThreads.js");
+    return closedVowNamed(quest);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | a session's quest focus could not be checked against the vows:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * End a Session's quest-focus line — said, when it names a vow already
+ * closed, while End again can still note another (issue #388 #13).
+ *
+ * @param {string} quest
+ * @param {{ how: string }|null} closed — closedVowOf's
  * @returns {string}
  */
-function renderLastSessionFoci(state) {
+function questFocusItem(quest, closed) {
+  const note = closed ? ` — <em>that vow is already ${escapeHtml(closed.how)}; End a Session again to note another quest.</em>` : "";
+  return `<li><strong>Quest focus:</strong> ${escapeHtml(quest)}${note}</li>`;
+}
+
+/**
+ * "Focus from last session" block for the Begin a Session dialog and card.
+ * Empty string when End a Session recorded no focus. A quest focus that names
+ * a vow since closed (`closed`, closedVowOf's) is marked so: it is not this
+ * session's quest, and the narrator is not told it (issue #388 #13).
+ *
+ * @param {Object} state — campaignState
+ * @param {{ closed?: { how: string }|null }} [opts]
+ * @returns {string}
+ */
+function renderLastSessionFoci(state, { closed = null } = {}) {
   const quest      = cleanFocus(state?.questFocus);
   const connection = cleanFocus(state?.connectionFocus);
   if (!quest && !connection) return "";
   const items = [];
-  if (quest)      items.push(`<li><strong>Quest:</strong> ${escapeHtml(quest)}</li>`);
+  if (quest)      items.push(`<li><strong>Quest:</strong> ${escapeHtml(quest)}${closed ? ` — <em>a vow already ${escapeHtml(closed.how)}</em>` : ""}</li>`);
   if (connection) items.push(`<li><strong>Connection:</strong> ${escapeHtml(connection)}</li>`);
   return `<div class="sf-last-session-foci"><p><strong>Focus from last session:</strong></p><ul>${items.join("")}</ul></div>`;
 }

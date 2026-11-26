@@ -227,17 +227,21 @@ Three cross-cutting facts to hold onto:
   narration — and on the way out when anything stops the roll before or at
   its card (a roll card the world refuses, a throw: `rollMove`'s `finally`),
   so what the effects owe is still posted and paid. An upgrade's cards post at
-  once: its roll card is on the table. **Not on it** (posted before the roll
-  card still): the price of a result that offers Burn Momentum or Improve
-  Result and is *not* held — a Batch Mode round's entry, or free-flow with
-  `holdResultForUpgrade` off: the card's `burn` / `improve` state must carry
-  the price's receipts (`ptpReversals`) from its first write, or an upgrade
-  pressed on it would keep the price beside the upgraded outcome; and the
-  cards of the other per-move branches, which were not part of this change —
-  expedition progress, a legacy mark, the scene-challenge card, Develop Your
-  Relationship, Reach a Milestone, a sworn vow's oath scene, Forge a Bond,
-  Finish an Expedition and its site, Finish the Scene, the recommit offers,
-  Forsake Your Vow.
+  once: its roll card is on the table (`applyOutcomeEffects`' `followsTheRoll`
+  chooses). **Also on it** (CARDS-STILL-ABOVE-THEIR-ROLL, 2026-11-25): every
+  other per-move branch's cards — expedition progress, a legacy mark, the
+  scene-challenge card, Develop Your Relationship, Reach a Milestone (its card
+  or its picker), Forge a Bond, Finish an Expedition and its site, Finish the
+  Scene, the recommit offers, Forsake Your Vow — and the system's own notes of
+  a bond's, a vow's or a milestone's write, held for them
+  (`holdingSystemNotes`). The price of a result that offers Burn Momentum or
+  Improve Result and is *not* held — a Batch Mode round's entry, or free-flow
+  with `holdResultForUpgrade` off — is still *paid* before the roll card (the
+  card's `burn` / `improve` state must carry its receipts, `ptpReversals`,
+  from its first write, or an upgrade pressed on it would keep the price
+  beside the upgraded outcome); only its card is posted after
+  (`postMovePayThePriceCard`'s `deferCard`). **Not on it:** a sworn vow's
+  oath scene, which is the swearing itself — the roll follows it.
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
   Starforged Progress Tracks journal flag), not on the Foundry Combat document.
   The Combat document (combat tracker) is a UI mirror, created/deleted
@@ -733,7 +737,9 @@ recorded on the vow's payoff ledger (`fulfilPayoff.deepen`, the card carries
 the vow's id as its copies are found — `vowCopyId`: the `vowId` flag, else
 the Item's own id), so the fulfilment's deepen is skipped; a press after the
 fulfilment's deepen deepens nothing and posts a short "already deepened"
-card. (Taken from the flag alone, a sheet vow whose stamp never landed
+card. The press's own card says it is the vow's one deepen (`forVow`), and a
+fulfilment after it posts the same "already deepened" note where its deepen
+would have been (issue #389 #7, FULFILMENT-SILENT-ON-A-SPENT-DEEPEN). (Taken from the flag alone, a sheet vow whose stamp never landed
 carried null and was found by its name only: after a rename the press
 deepened a second time — known-issues FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY.) Once the card's vow is
 fulfilled — every copy, by the card's vow id, whoever fulfilled it (issue
@@ -879,7 +885,8 @@ move), and the card's hint naming the move a variant varies keeps the
 variant (`narrator.reconcileSuggestedMove` — PACING-ROLL-NO-SCENE-CHALLENGE).
 The classifier names the challenge the move is part of; the router keeps it,
 or the sole open one, on the card by id (`suggestedMoveTargetId`), and the
-Roll (`cardActions.applyPacedRoll`) forwards it as `forcedMoveTargetId` — with
+Roll (`cardActions.applyPacedRoll`) forwards it as `forcedMoveTargetId` (and
+a [here] re-ask's Set a Course its place, `narrator.journeyOfferOf`) — with
 two challenges open it named none and the scoring asked which
 (PACED-VARIANT-NO-TARGET). A Roll pressed after that challenge ended is the
 ordinary move, whatever else is open: `readMove` and `rollMove` hand the

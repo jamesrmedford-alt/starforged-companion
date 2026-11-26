@@ -62,8 +62,9 @@ describe('the line reader\'s catalogue', () => {
   });
 
   it('a ruling sits beside its trigger, in brackets — the decided ones, in the module\'s own words', () => {
-    // A favour or a risk taken is one of the quoted deeds; a plea for the tie itself is talk (issue #384, the first measure).
-    expect(entryOf('develop_your_relationship').ruling).toBe('A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking for the relationship itself while it is being built — trust, friendship, to count on each other — is talk, no deed (rule 4). A vow sworn in their service is Swear an Iron Vow, never this in its place. No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.');
+    // A favour or a risk taken is one of the quoted deeds; a plea for the tie itself is talk (issue #384, the first measure) —
+    // to a connection: of someone not yet one it is Make a Connection (issue #388 #4, READER-PLEA-BLOCKS-MAKE-A-CONNECTION).
+    expect(entryOf('develop_your_relationship').ruling).toBe('A favour that costs the giver time or standing, or bringing them what they lack, is giving them something of worth; a risk taken for them is standing with them against hardship; offering it is doing it. Asking a connection for the relationship itself while it is being built — trust, friendship, to count on each other — is talk, no deed (rule 4); asking it of someone not yet a connection is Make a Connection. A vow sworn in their service is Swear an Iron Vow, never this in its place. No roll for a connection not yet bonded: it marks progress. Bonded, it is rolled +their rank, which the module fills in.');
     // The second measure (readers-live-20261125-073803): swear-1 read as Develop, bond-1 as talk.
     expect(entryOf('swear_an_iron_vow').ruling).toBe('A vow sworn in a connection\'s service is this, never Develop Your Relationship\'s deed in its place (that follows from the vow).');
     expect(entryOf('forge_a_bond').ruling).toMatch(/Asking to make the tie lasting — for good, whatever comes — with the track ready is this, not talk \(rule 4\)\.$/);

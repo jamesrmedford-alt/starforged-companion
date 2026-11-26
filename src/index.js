@@ -24,6 +24,7 @@
 
 import { CampaignStateSchema, rankName } from "./schemas.js";
 import { mapConsequences, buildLoremasterContext, expeditionPlanRequest, matchLine } from "./moves/resolver.js";
+import { lineOf } from "./moves/offerLine.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
 import {
   renderBurnButtonHtml,
@@ -244,6 +245,7 @@ import {
   DEFAULT_NPC_FEMININE_VOICE_ID,
 } from "./audio/elevenlabs.js";
 import { getEntityDocument, readEntityFlag, registerSheetNotesRemovalHook } from "./entities/registry.js";
+import { getCurrentSiteKind } from "./entities/location.js";
 import { resolveSpeakerActorId, messageAuthorId } from "./multiplayer/speaker.js";
 import { RUN_ON, dispatchChatCommand } from "./multiplayer/commandRouting.js";
 import {
@@ -896,7 +898,7 @@ function recordLine(message, speakerActorId) {
     who:  { user: messageAuthorId(message), actor: speakerActorId },
     ref:  { line: message.id ?? null },
     d:    { via, ...(forcedMoveId ? { forcedMoveId } : {}), ...(repost ? { repost: true } : {}) },
-    text: String(message.content ?? ""),
+    text: lineOf(message),
   });
 }
 
@@ -1033,7 +1035,8 @@ export function registerChatHook() {
     // the recap and the summary are given in place of a telling of it.
     recordLine(message, speakerActorId);
 
-    const narration = message.content;
+    // An offer's Roll carries the player's line on its flags (offerLine.js).
+    const narration = lineOf(message);
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
 
     // The line is narrated as it stands, with no move read into it (issue
@@ -1203,7 +1206,13 @@ export function registerChatHook() {
           // (issue #384, slice 3): only a GM's post is trusted, and only for
           // the move it was read as.
           reading: message.author?.isGM === true && message.flags?.[MODULE_ID]?.forcedReading?.moveId === forcedMoveId
-            ? message.flags[MODULE_ID].forcedReading : null } : null,
+            ? message.flags[MODULE_ID].forcedReading : null,
+          // An offer's Roll: its line was narrated on the offer's card
+          // (cardActions.js applyPacedRoll; issue #388 #14).
+          fromOffer: message.flags?.[MODULE_ID]?.fromOffer === true,
+          // A card's or a panel's own words for the move, not the player's
+          // (`madeLine`; issue #388 #10).
+          madeLine: message.flags?.[MODULE_ID]?.madeLine === true } : null,
         swearToConnection,
         // The line reader's reading, carried (issue #384, slice 2): a line
         // it routed to a roll is not read again — the gate is asked once more
@@ -2219,6 +2228,21 @@ export function holdHandedOverForcedMoves(payload = {}, ctx = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The characters set out (issue #393 D1): no place — aboard, between places —
+ * until an arrival, the GM's `!at` or the Entities panel sets one. On the
+ * caller's copy, which its persist saves. Whether there was a place to leave.
+ *
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+function setOut(campaignState) {
+  if (!campaignState?.currentLocationId) return false;
+  campaignState.currentLocationId = null;
+  campaignState.currentLocationType = null;
+  return true;
+}
+
+/**
  * The current-location pick ({ id, type, entity }, as resolveCurrentLocationName
  * returns) for a place known by its host document id — a settlement, location
  * or planet — or null. An arrival whose destination came by id (a token
@@ -2360,6 +2384,14 @@ async function applyOutcomeEffects({
   const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, arrivalPlace: null, applied, notApplied,
     afterMoveCard: Array.isArray(afterMoveCard) ? afterMoveCard : [], failures: [] };
   if (!game.user?.isGM) return out;
+  // A card that says what this roll caused: the pipeline's goes on its list,
+  // posted once the roll card is up; an upgrade's roll card is on the table
+  // already, and one given no list has nobody to run it — both post now
+  // (CARDS-STILL-ABOVE-THEIR-ROLL).
+  const followsTheRoll = async (postCard) => {
+    if (against === null && Array.isArray(afterMoveCard)) out.afterMoveCard.push(postCard);
+    else await postCard();
+  };
 
   const next       = resolution.consequences ?? {};
   // What the move's track writes were made by (the session record's `by`,
@@ -2447,43 +2479,50 @@ async function applyOutcomeEffects({
       );
       tokenMoved  = tokenReport.tokenMoved === true;
       tokenStayed = tokenReport.tokenStayed ?? null;
+    }
 
-      // When the id and the name both miss, the place the ship just docked at:
-      // the position's word scan finds "Bleakhold" in "the expedition to
-      // Bleakhold", the name resolver only a place whose name holds the whole
-      // label — the ship docked there while the current location stayed where
-      // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
-      // naming no place (free text) leaves the store untouched.
-      arrivedAt = named
-        ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
-          .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
-        ?? null;
-      if (arrivedAt) {
-        campaignState.currentLocationId   = arrivedAt.id;
-        campaignState.currentLocationType = arrivedAt.type;
-        // The pipeline's persistResolution saves its working copy; an upgrade's
-        // location is saved here, beside the ship record just written. Refused,
-        // it is a step on the upgrade's payoff card, whose Retry saves it — it
-        // was a console line (issue #362 AC49, X18's rule for the upgrade).
-        if (upgrade) {
-          try {
-            await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
-            void recordPlaceArrival(campaignState, { res: resolution._id ?? null, how: "move" });
-          } catch (err) {
-            console.warn(`${MODULE_ID} | arrival after an upgrade: the world refused the current location:`, err?.message ?? err);
-            const name = arrivedAt.entity?.name ?? arrivalName ?? null;
-            out.failures.push({ step: "arrival", reason: "refused", error: errText(err),
-              locationId: arrivedAt.id, locationType: arrivedAt.type, name });
-            notApplied.push(`the current location${name ? ` ${name}` : ""} — the world refused it; the GMs have a Retry`);
-          }
-        } else {
-          noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
-            name: arrivedAt.entity?.name ?? arrivalName ?? null });
+    // The characters arrive whether or not the ship's record and its token
+    // follow (issue #393 D2 — travel is the only way to another place): Ship
+    // Positioning and Auto-Move gate the ship's record and the token, never
+    // the arrival. With them off, a hit on Set a Course left the characters
+    // where they set out, and every reader said they were still there.
+    // When the id and the name both miss, the place the ship just docked at:
+    // the position's word scan finds "Bleakhold" in "the expedition to
+    // Bleakhold", the name resolver only a place whose name holds the whole
+    // label — the ship docked there while the current location stayed where
+    // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
+    // naming no place (free text) leaves the store untouched.
+    arrivedAt = named
+      ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
+        .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
+      ?? null;
+    if (arrivedAt) {
+      campaignState.currentLocationId   = arrivedAt.id;
+      campaignState.currentLocationType = arrivedAt.type;
+      // The pipeline's persistResolution saves its working copy; an upgrade's
+      // location is saved here, beside the ship record just written. Refused,
+      // it is a step on the upgrade's payoff card, whose Retry saves it — it
+      // was a console line (issue #362 AC49, X18's rule for the upgrade).
+      if (upgrade) {
+        try {
+          await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+          void recordPlaceArrival(campaignState, { res: resolution._id ?? null, how: "move" });
+        } catch (err) {
+          console.warn(`${MODULE_ID} | arrival after an upgrade: the world refused the current location:`, err?.message ?? err);
+          const name = arrivedAt.entity?.name ?? arrivalName ?? null;
+          out.failures.push({ step: "arrival", reason: "refused", error: errText(err),
+            locationId: arrivedAt.id, locationType: arrivedAt.type, name });
+          notApplied.push(`the current location${name ? ` ${name}` : ""} — the world refused it; the GMs have a Retry`);
         }
-      } else if (arrivalName) {
-        console.debug(`${MODULE_ID} | arrival: "${arrivalName}" is not a tracked location — currentLocation unchanged.`);
+      } else {
+        noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
+          name: arrivedAt.entity?.name ?? arrivalName ?? null });
       }
+    } else if (arrivalName) {
+      console.debug(`${MODULE_ID} | arrival: "${arrivalName}" is not a tracked location — currentLocation unchanged.`);
+    }
 
+    if (positioning) {
       // §20.4b — when the move was initiated by a Token drag and we
       // succeeded, also move the Token to the destination Note's
       // coordinates. On a miss the Token never moved (the drag was
@@ -2522,10 +2561,8 @@ async function applyOutcomeEffects({
     // roll card, so the pipeline posts it after that card (issue #348 PT10);
     // an upgrade's roll card is already on the table.
     if (resolution.moveId === "set_a_course" && positioning) {
-      const postCard = () => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved, tokenStayed })
-        .catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
-      if (upgrade) await postCard();
-      else out.afterMoveCard.push(postCard);
+      await followsTheRoll(() => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved, tokenStayed })
+        .catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err)));
     }
     applied.push(placeName ? `arrived at ${placeName}` : "arrived (no destination named)");
   } else if (arrivalMove && upgrade && resolution.outcome !== "miss") {
@@ -2538,6 +2575,10 @@ async function applyOutcomeEffects({
     // destination's words.
     resolution.loremasterContext = [resolution.loremasterContext,
       arrivalNarratorLine(interpretation?.arrivalPlace ?? moveTarget, resolution.outcome)].filter(Boolean).join(" ");
+  } else if (resolution.moveId === "set_a_course" && resolution.outcome === "miss" && !upgrade) {
+    // Waylaid on the way (issue #393 D1): the characters are aboard, between
+    // places — no longer at the place they set out from — until an arrival.
+    if (setOut(campaignState)) applied.push("set out — between places until an arrival");
   }
 
   // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
@@ -2581,6 +2622,9 @@ async function applyOutcomeEffects({
           // sightings and an Action + Theme. Dropped when skeletons are off.
           resolution.skeletonRequests = [...(resolution.skeletonRequests ?? []),
             expeditionPlanRequest(result.track, campaignState, resolution._id)];
+          // Where the expedition goes, as its link resolves it (below): the
+          // recorded place its label names, else the site it is linked to.
+          const bound = { towards: null, recordedNow: false };
           try {
             const { selectExpeditionSite, siteNamedBy, recordUnchartedDestination, saveUnchartedSite } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
@@ -2643,14 +2687,38 @@ async function applyOutcomeEffects({
               } else if (recorded) noteUnsavedOnCopy(campaignState, { step: "uncharted", sectorId: recorded.sector?.id ?? null,
                 site: recorded.site, name: recorded.site?.name ?? null });
               linked ??= recorded;
+              bound.recordedNow = !!recorded;
             }
+            bound.towards = place?.id ?? linked?.site?.actorId ?? null;
             if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
           } catch (err) {
             console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
           }
+          // The expedition sets out (issue #393 D2): the characters leave the
+          // place they are at — aboard, between places — until its arrival.
+          // The sixth live long haul's a22–a24 set out for the distress call
+          // while every reader said "Place: Hollow Spire". An expedition for
+          // the place they are at stays there, and so does one begun at a site
+          // (a vault, a derelict) for no other recorded place: it explores the
+          // site.
+          const here = campaignState.currentLocationId ?? null;
+          const atSite = !!getCurrentSiteKind(campaignState);
+          const elsewhere = bound.towards ? bound.towards !== here && !(atSite && bound.recordedNow) : !atSite;
+          if (here && elsewhere) {
+            setOut(campaignState);
+            if (upgrade) {
+              try {
+                await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "setting out after an upgrade");
+              } catch (err) {
+                console.warn(`${MODULE_ID} | setting out after an upgrade: the world refused the current location:`, err?.message ?? err);
+                notApplied.push("setting out — the world refused the current location");
+              }
+            }
+            applied.push("set out — between places until the expedition's arrival");
+          }
         }
-        await postExpeditionProgressCard({ ...result, actorId: rollerActor?.id ?? null }).catch(err =>
-          console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err));
+        await followsTheRoll(() => postExpeditionProgressCard({ ...result, actorId: rollerActor?.id ?? null }).catch(err =>
+          console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err)));
         applied.push(`progress marked on the ${result.track.label ?? "expedition"} expedition`);
       }
     } catch (err) {
@@ -2677,8 +2745,8 @@ async function applyOutcomeEffects({
       } else {
         addLegacyTicks(campaignState, track, ticks);
       }
-      await postLegacyMarkCard(track, ticks).catch(err =>
-        console.warn(`${MODULE_ID} | legacy mark card failed:`, err?.message ?? err));
+      await followsTheRoll(() => postLegacyMarkCard(track, ticks).catch(err =>
+        console.warn(`${MODULE_ID} | legacy mark card failed:`, err?.message ?? err)));
       applied.push(`${ticks} tick${ticks === 1 ? "" : "s"} on the ${label} legacy`);
     } catch (err) {
       console.warn(`${MODULE_ID} | legacy mark failed:`, err?.message ?? err);
@@ -2800,15 +2868,15 @@ async function applyOutcomeEffects({
         const changed = scored.clock?.changed ?? 0;
         if (changed) applied.push(`${label}'s clock ${changed > 0 ? "filled" : "rewound"} ${Math.abs(changed)} segment${Math.abs(changed) === 1 ? "" : "s"}`);
         if (scored.marked || changed) {
-          await postSceneChallengeCard(scored).catch(err =>
-            console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err));
+          await followsTheRoll(() => postSceneChallengeCard(scored).catch(err =>
+            console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err)));
         }
       } else {
         const why = { none: "no scene challenge is open", ambiguous: "which scene challenge? — mark it in the Progress Tracks panel", gone: "its scene challenge is over" }[scored.reason] ?? scored.reason;
         console.warn(`${MODULE_ID} | ${resolution.moveId}: ${why} — progress and clock not changed.`);
         notApplied.push(`the scene challenge's progress and clock — ${why}`);
-        await postSceneChallengeCard({ track: null, reason: why }).catch(err =>
-          console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err));
+        await followsTheRoll(() => postSceneChallengeCard({ track: null, reason: why }).catch(err =>
+          console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err)));
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | scene challenge scoring failed:`, err?.message ?? err);
@@ -2884,8 +2952,8 @@ async function applyOutcomeEffects({
             if (updated) { track = updated; marksApplied++; }
           }
           combatProgressTrack = track;
-          await postCombatProgressCard({ track, marksApplied }).catch(err =>
-            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
+          await followsTheRoll(() => postCombatProgressCard({ track, marksApplied }).catch(err =>
+            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err)));
           applied.push(`progress marked ${times} on ${track.label ?? "the fight"}`);
         } else {
           console.warn(`${MODULE_ID} | combat progress: the move's fight ${stampedId} is over or gone — ×${marks} not marked.`);
@@ -2915,10 +2983,8 @@ async function applyOutcomeEffects({
           combatProgressTrack = result.track;
           // The pipeline's follows the move's roll card; an upgrade's roll
           // card is on the table already.
-          const postCard = () => postCombatProgressCard(result).catch(err =>
-            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err));
-          if (upgrade) await postCard();
-          else out.afterMoveCard.push(postCard);
+          await followsTheRoll(() => postCombatProgressCard(result).catch(err =>
+            console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err)));
           applied.push(`progress marked ${times} on ${result.track.label ?? "the fight"}`);
         }
       }
@@ -6519,7 +6585,7 @@ export function resolveVowHolderActor(vowName, preferredActorId = null) {
 // forged bond's track and said so (known-issues VOW-DEEPEN-BONDED-MARKS-TRACK).
 //
 // @returns {Promise<{ ok: boolean, bonded?: boolean, reason?: string, error?: string }>}
-export async function deepenLinkedConnection(connectionName, marks, { connectionId = null, actorId = null, by = null } = {}) {
+export async function deepenLinkedConnection(connectionName, marks, { connectionId = null, actorId = null, by = null, forVow = null } = {}) {
   try {
     const target = await findOpenConnection(connectionName, connectionId);
     if (!target?.__hostId) {
@@ -6530,7 +6596,7 @@ export async function deepenLinkedConnection(connectionName, marks, { connection
     if (target.bonded === true) return await offerBondedDevelopRoll(target, { actorId });
     const conn = await import("./entities/connection.js");
     await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks), { by });
-    await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks));
+    await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks), { forVow });
     return { ok: true };
   } catch (err) {
     console.warn(`${MODULE_ID} | deepen connection failed:`, err?.message ?? err);
@@ -6598,7 +6664,7 @@ export async function deepenVowConnectionOnce({ vowName = null, vowId = null, ac
   }
   // A bond already forged is offered its roll instead, as the card's roller's
   // (deepenLinkedConnection): recorded the same way, so the vow offers it once.
-  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: linkId, actorId, by });
+  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: linkId, actorId, by, forVow: vowName });
   if (res?.ok) await recordPayoffStep(copies, "deepen");
   return res;
 }
@@ -6688,10 +6754,16 @@ async function findOpenConnection(connectionName, connectionId = null) {
   return selectConnection(connections, connectionName, { strict: true });
 }
 
-async function postDeepenBondCard(name, marks) {
+// `forVow`: a won fight's 🤝 Deepen, which spends the vow's one deepen — said
+// on its card, so its fulfilment's silence is not a surprise (issue #389 #7,
+// FULFILMENT-SILENT-ON-A-SPENT-DEEPEN).
+async function postDeepenBondCard(name, marks, { forVow = null } = {}) {
+  const once = typeof forVow === "string" && forVow.trim()
+    ? ` This is &ldquo;${escapeChatHtml(forVow.trim())}&rdquo;'s deepen — a vow deepens its connection once, so its fulfilment will not deepen it again.`
+    : "";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 Your bond with <strong>${escapeChatHtml(name ?? "your connection")}</strong> deepens — +${marks} milestone${marks === 1 ? "" : "s"} of relationship progress.</p></div></div>`,
+      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 Your bond with <strong>${escapeChatHtml(name ?? "your connection")}</strong> deepens — +${marks} milestone${marks === 1 ? "" : "s"} of relationship progress.${once}</p></div></div>`,
       flags:   { [MODULE_ID]: { deepenBondCard: true } },
     });
   } catch (err) {
@@ -7110,6 +7182,14 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
       // A fulfilment's deepen is the fulfilment's (the session record's `by`, D12).
       await settle("deepen", await deepenLinkedConnection(connectionName, marks, { connectionId, actorId: rollerId,
         by: { move: "fulfill_your_vow", res: null } }), { connectionName, connectionId, marks });
+    } else if (connectionName) {
+      // Spent already — a won fight's 🤝 deepened the bond for this vow, and a
+      // vow deepens its connection once. The fulfilment says so where its
+      // deepen would have been: the sixth live long haul's a84 fulfilled a vow
+      // sworn to Tamsin, deepened nothing, rightly, and said nothing (issue
+      // #389 #7, FULFILMENT-SILENT-ON-A-SPENT-DEEPEN).
+      const target = await findOpenConnection(connectionName, connectionId).catch(() => null);
+      await postDeepenAlreadyPaidCard(target?.name ?? connectionName, item.name ?? vowName, { bonded: target?.bonded === true });
     }
 
     // Grant the promised reward (one-time; scaled by outcome). The fulfil path
@@ -8367,12 +8447,13 @@ async function postDevelopRelationshipCard(plan) {
  * @param {Actor|null} actor
  * @param {string|null} target
  * @param {number} [marks]
- * @param {{ itemId?: string|null, askUnnamed?: boolean }} [opts]
+ * @param {{ itemId?: string|null, askUnnamed?: boolean, post?: Function|null }} [opts] — `post`: what
+ *   schedules its card after the move's roll card (the pipeline's), else it posts at once
  * @returns {Promise<"mark"|"pick"|"none"|null>} what it did — null when it
  *   could not act here (no PC, not a GM client); rejects when the mark's
  *   write is refused
  */
-async function applyReachMilestone(actor, target, marks = 1, { itemId = null, askUnnamed = false, res = null } = {}) {
+async function applyReachMilestone(actor, target, marks = 1, { itemId = null, askUnnamed = false, res = null, post = null } = {}) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
   // must not claim progress on a client that can't write. In solo-GM play the
   // player is the GM, so this is the normal path. `marks` > 1 applies a major
@@ -8382,6 +8463,10 @@ async function applyReachMilestone(actor, target, marks = 1, { itemId = null, as
     console.debug(`${MODULE_ID} | reach a milestone: ${actor ? "not a GM client" : "no player character"} — nothing marked.`);
     return null;
   }
+  // The move's card follows its roll card (`post`: the pipeline's list —
+  // CARDS-STILL-ABOVE-THEIR-ROLL, the third live run's a63); a card's press
+  // has no roll card, and posts at once.
+  const show = (card) => (typeof post === "function" ? post(card) : card());
   // A vow named by its Item (a won-fight card's, resolved by its vow id —
   // issue #345 AA17): that open vow, else nothing — never another by name.
   const vows = readVows(actor);
@@ -8393,11 +8478,11 @@ async function applyReachMilestone(actor, target, marks = 1, { itemId = null, as
     const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
     // Made by Reach a Milestone — the session record's `by` (overhaul 4, D12).
     await markVowProgress(actor, plan.vow.id, ticks, recordCause({ kind: "move", move: "reach_a_milestone", res }));
-    await postReachMilestoneCard(plan.vow, ticks);
+    await show(() => postReachMilestoneCard(plan.vow, ticks));
   } else if (plan.action === "pick") {
     // The marks ride the picker: a won fight's ×2 that falls to the picker
     // (its vow renamed since) marked the picked vow once (issue #326 W43).
-    await postMilestonePickerCard(plan.vows, actor.id, marks);
+    await show(() => postMilestonePickerCard(plan.vows, actor.id, marks));
   }
   // action "none" → no open vow to mark; the move card's otherEffect already
   // tells the player Reach a Milestone marks vow progress.
@@ -8580,7 +8665,7 @@ function priceCardRefusedNotice(card, paidFor) {
  *   challenge's clock the move's miss filled itself (issue #338 D2)
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-export async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null } = {}) {
+export async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null, deferCard = null } = {}) {
   // The miss stated before the roll is the price, when there is one (issue
   // #353 R1, stakes.js statedPrice): nothing is rolled, and its suffer move —
   // the one route — is dispatched as a rolled route is.
@@ -8610,23 +8695,30 @@ export async function postMovePayThePriceCard(actorId = null, moveName = null, r
   // — as payChosenPrice's is): a refused card dropped the suffer routes, the
   // clocks and the narration's seed, and with the result held its wait had
   // already closed, so nothing could pay it later.
-  try {
-    await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
-      flags:   {
-        [MODULE_ID]: {
-          payThePriceCard: true,
-          sufferRoutes:    result.sufferRoutes,
-          // Its move's resolution: a burn or improvement that reverts the
-          // price takes it out of RECENT ORACLE RESULTS (issue #342 Z11).
-          oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result, ...(resolutionId ? { resolutionId } : {}) },
+  const postCard = async () => {
+    try {
+      await ChatMessage.create({
+        content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+        flags:   {
+          [MODULE_ID]: {
+            payThePriceCard: true,
+            sufferRoutes:    result.sufferRoutes,
+            // Its move's resolution: a burn or improvement that reverts the
+            // price takes it out of RECENT ORACLE RESULTS (issue #342 Z11).
+            oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result, ...(resolutionId ? { resolutionId } : {}) },
+          },
         },
-      },
-    });
-  } catch (err) {
-    console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed — "${result.result}" is paid all the same:`, err?.message ?? err);
-    priceCardRefusedNotice("Pay the Price", paidFor);
-  }
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed — "${result.result}" is paid all the same:`, err?.message ?? err);
+      priceCardRefusedNotice("Pay the Price", paidFor);
+    }
+  };
+  // `deferCard`: the price is paid now, and its card posted when the caller
+  // says — once the roll card it is the price of is on the table (the
+  // pipeline's list; CARDS-STILL-ABOVE-THEIR-ROLL).
+  if (typeof deferCard === "function") deferCard(postCard);
+  else await postCard();
 
   // Dispatch the suffer executors first (before clock advance) so meter changes
   // land before the burn button is visible. The receipts are what landed — each
@@ -9930,6 +10022,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
         ...(improveState ? { improve: improveState } : {}),
         ...(milestoneState ? { milestoneSuggestion: milestoneState } : {}),
         ...(connectionState ? { connectionSuggestion: connectionState } : {}),
+        ...(repairPointsOf(resolution) ? { repairPoints: repairPointsOf(resolution) } : {}),
         // A Batch Mode round's entry: its round and player (issue #340) —
         // the round finds its cards by them, and a recovery the card of an
         // entry rolled before a reload.
@@ -10079,6 +10172,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${awaiting ? renderKeepResultHtml(resolution) : ""}
       ${renderMilestoneSuggestionHtml(milestoneState, upgradeOffered)}
       ${renderConnectionSuggestionHtml(connectionState, upgradeOffered)}
+      ${renderRepairSpendHtml(resolution)}
       ${upgradeOffered && (milestoneState?.eligible || connectionState?.eligible)
         ? `<p class="sf-card-hint">${UPGRADE_FIRST_HINT}</p>`
         : ""}
@@ -10182,6 +10276,36 @@ function renderMilestoneSuggestionHtml(milestoneState, upgradeOffered = false) {
     `title="Mark progress on your vow per its rank${first}">⚑ Mark Progress on Vow</button>` +
     `<button type="button" class="sf-followup-btn" data-action="sf-attempt-fulfill-vow" ` +
     `title="Roll to fulfill your vow (progress roll)${first}">🏁 Attempt to Fulfill Vow</button>` +
+    `</div>`;
+}
+
+/**
+ * A Repair's hit earns points, spent in the repair dialog (moves/repair.js
+ * openRepairDialog): the outcome the dialog starts from, or null for any
+ * other move or a miss (which earns none).
+ *
+ * @param {Object} resolution
+ * @returns {{ outcome: "strong"|"weak" }|null}
+ */
+export function repairPointsOf(resolution) {
+  if (resolution?.moveId !== "repair") return null;
+  if (resolution.outcome === "strong_hit") return { outcome: "strong" };
+  if (resolution.outcome === "weak_hit") return { outcome: "weak" };
+  return null;
+}
+
+/**
+ * The Repair card's "🔧 Spend repair points" — how its points reach the sheet
+ * (issue #389 #5, REPAIR-POINTS-UNREACHABLE: the sixth live long haul's a62
+ * strong hit listed its points with nothing to spend them by but a typed
+ * `!repair`, and the ship stayed at integrity 4 of 5 while the story had her
+ * patched). Wired by wireRepairSpendButton.
+ */
+function renderRepairSpendHtml(resolution) {
+  if (!repairPointsOf(resolution)) return "";
+  return `<div class="sf-milestone-suggest-row sf-repair-spend-row">` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-repair-spend" ` +
+    `title="Allocate this Repair's points: integrity, a battered impact, a module, a companion or a device">🔧 Spend repair points</button>` +
     `</div>`;
 }
 
@@ -11162,6 +11286,39 @@ export function wireMilestoneSuggestionButton(message, root) {
   });
 }
 onChatMessageRender((message, root) => wireMilestoneSuggestionButton(message, root));
+
+/**
+ * Wire a Repair card's "🔧 Spend repair points": it opens the repair dialog on
+ * the clicker's client, from the card's outcome (a burned or improved result's
+ * if it was upgraded), and the GM stamps the card `repairSpent` once its
+ * points are applied (repair.js applyRepairSpends) — a roll's points are
+ * spent once. Exported for tests and Quench.
+ */
+export function wireRepairSpendButton(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.repairPoints) return;
+  const btn = root?.querySelector?.('[data-action="sf-repair-spend"]');
+  if (!btn) return;
+  if (liveCardFlags(message)?.repairSpent) {
+    btn.disabled = true;
+    btn.textContent = "🔧 Repair points spent";
+    return;
+  }
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const live = liveCardFlags(message) ?? f;
+    if (live?.repairSpent) return;
+    // A burned or improved Repair spends the result it became.
+    const upgraded = [live?.burn, live?.improve].find(u => u?.consumed && /hit$/.test(String(u.previewOutcome ?? "")));
+    const outcome = upgraded ? (upgraded.previewOutcome === "strong_hit" ? "strong" : "weak") : live.repairPoints.outcome;
+    const { openRepairDialog } = await import("./moves/repair.js");
+    await openRepairDialog(message, { outcome, sourceMessageId: message?.id ?? null });
+  });
+}
+onChatMessageRender((message, root) => wireRepairSpendButton(message, root));
 
 /**
  * Wire the per-vow buttons on a Reach a Milestone picker card (posted when

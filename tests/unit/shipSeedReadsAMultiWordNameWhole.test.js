@@ -99,8 +99,8 @@ describe('issue #364 SHIP-SEED-PLACE-NAME-PREFIX-OF-SHIP — a narration that pu
 
   /** A narration's sidecar, applied as the narrator applies one. */
   function narrate(narrationId, prose, position) {
-    const sidecar = { newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value: position }] };
-    applyNarratorSidecar(`${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(), { narrationId, mode: 'move_resolution' });   // a move's narration: a beat of play moves the ship (overhaul 2 §6.3)
+    const sidecar = { newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value: position, from: 'result' }] };
+    applyNarratorSidecar(`${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(), { narrationId, mode: 'move_resolution', ground: { line: '', decided: '', rolled: true } });   // a rolled move's result: it binds, and moves the ship (overhaul 2 §6.3; issue #388 #2)
   }
 
   beforeEach(() => {

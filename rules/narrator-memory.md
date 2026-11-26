@@ -351,8 +351,10 @@ layers. This file is the never-break list.
 
 6c. **One place: three stores, three facts** (overhaul 2 §6,
    SHIP-POSITION-AND-FRAME-DISAGREE). The characters' recorded place is
-   `currentLocationId` / `currentLocationType` (an arrival, `!at`, the
-   Entities panel, a line that walked them there); where the ship is, its
+   `currentLocationId` / `currentLocationType` (an arrival — whatever Ship
+   Positioning and Auto-Move say — `!at`, the Entities panel; none while they
+   are between places, set out on an expedition or waylaid by a Set a Course's
+   miss; never a line or a frame — issue #393 D1–D4); where the ship is, its
    position record (an arrival, `!at`, the panel, the token, a beat of play's
    ship/position, the X-Card's restore); `sceneFrame.location`, where in that
    place the narration has them — the narration's own, no store's fact (the
@@ -366,7 +368,10 @@ layers. This file is the never-break list.
    ship** — a move's, a paced line's, a round's, an oracle follow-up's
    narration, and the inciting incident's starting position (the premise's);
    a bookend's, a clock vignette's and the oath scene's ship/position are
-   dropped and logged. A fight begun while the ship's line reads "docked at"
+   dropped and logged. And of a beat of play's, only a change whose basis
+   binds — the player's line, the dice, the GM, the premise: the narrator's
+   colour never moves her; one that restates where she already is keeps the
+   record, so "docked at" is not read as "near" (issue #388 #2, D17 amended). A fight begun while the ship's line reads "docked at"
    tells the beat that opens its scene NOT SO [place]; no code infers
    undocking (D9 — a crew may fight on the dock). A line walks the
    characters to another recorded place only when the beat's frame names

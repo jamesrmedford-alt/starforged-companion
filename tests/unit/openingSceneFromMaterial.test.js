@@ -301,7 +301,8 @@ describe('Begin a Session — the opening\'s dice reach the prompt and the card'
     const call = openingCall();
     expect(call, 'the opening was narrated').toBeTruthy();
     expect(call.client).toBe('gm-1');
-    expect(call.userText).toContain('1. What Kira is doing in this lull — Action + Theme (14, 20): Bolster Debt');
+    // A table of one is second person: the MATERIAL's character is "you" (issue #389 #4).
+    expect(call.userText).toContain('1. What you (Kira) are doing in this lull — Action + Theme (14, 20): Bolster Debt');
     expect(call.userText).toContain('2. What the scene\'s eye rests on — Descriptor + Focus (63, 18): Makeshift Container');
     // Where the last session stopped: its summary, and its last narration from the card.
     expect(call.userText).toContain('The Ashen Wake is grappled alongside off Bleakhold Station.');

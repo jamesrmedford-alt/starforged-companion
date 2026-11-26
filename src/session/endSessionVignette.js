@@ -12,7 +12,7 @@
  *
  * Who it shows (chooseClosingSubject), in this order:
  *   1. the table's choice — End a Session's connection focus, when it names a
- *      connection in play;
+ *      connection in play who was not with the characters at the end;
  *   2. else a die among the campaign's people — the connections in play and
  *      the named active threats (sceneRecords.js) — weighted as the old fixed
  *      priority ranked them: a bonded connection three, a connection of rank
@@ -23,9 +23,11 @@
  *      in code from the last closing card's flags (its `builtFrom` subject,
  *      by stable ref; a card from before that, by `vignetteNpc`);
  *   4. never someone the scene the session ended in had with the characters
- *      (its frame's Present line), while there is another: a cutaway to a
- *      person beside them is no cutaway;
- *   5. with nobody, a die among the active sector's settlements, other than
+ *      (its frame's Present line): a cutaway to a person beside them is no
+ *      cutaway. With everyone the campaign has beside them, it is a place
+ *      (issue #388 #3: one NPC, present, was shown "somewhere the characters
+ *      are NOT" twice in the fifth live long haul);
+ *   5. with nobody else, a die among the active sector's settlements, other than
  *      the one the characters are at — and not the last closing's, while
  *      there is another. With no such place there is no closing (issue #381
  *      D6). The old fifth and sixth tiers — "the architect of" the sector's
@@ -159,14 +161,22 @@ function connectionNamedBy(focus, people) {
  */
 export function chooseClosingSubject(campaignState, { connectionFocus = "", frame = null, messages = null, draw = drawDie } = {}) {
   const people = campaignPeople(campaignState);
+  // Whoever the session's last scene had with the characters is never the
+  // cutaway: it shows the world going on without them. With one person in
+  // the campaign and that person present, the pool used to fall back to her,
+  // and the prompt said she "is not with them" — the fifth live long haul
+  // walked Tamsin through Hollow Spire's market moments after she stood beside
+  // Mira at Bleakhold (a94; a17 the same; issue #388 #3). Nobody else → a place.
+  const present = presentIn(frame);
+  const withThem = (o) => present.some(n => wholeWordsFit(n, o.name));
+  const away = people.filter(o => !withThem(o));
   const named = connectionNamedBy(connectionFocus, people);
-  if (named) {
+  if (named && !withThem(named)) {
     return { option: named, seed: recordSeed("subject", "Who it shows", "the table's connection focus", named.name, { ref: named.ref, kind: named.kind }) };
   }
   const last = lastClosingShown(messages);
-  if (people.length) {
-    const present = presentIn(frame);
-    const pool = whileAnother(whileAnother(people, o => shownLast(o, last)), o => present.some(n => wholeWordsFit(n, o.name)));
+  if (away.length) {
+    const pool = whileAnother(away, o => shownLast(o, last));
     const chosen = chooseSeed("subject", "Who it shows", PEOPLE_POOL, pool, draw);
     return chosen ? { seed: chosen.seed, option: chosen.pick } : null;
   }

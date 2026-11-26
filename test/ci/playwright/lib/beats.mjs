@@ -271,6 +271,9 @@ function waitingText(cards) {
 }
 
 const done = (detail, extra = {}) => ({ done: true, detail, ...extra });
+/** A line of play in the beat's window that a narration answered (not a scene question, not a set-piece). */
+const answeredLineOfPlay = (v) => v.linesInWindow.filter(m => !isSceneQuestion(m.text))
+  .some(l => v.messagesInWindow.some(m => m.narrator && m.step === l.step && !m.vignette));
 const notYet = (detail, progress = 0) => ({ done: false, detail, progress });
 const failed = (detail) => ({ done: true, failed: true, detail });
 
@@ -411,6 +414,14 @@ export const BEAT_CHECKS = {
     const what = `the ${rankOf(track.rank) ?? track.rank} expedition "${track.label}"`;
     if (!track.ticks) return notYet(`${what} is begun and no progress is marked on it`, 2);
     const looks = v.rolls.filter(r => r.moveId === "explore_a_waypoint" && r.rolled);
+    // Finished before any waypoint: the journey is over, and the beat cannot
+    // be put to the test — moot, so the run goes on. Left open, its last
+    // resort named Undertake an Expedition once more, and the sixth live long
+    // haul's second run began a second expedition for the journey it had
+    // just finished (a27 → a30).
+    if (!looks.length && track.completed) {
+      return { done: false, moot: true, detail: `${what} was finished at ${boxes} of 10 boxes before any waypoint was explored — the waypoint was not exercised` };
+    }
     if (!looks.length) return notYet(`${what} stands at ${boxes} of 10 boxes; no waypoint has been explored`, 3);
     const look = looks.at(-1);
     if (look.card.move.held?.open) return notYet(`${what} stands at ${boxes} of 10 boxes; the waypoint's result is held — nothing comes of it until it is kept`, 4);
@@ -530,7 +541,16 @@ export const BEAT_CHECKS = {
     // missed and its Resupply came up a strong hit, and the beat was read off
     // the miss alone (issue #377 round 2).
     const rolls = v.rolls.filter(r => moves.includes(r.moveId) && r.rolled);
-    const sheet = sheetSpent(v.now).text;
+    const spent = sheetSpent(v.now);
+    const sheet = spent.text;
+    // Nothing spent once the night has passed (the beat's own line answered):
+    // nothing to recover, and the beat cannot be put to the test. The sixth
+    // live run's fight cost nothing — its miss paid the miss the reader stated
+    // before the roll — and its player, told to mend only what is spent,
+    // stopped the run at beat 22 (known-issues CHARTER-RECOVER-NOTHING-SPENT).
+    if (!rolls.length && sheet && !spent.spent.length && answeredLineOfPlay(v)) {
+      return { done: false, moot: true, detail: `nothing to recover — ${sheet}` };
+    }
     if (!rolls.length) return notYet(`no recover move yet${sheet ? ` — ${sheet}` : ""}`);
     const roll = [...rolls].reverse().find(r => r.outcome !== "miss") ?? rolls[rolls.length - 1];
     if (roll.outcome === "miss") return notYet(`${roll.moveId} missed`, 1);
@@ -685,6 +705,19 @@ export const BEAT_CHECKS = {
       const before = v.marks[i - 1]?.table.connections.find(x => x.hostId === conn.hostId);
       if (before && before.bonded && before.ticks !== conn.ticks) return failed(`the fulfilment marked the bonded connection's track: ${before.ticks} → ${conn.ticks} ticks`);
       const offers = v.allCards.filter(k => k.picker && v.inWindow(k) && k.picker.pickAction === "develop" && k.picker.choices?.length === 1 && k.picker.choices[0].hostId === conn.hostId);
+      // A vow deepens its connection once (decisions.md, "A vow deepens its
+      // connection once"). A won fight's 🤝 Deepen pressed before the
+      // fulfilment spends it, and the vow records it (`fulfilPayoff.deepen`,
+      // the ledger the fulfilment skips a landed step by), so the fulfilment
+      // offers no roll. The sixth live long haul's second run pressed it at
+      // a63, and its beat 25 was failed for the rule kept. The record is read
+      // on the vow before the fulfilment: only the press writes it there.
+      if (!offers.length) {
+        const sameVow = (x) => (vow.vowId ? x.vowId === vow.vowId : false) || x.id === vow.id;
+        const spentAt = v.marks.slice(0, Math.max(0, i))
+          .find(k => (k.table?.pcs ?? []).some(p => (p.vows ?? []).some(x => sameVow(x) && x.fulfilPayoff?.deepen === true)));
+        if (spentAt) return done(`the vow "${vow.name}" is fulfilled; its deepen of ${conn.name} was spent at ${spentAt.step}, before the fulfilment — a vow deepens its connection once — so no bonded roll is offered${told}`);
+      }
       if (offers.length !== 1) return failed(`the vow was fulfilled for the bonded ${conn.name}; ${offers.length} bonded roll(s) offered, not one`);
       return done(`the vow "${vow.name}" is fulfilled; ${conn.name}'s track is untouched and one bonded roll is offered${told}`);
     }
@@ -839,6 +872,14 @@ export function createPointer(beats) {
         if ((result.progress ?? 0) > cur.progress) { cur.progress = result.progress; cur.sinceProgress = 0; cur.linesAtProgress = cur.lines; cur.waits = 0; cur.rolledAtProgress = cur.rolled.length; }
         if (result.done) {
           Object.assign(cur, { status: result.failed ? "failed" : "done", doneAt: step });
+          changes.push({ ...cur });
+          at += 1;
+          continue;
+        }
+        // A beat the world gives nothing to do (`moot` — a recovery with
+        // nothing spent): not exercised, and the run goes on to the next.
+        if (result.moot) {
+          Object.assign(cur, { status: "not-exercised", doneAt: step, detail: result.detail });
           changes.push({ ...cur });
           at += 1;
           continue;

@@ -35,6 +35,8 @@ function vowItem() {
     flags: { [MODULE_ID]: { vowId: 'vow-1' } },
   };
   item.setFlag = async (mod, key, val) => { (item.flags[mod] ??= {})[key] = val; };
+  // Foundry's Item#update over flag paths — the link writes the name and the id as one update.
+  item.update = async (change) => { for (const [path, val] of Object.entries(change)) { const m = /^flags\.([^.]+)\.(.+)$/.exec(path); if (m) await item.setFlag(m[1], m[2], val); } };
   return item;
 }
 

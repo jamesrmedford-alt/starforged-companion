@@ -51,7 +51,7 @@ import {
 import { listSkeletons, skeletonsEnabled } from '../world/secrets.js';
 import { tableVows, distinctOpenVows, trackVowName } from '../session/openThreads.js';
 import { earlierSessionStories } from '../record/summaryView.js';
-import { formatEntityCard, formatSnapshotPlan, SNAPSHOT_BLOCK_HEADING } from './narratorPrompt.js';
+import { formatEntityCard, formatSnapshotPlan, SNAPSHOT_BLOCK_HEADING, loreLine } from './narratorPrompt.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -307,7 +307,8 @@ function loreUnits(campaignState) {
     const text = oneLine(entry.text || entry.fact);
     const title = oneLine(entry.title);
     if (!title && !text) continue;
-    out.push(unit(`lore:${pageId}`, 'lore', `- ${title || 'Lore'}${text ? `: ${text}` : ''}`, { label: title }));
+    // Its fact said once (issue #388 #18, LORE-LINE-SAID-TWICE).
+    out.push(unit(`lore:${pageId}`, 'lore', loreLine(title, text), { label: title }));
   }
   for (const { pageId, entry } of listWorldJournalEntries('locations')) {
     const name = oneLine(entry.locationName);

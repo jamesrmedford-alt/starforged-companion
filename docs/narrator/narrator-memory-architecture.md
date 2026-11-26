@@ -536,7 +536,12 @@ the scene's latest `COLOUR_BEATS` (6) narrations wrote or restated it: its
 narrations are its stamped cards (`sceneId`, invariant 1;
 `sceneNarrationsOf`), and with none stamped (a scene from before) it all
 stands. A restatement the dedup meets refreshes `said`; one the table's words
-bear out raises the basis (`raisedBasis` — never lowered); a GM's Keep in the
+bear out raises the basis (`raisedBasis` — never lowered) — a state value's
+too, said again as it stands or cut to two or more of its own first words,
+which keeps the basis it holds (`ledgers.js restatesStateValue`; a value that
+adds words is a new one, the narration's — RESTATED-WHEREABOUTS-LOST-BASIS:
+whereabouts the player's line set became colour when a narration repeated
+them, and the scene's end kept no LAST KNOWN); a GM's Keep in the
 correction dialog raises it to `gm` (`confirmTruth`); the save's merge carries
 both (`mergeSceneLedgers` → `withRestatement`). The X-Card takes its
 narration off what it restated. Colour sharing a let-go question's stem the
@@ -690,10 +695,13 @@ ship/position when the player's line or the prose puts the ship somewhere
 its position does not say. Only a beat of play moves the ship (a bookend's,
 a clock vignette's and the oath scene's ship/position are dropped; the
 inciting incident's starting position stands). A fight begun while docked
-tells its opening beat NOT SO [place]. A line that walks the characters to a
-recorded place the frame names moves the current location with the frame
-(`sceneLifecycle.js placeWalkedTo`; `place.arrived`, `how: "line"`), and the
-next beat turns the scene; the ship stays. Names the table changed are
+tells its opening beat NOT SO [place]. No line walks the characters to
+another place (issue #393 D3), and the frame's `where` is a spot within
+their place: one naming another recorded place keeps the scene's last
+`where` (D4, `sceneLifecycle.js framedAtThePlace`). A journey that leaves —
+an expedition for another place, a Set a Course that misses — sets out: no
+current location, "between places, on the expedition …" in THE SCENE, until
+an arrival, which turns the scene as a place. Names the table changed are
 written new in the frame's words as they are read (`writeNewNames`).
 
 **Knob:** `factContinuity.sceneFrame` (world Boolean, default on; Fact

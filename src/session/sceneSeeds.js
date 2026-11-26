@@ -146,14 +146,20 @@ function made(build) {
  * result's); a place is two draws for each result, and two more for every
  * area row that is an instruction.
  *
- * @param {{ present?: string[], absent?: string[], placeKnown?: boolean }} [scene] —
+ * @param {{ present?: string[], absent?: string[], placeKnown?: boolean, perspective?: string|null }} [scene] —
  *   the names of the characters in it and of the absent crewmates; whether
- *   the records or the table say where the scene is set
+ *   the records or the table say where the scene is set; the perspective its
+ *   narration is told ("second_person": the one character is "you")
  * @param {(faces: number) => number} [draw]
  * @returns {Object[]} the seeds
  */
-export function rollOpeningSeeds({ present = [], absent = [], placeKnown = false } = {}, draw = drawDie) {
-  const who = present.length === 1 ? `${present[0]} is` : "they are";
+export function rollOpeningSeeds({ present = [], absent = [], placeKnown = false, perspective = null } = {}, draw = drawDie) {
+  // In second person the one character is "you" in the MATERIAL too: named
+  // there, three of the sixth live round's six openings were told in the
+  // third person (issue #389 #4, OPENING-IN-THE-THIRD-PERSON).
+  const who = present.length === 1
+    ? (perspective === "second_person" ? `you (${present[0]}) are` : `${present[0]} is`)
+    : "they are";
   return [
     made(() => pairSeed("moment", `What ${who} doing in this lull`, ["action", "theme"], draw)),
     made(() => pairSeed("eye", "What the scene's eye rests on", ["descriptor", "focus"], draw)),
@@ -364,6 +370,14 @@ export function formatMaterial(seeds, { account = true, spotlight = false } = {}
     "- The scene has no business and no featured thing of its own. Nothing is",
     "  eaten, drunk, mended, heard or noticed in it that is not one of the results",
     "  or already on record.",
+    // The fifth live run's a19 lull read "Deliver" as Mira setting her own
+    // brass star-compass on Tamsin's counter, and a20 told the compass as
+    // left there (issue #388 #12, OPENING-ACTS-ON-THE-PLAYERS-FACTS).
+    ...(spotlight ? [] : [
+      "- What the characters hold, owe and have said stays as the records have it:",
+      "  nothing of theirs changes hands, and nothing is given, promised, spent or",
+      "  broken in this scene. The table decides those.",
+    ]),
   );
   if (account) {
     lines.push(
@@ -411,6 +425,47 @@ export function markSeedsUsed(seeds, builtFrom, prose) {
     seed.tookSecond = !!(entry?.second && seed.second);
   });
   return seeds;
+}
+
+/**
+ * The words of a set-piece's rolled results, for the certain check that holds
+ * its narration to the MATERIAL's rule — "no word of a result is written as
+ * it was rolled" (moves/contracts/checks.js; issue #388 #11,
+ * ORACLE-WORD-WRITTEN-AS-ROLLED: "Fortify, in the plainest sense"; "who on
+ * this ring served the Dominion", a faction no record has). Each Action +
+ * Theme and Descriptor + Focus result, its second too. A place's area and
+ * zone are left out (a room is written by its name), as are the records'
+ * seeds (a name is written as the records have it) and the spotlight's own
+ * roll (what the vignette shows, not words to interpret).
+ *
+ * `onRecord`: a result word the narrator was told with a capital outside the
+ * MATERIAL's own lines (`told`: its system prompt and user message) — a name
+ * the campaign's records hold, written as they have it.
+ *
+ * @param {Object[]|null} seeds
+ * @param {{ told?: string }} [opts]
+ * @returns {{ words: string[], pairs: string[][], onRecord: string[] }}
+ */
+export function rolledWordsOf(seeds, { told = "" } = {}) {
+  const list = numbered(seeds);
+  const results = [];
+  for (const seed of list) {
+    if (seed.from !== "oracle" || seed.source || seed.slot === "spotlight") continue;
+    for (const rolled of [seed, seed.second]) {
+      const words = (Array.isArray(rolled?.tables) ? rolled.tables : [])
+        .flatMap(t => String(t?.result ?? "").split(/\s+/))
+        .map(w => w.replace(/^[^A-Za-z]+|[^A-Za-z'’-]+$/g, ""))
+        .filter(w => w.length >= 3);
+      if (words.length) results.push(words);
+    }
+  }
+  const words = [...new Set(results.flat())];
+  const pairs = results.filter(r => r.length >= 2);
+  const material = list.flatMap(s => [s.result, s.second?.result]).filter(Boolean).map(String);
+  const record = String(told ?? "").split("\n").filter(l => !material.some(r => l.includes(r))).join("\n");
+  const capital = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+  const onRecord = words.filter(w => new RegExp(`(?<![A-Za-z])${capital(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z])`).test(record));
+  return { words, pairs, onRecord };
 }
 
 const escapeHtml = (s) => String(s ?? "")

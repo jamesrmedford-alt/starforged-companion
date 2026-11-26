@@ -85,6 +85,10 @@ beforeEach(async () => {
     // default since issue #354 P2-10: heldResultBeforePrice.test.js.)
     holdResultForUpgrade: false,
     chronicleAutoEntry: false, narratorSessionSummary: false,
+    // The scripted narrations tell Kira by name: the third person, as told —
+    // a second-person beat that names its character is asked again
+    // (BEAT-IN-THE-THIRD-PERSON, beatInTheSecondPerson.test.js).
+    narrationPerspective: "third_person",
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: "bs-s1", sessionNumber: 1,
       lastSessionTimestamp: new Date().toISOString(), currentSceneId: "bs-scene", sceneTruths: [],
       clocks: [{ _id: "t1", name: "Reactor breach", type: "tension", segments: 4, filled: 3, active: true }] },

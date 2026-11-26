@@ -13,10 +13,10 @@
  *   2. else a die among the campaign's people, weighted as the old priority
  *      ranked them (bonded 3, rank dangerous or above 2, a threat 2, else 1);
  *   3. never the one the last closing showed, while there is another;
- *   4. never one the session's last scene had with the characters, while
- *      there is another;
- *   5. with nobody, a settlement of the active sector other than where the
- *      characters are; with none, no closing.
+ *   4. never one the session's last scene had with the characters — with
+ *      everyone the campaign has beside them, a place (issue #388 #3);
+ *   5. with nobody else, a settlement of the active sector other than where
+ *      the characters are; with none, no closing.
  *
  * The records are the stores' own readers, mocked at their source; the dice
  * are scripted.
@@ -250,5 +250,41 @@ describe('what the closing is built from — and its message', () => {
       expect(msg).not.toMatch(/put down/);
       expect(msg).toMatch(/How it ends is the material's: its last sentence stays with whichever result the scene reaches last/);
     }
+  });
+});
+
+describe('the one person the campaign has, with the characters at the end — a place, never her (issue #388 #3)', () => {
+  // The fifth live long haul's a94: its last frame had Tamsin beside Mira at
+  // Bleakhold's dispatch terminal, and the closing walked her through Hollow
+  // Spire's market, its prompt saying "Tamsin Okoro is not with them".
+  const AT_BLEAKHOLD = { location: 'Bleakhold Station dispatch terminal', present: ['Mira Kestrel', 'Tamsin Vey'] };
+
+  it('shows a settlement elsewhere — Hollow Spire, not Bleakhold — with no die', () => {
+    listConnections.mockReturnValue([TAMSIN]);
+    const draw = scripted([]);
+    const { option, seed } = chooseClosingSubject(SECTOR, { frame: AT_BLEAKHOLD, messages: [], draw });
+    expect(option).toMatchObject({ name: 'Hollow Spire', kind: 'settlement' });
+    expect(seed).toMatchObject({ label: 'Where it shows' });
+    expect(draw.asked).toEqual([]);
+  });
+
+  it('a connection focus naming her, while she was with them, is no choice either', () => {
+    listConnections.mockReturnValue([TAMSIN]);
+    const { option } = chooseClosingSubject(SECTOR, { connectionFocus: 'Ask Tamsin about the ledger', frame: AT_BLEAKHOLD, messages: [], draw: scripted([]) });
+    expect(option).toMatchObject({ name: 'Hollow Spire', kind: 'settlement' });
+  });
+
+  it('control: with her elsewhere at the end she is shown, focus or none', () => {
+    listConnections.mockReturnValue([TAMSIN]);
+    const alone = { location: 'Bleakhold Station docking ring', present: ['Mira Kestrel'] };
+    expect(chooseClosingSubject(SECTOR, { frame: alone, messages: [], draw: scripted([]) }).option.name).toBe('Tamsin Vey');
+    expect(chooseClosingSubject(SECTOR, { connectionFocus: 'Ask Tamsin', frame: alone, messages: [], draw: scripted([]) }).seed.source).toBe('the table\'s connection focus');
+  });
+
+  it('the prompt then names a place and no person "not with them"', () => {
+    listConnections.mockReturnValue([TAMSIN]);
+    const scene = composeClosingScene({ ...SECTOR, currentLocationId: null }, { frame: AT_BLEAKHOLD, draw: () => 1 });
+    expect(scene.userMessage).toMatch(/^Subject \(settlement\): Hollow Spire\./m);
+    expect(scene.userMessage).not.toContain('Tamsin Vey is not with them');
   });
 });

@@ -147,3 +147,37 @@ describe('the chosen quest focus is the vow the next session\'s scenes serve (is
     expect(prompt).toContain('## THE VOW THIS SCENE SERVES\n\n"Find the lost beacon" (formidable, progress 3/10, sworn by Kira) — the table chose it as this session\'s quest focus.');
   });
 });
+
+describe('a quest focus that names a vow already closed (issue #388 #13, END-FOCUS-ON-A-FULFILLED-VOW)', () => {
+  // The fifth live long haul typed the vow fulfilled at a81 in as the focus at
+  // a94; the next Begin card named it as the quest beside "No character has a
+  // vow in play", and the narrator was told it as the session's.
+  it('End\'s card says so while another can be noted; Begin marks it, and it is not the session\'s quest', async () => {
+    await openOnPat('End a Session', 'openEndSessionDialog', (d) => d.submit({ 'input[name="questFocus"]': 'Old business.' }));
+    const end = table.cards(f => f.sessionLifecycleCard).find(c => /End a Session/.test(c.content));
+    expect(end.content).toContain('Old business. — <em>that vow is already fulfilled; End a Session again to note another quest.</em>');
+    expect(table.world.campaignState().questFocus).toBe('Old business.');
+
+    const shown = await openOnPat('Begin a Session', 'openBeginSessionDialog', d => d.submit({}));
+    expect(shown).toContain('<strong>Quest:</strong> Old business. — <em>a vow already fulfilled</em>');
+    const begin = table.cards(f => f.sessionLifecycleCard).find(c => /Begin a Session/.test(c.content));
+    expect(begin.content).toContain('<strong>Quest:</strong> Old business. — <em>a vow already fulfilled</em>');
+    expect(table.world.campaignState().sessionFocus ?? null).toBeNull();
+  });
+
+  it('an open vow\'s name, or the player\'s own words, stands as written', async () => {
+    const { closedVowNamed } = await import('../../src/session/openThreads.js');
+    const vows = [
+      { name: 'Old business', completed: true },
+      { name: 'Find the lost beacon', completed: false },
+      { name: 'Repay the Iron Covenant', completed: true, forsaken: true },
+      { name: 'Find the lost beacon', completed: true },
+    ];
+    expect(closedVowNamed('old  business!', vows)).toEqual({ name: 'Old business', how: 'fulfilled' });
+    expect(closedVowNamed('Repay the Iron Covenant', vows)).toEqual({ name: 'Repay the Iron Covenant', how: 'forsaken' });
+    // A copy still open, on another character's sheet, keeps it a quest.
+    expect(closedVowNamed('Find the lost beacon', vows)).toBeNull();
+    expect(closedVowNamed('Old business, and what came after', vows)).toBeNull();
+    expect(closedVowNamed('', vows)).toBeNull();
+  });
+});

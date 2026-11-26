@@ -165,7 +165,7 @@
           {
             "id": "F3-C",
             "set": "C",
-            "ask": "Who has the manifest in their keeping today?"
+            "ask": "Who has my cargo manifest in their keeping today?"
           }
         ]
       },
@@ -177,7 +177,8 @@
         "variants": [
           "tide of cargo",
           "next tide",
-          "cargo tide"
+          "cargo tide",
+          "next cargo"
         ],
         "refusals": [
           {
@@ -305,7 +306,8 @@
             "anywhere": [
               "Tamsin Vey",
               "Vey"
-            ]
+            ],
+            "former": true
           }
         ],
         "probes": [

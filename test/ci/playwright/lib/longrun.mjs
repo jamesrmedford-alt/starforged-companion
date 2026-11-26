@@ -105,10 +105,12 @@ export function recheckBeats({ charter, beats, marks, messages, actions }) {
       if (!beat.interruption && i === from && to > from) continue;
       result = check(beatView({ marks: marks.slice(0, i + 1), messages: upTo(messages, i), actions: upTo(actions, i), charter, from: was.enteredAt, beat }), beat.check);
       at = marks[i].step;
-      if (result.done) break;
+      if (result.done || result.moot) break;
     }
     if (!result) continue;
     if (result.done) Object.assign(next, { status: result.failed ? "failed" : "done", doneAt: at, detail: result.detail });
+    // A beat the world gave nothing to do (lib/beats.mjs `moot`), as the pointer passes it.
+    else if (result.moot) Object.assign(next, { status: "not-exercised", doneAt: at, detail: result.detail });
     else Object.assign(next, { status: "not-exercised", detail: /^not reached in /.test(was.detail ?? "") ? `not reached in ${was.actions} actions — ${result.detail}` : result.detail });
   }
   return out;

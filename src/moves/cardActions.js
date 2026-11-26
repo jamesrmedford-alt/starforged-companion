@@ -47,6 +47,8 @@ import { marksForSourceRank, selectFulfilVow } from "./milestone.js";
 import { toMoveId } from "../schemas.js";
 import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 import { gatePress } from "./contracts/pressGate.js";
+import { offerRollContent } from "./offerLine.js";
+import { moveDisplayName } from "../system/i18n.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -315,7 +317,8 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content(label),
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...target, ...sourceCardFlag(messageId, "resolved") } },
+        // `madeLine`: the card's words, not the player's (issue #388 #10).
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, madeLine: true, ...target, ...sourceCardFlag(messageId, "resolved") } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | connection pick: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -449,7 +452,7 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         // `fromWaypoint`: made from the waypoint's own alternative — what the
         // move gate asks of a discovery or a chaos (FROM_A_WAYPOINT).
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true, fromWaypoint: true,
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true, fromWaypoint: true, madeLine: true,
           // Not rolled, the ordinary reward's cards this press retires below come back too.
           ...sourceCardFlag(messageId, "waypointRewardClaimed", null,
             { value: "alternative", reopenRetired: { resolutionId: f.resolutionId ?? null, kind: move.retired } }) } },
@@ -546,6 +549,7 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: forsake ? "forsake_your_vow" : "fulfill_your_vow", deferWhileBusy: true,
+          ...(f.narration ? {} : { madeLine: true }),
           forcedMoveTargetId: choice.itemId,
           ...(choice.name ? { forcedMoveTarget: choice.name } : {}),
           ...sourceCardFlag(messageId, "resolved"),
@@ -638,6 +642,7 @@ export async function applyLegacyTrackPick(payload = {}, ctx = {}) {
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "continue_a_legacy", deferWhileBusy: true,
+          ...(f.narration ? {} : { madeLine: true }),
           forcedMoveTarget: choice.label ?? track,
           ...sourceCardFlag(messageId, `legacyRolled.${track}`),
         } },
@@ -726,7 +731,7 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: "Mark progress on your vow.",
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone", deferWhileBusy: true, ...sourceCardFlag(messageId, "milestoneMarked") } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone", deferWhileBusy: true, madeLine: true, ...sourceCardFlag(messageId, "milestoneMarked") } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | milestone suggestion: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -889,7 +894,7 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
         content: "Attempt to fulfill your vow.",
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
+          bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true, madeLine: true,
           ...(targetName ? { forcedMoveTarget: targetName } : {}),
           ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
           ...sourceCardFlag(messageId, "fulfilAttempted"),
@@ -1104,7 +1109,7 @@ export function applyTakeDecisiveActionAttempt(payload = {}, ctx = {}) {
           ? `Take decisive action to seize the objective — ${trackLabel}.`
           : "Take decisive action to seize the objective.",
         flags: {
-          forcedMoveId: "take_decisive_action",
+          forcedMoveId: "take_decisive_action", madeLine: true,
           ...(trackId ? { forcedMoveTargetId: trackId } : {}),
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
         },
@@ -1134,7 +1139,7 @@ export function applyFinishExpeditionAttempt(payload = {}, ctx = {}) {
       return {
         content: trackLabel ? `Finish the expedition — ${trackLabel}.` : "Finish the expedition.",
         flags: {
-          forcedMoveId: "finish_an_expedition",
+          forcedMoveId: "finish_an_expedition", madeLine: true,
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
           ...(trackId ? { forcedMoveTargetId: trackId } : {}),
         },
@@ -1174,7 +1179,11 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
       // that is no move (PACED-CARD-OLD-MOVE-NAME).
       const moveId = toMoveId(f.suggestedMove);
       if (!moveId) return null;
-      return { content: f.playerText, flags: {
+      // The line was said, and its beat narrated, on this card: the Roll posts
+      // the move rolled from it, not the line again — the line rides on the
+      // flags for the pipeline and the record (offerLine.js; OFFER-FLOW-FRICTION).
+      return { content: offerRollContent(moveDisplayName(moveId)), flags: {
+        offerLine: f.playerText,
         forcedMoveId: moveId,
         // A scene-challenge Roll's challenge, as the Finish an Expedition
         // button forwards its track (PACED-VARIANT-NO-TARGET).
@@ -1182,6 +1191,10 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
         // The offer's reading, from the GM's card (issue #384, slice 3): the
         // Roll is made as read, with no second call. Only for the card's move.
         ...(f.offerReading && typeof f.offerReading === "object" && f.offerReading.moveId === moveId ? { forcedReading: f.offerReading } : {}),
+        // The line was narrated on this card, before its Roll: the roll's
+        // narration goes on from there, and does not tell the line again
+        // (issue #388 #14, BEAT-TOLD-TWICE).
+        fromOffer: true,
       } };
     },
   });
@@ -1243,6 +1256,7 @@ export function applyNotRolledRollAnyway(payload = {}, ctx = {}) {
       content: f.rollAnyway.content || `${f.rollAnyway.moveId}`,
       flags: {
         forcedMoveId: f.rollAnyway.moveId, gateOverride: true, bypassPacing: true,
+        ...(f.rollAnyway.content ? {} : { madeLine: true }),
         ...(typeof f.rollAnyway.moveTarget === "string" && f.rollAnyway.moveTarget ? { forcedMoveTarget: f.rollAnyway.moveTarget } : {}),
         ...(typeof f.rollAnyway.moveTargetId === "string" && f.rollAnyway.moveTargetId ? { forcedMoveTargetId: f.rollAnyway.moveTargetId } : {}),
         ...(f.rollAnyway.fromWaypoint === true ? { fromWaypoint: true } : {}),
@@ -1279,6 +1293,7 @@ export function applyWhichFightPick(payload = {}, ctx = {}) {
         content: f.narration || `Take decisive action to seize the objective — ${fight.label ?? "the fight"}.`,
         flags: {
           forcedMoveId: typeof f.moveId === "string" && f.moveId ? f.moveId : "take_decisive_action",
+          ...(f.narration ? {} : { madeLine: true }),
           forcedMoveTargetId: fight.id,
           ...(fight.label ? { forcedMoveTarget: fight.label } : {}),
         },
@@ -1625,7 +1640,7 @@ export async function applyCombatTrackBattle(payload = {}, ctx = {}) {
           : "Battle — resolve the fight in a single, decisive clash.",
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "battle", deferWhileBusy: true,
+          bypassPacing: true, forcedMoveId: "battle", deferWhileBusy: true, madeLine: true,
           ...(trackId ? { forcedMoveTargetId: trackId } : {}),
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
           ...sourceCardFlag(messageId, "battleClaimed"),
@@ -1824,7 +1839,7 @@ export async function applyWayOutPick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.narration,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true,
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, madeLine: true,
           ...sourceCardFlag(messageId, "wayOutTaken", null, { value: move.moveId }) } },
       });
     } catch (err) {

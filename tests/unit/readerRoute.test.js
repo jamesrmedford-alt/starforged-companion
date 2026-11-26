@@ -32,6 +32,25 @@ describe('rows 1–6', () => {
     for (const d of [0, 5, 10]) expect(route(read({ moveId: null, risk: null }), { pacingConfig: dials(d) })).toMatchObject({ route: 'narrate', why: 'no move', moveId: null, offeredMove: null });
   });
 
+  it('1: a move the reader names as blocked is asked of the gate — refused, it is told as unmade (issue #388 #7)', () => {
+    // The fifth live long haul's a58: "I Hearten myself with a quiet hour in the galley." at spirit 5 of 5,
+    // read as no move with nothing told. The reader now names the move it set about; the gate's refusal rides as unmade.
+    const verdict = { ok: false, code: 'recoverable-spirit' };
+    const refuse = (id) => (id === 'hearten' ? { ok: false, why: 'spirit 5 of 5: nothing to recover', instead: null, verdict } : { ok: true });
+    expect(route(read({ moveId: null, blocked: 'hearten', risk: null, category: 'downtime' }), { check: refuse })).toMatchObject({
+      route: 'narrate', moveId: null, offeredMove: null, unmade: { moveId: 'hearten', why: 'spirit 5 of 5: nothing to recover', verdict },
+    });
+    // The gate allowing it leaves the reader's no move; no gate, no telling.
+    expect(route(read({ moveId: null, blocked: 'hearten', risk: null }), { check: () => ({ ok: true }) })).toMatchObject({ route: 'narrate', why: 'no move', unmade: null });
+    expect(route(read({ moveId: null, blocked: 'hearten', risk: null }), {})).toMatchObject({ route: 'narrate', why: 'no move', unmade: null });
+    // A blocked move with an instead is read on as it: a Strike with no fight under way is Enter the Fray.
+    const noFight = (id) => (id === 'strike' ? { ok: false, why: 'no fight is under way', instead: 'enter_the_fray' } : { ok: true });
+    expect(route(read({ moveId: null, blocked: 'strike', category: 'combat', risk: 'high' }), { check: noFight, pacingConfig: dials(6) }))
+      .toMatchObject({ route: 'roll', moveId: 'enter_the_fray', remapped: { from: 'strike', why: 'no fight is under way' }, unmade: null });
+    // An unknown blocked id is no move.
+    expect(route(read({ moveId: null, blocked: 'not_a_move', risk: null }), { check: refuse })).toMatchObject({ route: 'narrate', why: 'no move', unmade: null });
+  });
+
   it('2: the gate refuses — narrated, what it refused told as unmade; its instead is read on as that move', () => {
     const refuse = () => ({ ok: false, why: 'spirit 5 of 5: nothing to recover', instead: null });
     expect(route(read({ moveId: 'hearten' }), { check: refuse, fightOpen: true, pacingConfig: dials(10) })).toMatchObject({
