@@ -274,7 +274,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   pick up?" (D8: the `pickUp` payload, cleaned on both clients, shown on the
   Begin card) — is told above it and outranks it. **The opening is built from
   rolled material** (`session/sceneSeeds.js`, the one draw site, `drawDie`):
-  Action + Theme for what the characters are doing in this lull, Descriptor +
+  Action + Theme for what the characters are doing in this lull (in second
+  person "What you (Mira Kestrel) are doing in this lull", issue #389 #4 —
+  `rollOpeningSeeds`'s `perspective`, resolved as the system prompt's is), Descriptor +
   Focus for what the scene's eye rests on, each with a second result drawn at
   once; a place aboard (Derelict Zone (Starship), then that zone's area table —
   an instruction row drawn again, up to three times) only when nothing says
@@ -1261,13 +1263,18 @@ around it). `first-session.json` / `batch-round.json` declare each narrating
 step's own kind optional, for a re-ask. A re-ask that throws keeps the first
 draft.
 The reply's prose is read (`sidecarParser.extractSidecar`, before any fact
-block is applied) and held to its lines by class: **certain** —
+block is applied — the prose ends at the first sidecar block, so a note the
+model writes after it, or a corrected block, is never narration: issue #389
+#3, SIDECAR-NOTE-IN-THE-PROSE) and held to its lines by class: **certain** —
 [apparatus] (an outcome's name, a sheet number, a two-word move's name
 outside the closing offer line), [match] (the word) and, on a session
 set-piece (`narrateSessionVignette`, mode `set-piece`), [material] (a rolled
 word written as a label, as a name no record holds, or a result's words
 together — `materialViolations`, issue #388 #11; label
-`narrateSessionVignette:reask`); **floor** — [vow]
+`narrateSessionVignette:reask`) and, in second person on an opening or a
+spotlight, [person] (the character's name outside quoted speech —
+`personViolations`, issue #389 #4; a closing cuts away and is not held to
+it); **floor** — [vow]
 (a word of the vow's name, or what is still not known) and [chosen]
 (logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
 in the prose ([premise] by its refusal's code — "starts on the cuts" under
@@ -1694,7 +1701,12 @@ change whose basis binds (`factBasis` with `about: ['ship']` — the line's, the
 dice's, the GM's, the premise's; the narrator's colour never moves her), and
 one that restates where she already is (the same settlement or location, its
 words all in the record's line — `restatesWhereSheIs`) keeps the record, so
-"docked at" is not turned into "near" (issue #388 #2, D17 amended) — `applySceneFrame`
+"docked at" is not turned into "near" (issue #388 #2, D17 amended). A paced
+beat that offers a journey move (`ctx.offer` in `JOURNEY_MOVES`: Set a
+Course, Undertake or Finish an Expedition) moves her nowhere before its roll,
+and `inferShipPosition` reads a position only from the words before a
+destination's ("bound for", "toward", "en route to" — `whereSheIsOf`; issue
+#389 #8, SHIP-BOUND-FOR-READ-AS-NEAR) — `applySceneFrame`
 full-replacement snapshot — a session vignette's with its question taken off
 (`narrator.js` `bookendFrame`, `ctx.bookend`: a bookend is no beat of
 play — it sets no question and changes none); every beat's frame is first
@@ -1958,7 +1970,9 @@ expedition / scene-challenge tracks — `sceneTurns.js sceneAnchorOf`, from the
 stores as `sceneStoresNow` reads them), and at a beat of play
 (`ensureCurrentScene`'s move, paced, round and oracle follow-up sites)
 `turnSceneIfDue` turns the scene when the stores moved off it
-(`sceneTurnDue`: place → ship → fight → expedition → challenge → time;
+(`sceneTurnDue`: place → ship → fight → expedition → challenge → time — the
+ship's cause not while an expedition is under way, its legs being that
+journey's: issue #389 #9, EXPEDITION-LEGS-TURN-THE-SCENE;
 begun before the narration, ended after the beat whose `endingTrackIds`
 name the track) — `endScene({ turn: true })`, which keeps the unanswered
 mysteries (carried by `secrets.js carrySceneMysteries`) and the `!pace`

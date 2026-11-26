@@ -250,7 +250,13 @@ export function sceneTurnDue(anchor, live, { line = '', moveId = null, moveIds =
     const arrived = [...moves].some(m => ARRIVAL_MOVES.has(m));
     return { cause: 'place', what: causeText('place', { arrived, name: live.place.name }) };
   }
-  if (anchor.ship && live.ship && live.ship.key !== anchor.ship.key) {
+  // …but while an expedition is under way, the ship moving on its legs is
+  // that journey's: no turn (issue #389 #9, EXPEDITION-LEGS-TURN-THE-SCENE —
+  // the sixth live round turned the scene on every leg: a22 then a23; the
+  // first run's a23, a24 and a25, a scene a beat). The expedition began its
+  // own scene, or begins one now (below), and its arrival turns as a place.
+  const underway = (live.tracks?.expedition ?? []).length > 0;
+  if (!underway && anchor.ship && live.ship && live.ship.key !== anchor.ship.key) {
     return { cause: 'ship', what: causeText('ship', { ship: live.ship.name, where: shipWords(live.ship.line).replace(new RegExp(`^${escapeRe(clean(live.ship.name))}\\s*`, 'i'), '') }) };
   }
 

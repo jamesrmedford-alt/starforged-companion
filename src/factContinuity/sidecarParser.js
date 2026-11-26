@@ -122,10 +122,18 @@ export function extractSidecar(rawText) {
 
   if (!blocks.length) return { prose: rawText, sidecar: null, parseError: null };
 
-  // Take the last block in the response. Strip every block from the prose so
-  // the player never sees JSON regardless of how many the model emitted.
+  // Take the last block in the response: it is the model's latest word on
+  // the state. The prose ends at the first block — what the model writes
+  // after it, a note about the block or a corrected one, is its working,
+  // never narration (issue #389 #3, SIDECAR-NOTE-IN-THE-PROSE: the sixth
+  // live long haul's a17 opening was posted ending "Hmm — correction to the
+  // block above, which should stand as written but…", the text between its
+  // two blocks; of 392 recorded narrator replies with a block, it was the
+  // only one with any text after its first). A reply that opens on its block
+  // keeps the old reading: every block stripped, the rest the prose.
   const last  = blocks[blocks.length - 1];
-  const prose = stripBlocks(rawText, blocks);
+  const head  = rawText.slice(0, blocks[0].start).replace(/\s+$/u, '');
+  const prose = head || stripBlocks(rawText, blocks);
 
   let sidecar = null;
   let parseError = null;

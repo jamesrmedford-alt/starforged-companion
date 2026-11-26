@@ -47,6 +47,7 @@ import { proseToHtml } from "../audio/segments.js";
 import { earlierVignettes, formatEarlierVignettes } from "./vignetteHistory.js";
 import { lastSessionToTell } from "./lifecycle.js";
 import { drawDie, rollOpeningSeeds, formatMaterial, seedsForFlags, factBlockWritten } from "./sceneSeeds.js";
+import { resolveNarrationPerspective, sessionPerspectiveOf } from "../narration/narratorPrompt.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -530,11 +531,25 @@ export async function composeOpeningScene(participants, campaignState, { pickUp 
     present:    participants.active.map(nameOf).filter(Boolean),
     absent:     participants.absent.map(nameOf).filter(Boolean),
     placeKnown: !!(lastSession || picked),
+    perspective: openingPerspective(participants, campaignState),
   }, draw);
   const userMessage = buildGalleyVignetteUserMessage(participants, campaignState, {
     lastSession, seeds, pickUp: picked, account: factBlockWritten(),
   });
   return { userMessage, seeds };
+}
+
+/**
+ * The perspective the opening's narration is told — as its system prompt
+ * resolves it (narratorPrompt.js resolveNarrationPerspective: two characters
+ * or more are third person; Auto keeps the session's).
+ */
+function openingPerspective(participants, campaignState) {
+  let setting = "auto";
+  try { setting = game.settings.get(MODULE_ID, "narrationPerspective") ?? "auto"; }
+  catch (err) { console.debug?.(`${MODULE_ID} | opening: the perspective setting could not be read — Auto:`, err?.message ?? err); }
+  const acting = Array.isArray(participants?.active) ? participants.active.length : 0;
+  return resolveNarrationPerspective(setting, { actingCharacters: acting > 1 ? acting : 0, sessionPerspective: sessionPerspectiveOf(campaignState) });
 }
 
 /** True when `user` owns `actor` (Foundry's permission test, else the ownership map). */

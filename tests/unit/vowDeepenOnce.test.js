@@ -114,9 +114,30 @@ describe("a vow deepens its connection once (issue #326 D1)", () => {
     expect(table.world.message(card._id).flags[MODULE_ID].resolvedActions?.deepenBond).toBe(true);   // its button retires
   }, 30_000);
 
+  // Issue #389 #7, FULFILMENT-SILENT-ON-A-SPENT-DEEPEN: the sixth live long
+  // haul's a63 press spent the vow's deepen, and its a84 fulfilment deepened
+  // nothing, rightly, and said nothing — neither card told the player why.
+  it("the press says it is the vow's one deepen, and the fulfilment after it says the deepen was spent", async () => {
+    const VOW = /&ldquo;Free Sable(?:'|&#39;|&#x27;)s crew&rdquo;/;
+    await pressDeepen(await postVictoryCard());
+    const pressed = table.cards(f => f.deepenBondCard).at(-1).content;
+    expect(pressed).toMatch(/Your bond with <strong>Sable<\/strong> deepens — \+2 milestones of relationship progress\./);
+    expect(pressed).toMatch(new RegExp(`This is ${VOW.source}'s deepen — a vow deepens its connection once, so its fulfilment will not deepen it again\\.`));
+
+    await fulfil();
+    expect(ticks()).toBe(ONE_DEEPEN);
+    const notes = table.cards(f => f.deepenBondCard).map(c => c.content);
+    expect(notes).toHaveLength(2);
+    expect(notes.at(-1)).toMatch(new RegExp(`Your bond with <strong>Sable</strong> has already deepened for ${VOW.source} — a vow deepens it once\\.`));
+  }, 30_000);
+
   it("control: a fulfilment with no press deepens once", async () => {
     await fulfil();
     expect(ticks()).toBe(ONE_DEEPEN);
+    // Its deepen is the fulfilment's own: no "already", and no word of a press.
+    const notes = table.cards(f => f.deepenBondCard).map(c => c.content);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).not.toMatch(/already|This is/);
   }, 30_000);
 
   it("control: a second press of the same card deepens nothing more", async () => {

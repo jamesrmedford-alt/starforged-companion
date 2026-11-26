@@ -87,6 +87,8 @@ describe('extractSidecar', () => {
     const { prose, sidecar, parseError } = extractSidecar(text);
     expect(parseError).toBeNull();
     expect(prose).not.toMatch(/```/);
+    // …and the prose ends at the first (issue #389 #3).
+    expect(prose).toBe('Prose chunk one.');
     expect(sidecar.newTruths[0].fact).toBe('new');
   });
 
@@ -221,7 +223,9 @@ describe('extractSidecar — a sidecar fenced without the json tag', () => {
     ].join('\n');
     const { prose, parseError } = extractSidecar(raw);
     expect(prose).not.toMatch(/```|newTruths/);
-    expect(prose).toMatch(/Prose chunk two\.$/);
+    // The prose ends at the first block: the text between blocks is the
+    // model's working, not narration (issue #389 #3, SIDECAR-NOTE-IN-THE-PROSE).
+    expect(prose).toBe('Prose chunk one.');
     expect(parseError.message).toMatch(/truncated/i);
   });
 });

@@ -364,6 +364,16 @@ export const OBLIGATION_KINDS = Object.freeze({
       "Tell what the move does, and what the others do and say.",
     judge: () => "The player's character (\"you\") speaks — says, asks, promises or confesses something, in quotes or told (\"you tell her that …\").",
   }),
+  // A second-person set-piece's character is "you" (issue #389 #4,
+  // OPENING-IN-THE-THIRD-PERSON: three of the sixth live round's six openings
+  // were told "Mira is counting the water ration…" against their PERSPECTIVE
+  // block). Held by its certain check (checks.js personViolations); the
+  // names ride on the line.
+  person: Object.freeze({
+    list: "NOT SO", check: "certain",
+    text: ({ names = [] } = {}) => `The player's character is "you", for the whole narration: never ${names.length ? names.map(n => `"${n}"`).join(" or ") : "their name"} `
+      + "outside quoted speech, and never \"she\" or \"he\" for them.",
+  }),
   // A set-piece's MATERIAL rule, held by its certain check (checks.js
   // materialViolations; issue #388 #11). Its words ride on the line.
   material: Object.freeze({
@@ -668,17 +678,20 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
  *   "round"       the round as a whole — the state, the sheet, the apparatus
  *   "oracle"      an oracle follow-up — a yes/no answer told and its opposite not so
  *   "set-piece"   an opening, a closing or a spotlight — its rolled words never
- *                 written as rolled ([material]: `material`, sceneSeeds.js rolledWordsOf)
+ *                 written as rolled ([material]: `material`, sceneSeeds.js rolledWordsOf);
+ *                 in second person, its character "you" ([person]: `person`)
  *
  * @param {{ mode: "paced"|"move"|"round-entry"|"round"|"oracle"|"set-piece", resolution?: Object|null, refusal?: Object|null,
  *   offer?: string|null, note?: string|null, oracle?: Object|null, situation?: Object|null, line?: string,
  *   cast?: string[], speaker?: string|null,
  *   material?: { words: string[], pairs: string[][], onRecord: string[] }|null,
- *   madeLine?: boolean }} input — `madeLine`: a move pressed on a card, its line the card's ([unsaid])
+ *   person?: { names: string[] }|null,
+ *   madeLine?: boolean }} input — `madeLine`: a move pressed on a card, its line the card's ([unsaid]);
+ *   `person`: a second-person set-piece's character, by the names the prose must not call them ([person])
  * @returns {Array<{ kind: string, list: string, text: string }>}
  */
 export function obligationsFor({ mode, resolution = null, refusal = null, offer = null, note = null, oracle = null,
-  situation = null, line: said = "", cast = [], speaker = null, chosenSince = [], material = null, madeLine = false } = {}) {
+  situation = null, line: said = "", cast = [], speaker = null, chosenSince = [], material = null, person = null, madeLine = false } = {}) {
   const out = [];
   const state = () => stateFacts({ situation, line: said, target: resolution?.moveTarget ?? null, cast })
     .map(fact => line("state", { fact }));
@@ -719,6 +732,8 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
         pairs: Array.isArray(material.pairs) ? material.pairs : [],
         onRecord: Array.isArray(material.onRecord) ? material.onRecord : [] });
     }
+    const names = Array.isArray(person?.names) ? [...new Set(person.names.map(n => String(n ?? "").trim()).filter(n => n.length >= 2))] : [];
+    if (names.length) out.push({ ...line("person", { names }), names });
   }
   return out;
 }

@@ -146,14 +146,20 @@ function made(build) {
  * result's); a place is two draws for each result, and two more for every
  * area row that is an instruction.
  *
- * @param {{ present?: string[], absent?: string[], placeKnown?: boolean }} [scene] —
+ * @param {{ present?: string[], absent?: string[], placeKnown?: boolean, perspective?: string|null }} [scene] —
  *   the names of the characters in it and of the absent crewmates; whether
- *   the records or the table say where the scene is set
+ *   the records or the table say where the scene is set; the perspective its
+ *   narration is told ("second_person": the one character is "you")
  * @param {(faces: number) => number} [draw]
  * @returns {Object[]} the seeds
  */
-export function rollOpeningSeeds({ present = [], absent = [], placeKnown = false } = {}, draw = drawDie) {
-  const who = present.length === 1 ? `${present[0]} is` : "they are";
+export function rollOpeningSeeds({ present = [], absent = [], placeKnown = false, perspective = null } = {}, draw = drawDie) {
+  // In second person the one character is "you" in the MATERIAL too: named
+  // there, three of the sixth live round's six openings were told in the
+  // third person (issue #389 #4, OPENING-IN-THE-THIRD-PERSON).
+  const who = present.length === 1
+    ? (perspective === "second_person" ? `you (${present[0]}) are` : `${present[0]} is`)
+    : "they are";
   return [
     made(() => pairSeed("moment", `What ${who} doing in this lull`, ["action", "theme"], draw)),
     made(() => pairSeed("eye", "What the scene's eye rests on", ["descriptor", "focus"], draw)),

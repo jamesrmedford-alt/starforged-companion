@@ -73,6 +73,23 @@ export function emptyPosition() {
   };
 }
 
+/** The words that name where a ship is going, not where she is. */
+const DESTINATION_WORDS = /\b(?:bound\s+for|headed\s+(?:for|to|toward|towards)|heading\s+(?:for|to|toward|towards)|en\s+route\s+(?:to|for)|on\s+(?:a\s+)?course\s+(?:for|to)|making\s+for|toward|towards|on\s+(?:the|her|its)\s+way\s+to)\b/i;
+
+/**
+ * The part of a position phrase that says where the ship is: the words before
+ * a destination's ("docked at Hollow Spire, bound for Bleakhold" → "docked at
+ * Hollow Spire, "). The whole phrase when it names no destination.
+ *
+ * @param {string} ref
+ * @returns {string}
+ */
+export function whereSheIsOf(ref) {
+  const text = String(ref ?? "");
+  const m = DESTINATION_WORDS.exec(text);
+  return m ? text.slice(0, m.index) : text;
+}
+
 /**
  * Infer a position record from a free-text seed reference and the
  * current campaign state. Pure — no I/O.
@@ -124,8 +141,13 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
   );
   const index    = buildNameIndex(entities, []);
 
-  // The first place the seed names, read on past any name that is not one.
-  const hit = matchSeedAgainstIndex(index, ref);
+  // The first place the seed names, read on past any name that is not one —
+  // but never past a destination's words: "leaving the clipped hauler, bound
+  // for Bleakhold Station" says where she is going, not where she is, and it
+  // was recorded "near Bleakhold Station" (issue #389 #8,
+  // SHIP-BOUND-FOR-READ-AS-NEAR — the ARRIVAL-LOCATION-PHRASE-SPLIT family).
+  // A seed that names no place before them is kept as its words.
+  const hit = matchSeedAgainstIndex(index, whereSheIsOf(ref));
   switch (hit?.entityType) {
     case "settlement": {
       out.nearestSettlementId = hit.journalId ?? hit._id ?? null;

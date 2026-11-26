@@ -107,7 +107,32 @@ export function certainViolations(prose, obligations) {
   }
   const material = (obligations ?? []).find(o => o?.kind === "material");
   if (material) out.push(...materialViolations(bodyOf(text), material));
+  const person = (obligations ?? []).find(o => o?.kind === "person");
+  if (person) out.push(...personViolations(bodyOf(text), person));
   return out;
+}
+
+/**
+ * [person]: a second-person set-piece that calls its character by name
+ * outside quoted speech (issue #389 #4, OPENING-IN-THE-THIRD-PERSON — "Mira is
+ * counting the water ration for the third time", a52). A name in double
+ * quotes is a speaker's, and stays. One violation at most.
+ *
+ * @param {string} body — the prose, its closing offer line left out
+ * @param {{ names?: string[] }} person — the character's full and first name
+ * @returns {Array<{ tag: "person", quote: string }>}
+ */
+export function personViolations(body, { names = [] } = {}) {
+  const text = String(body ?? "");
+  // Quoted speech blanked to its length, so an index still points into the prose.
+  const told = text.replace(/"[^"\n]*"|“[^”\n]*”/g, (q) => " ".repeat(q.length));
+  for (const raw of names ?? []) {
+    const name = String(raw ?? "").trim();
+    if (name.length < 2) continue;
+    const m = new RegExp(`(?<![A-Za-z])${escapeRe(name)}(?![A-Za-z])`).exec(told);
+    if (m) return [{ tag: "person", quote: quoteAround(text, m.index, m[0].length) }];
+  }
+  return [];
 }
 
 const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

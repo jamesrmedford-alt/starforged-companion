@@ -737,7 +737,9 @@ recorded on the vow's payoff ledger (`fulfilPayoff.deepen`, the card carries
 the vow's id as its copies are found — `vowCopyId`: the `vowId` flag, else
 the Item's own id), so the fulfilment's deepen is skipped; a press after the
 fulfilment's deepen deepens nothing and posts a short "already deepened"
-card. (Taken from the flag alone, a sheet vow whose stamp never landed
+card. The press's own card says it is the vow's one deepen (`forVow`), and a
+fulfilment after it posts the same "already deepened" note where its deepen
+would have been (issue #389 #7, FULFILMENT-SILENT-ON-A-SPENT-DEEPEN). (Taken from the flag alone, a sheet vow whose stamp never landed
 carried null and was found by its name only: after a rename the press
 deepened a second time — known-issues FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY.) Once the card's vow is
 fulfilled — every copy, by the card's vow id, whoever fulfilled it (issue

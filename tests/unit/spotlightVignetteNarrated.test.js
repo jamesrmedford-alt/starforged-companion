@@ -31,7 +31,8 @@ const SPOTLIGHT = 'Far off, a courier ship drops out of the lane with its beacon
   sceneFrame: { location: 'The Cinder lanes', present: ['a courier pilot'], situation: 'A beacon goes dark' },
   builtFrom: [{ n: 1, words: 'drops out of the lane with its beacon dark' }],
 }) + '\n```';
-const OPENING = 'Mira counts the debts on her fingers.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
+// Second person: an opening that names its character is asked again (issue #389 #4).
+const OPENING = 'You count the debts on your fingers.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
 /** Serve the Begin card's d100 to the spotlight roll on the pressing client (roller.js rollDie), once. */
 function installSpotlightRoll(face) {

@@ -6,6 +6,22 @@ rejected.
 
 ---
 
+## The sixth live round: findings tracked by status; the dice bind over a line; one record of where everyone is (2026-11-26)
+
+**Decision** (the maintainer, on reading the round's review: "Please go with the collection of recommended fixes. Do the where characters are overhaul. Players can't over rule dice"; and "consolidate the partially completed issues into a few based on finding's status and close the old ones").
+
+- **Findings are tracked by their status, not by the run that found them.** The six round issues (#374, #377, #380, #383, #388, #389) are closed. Each closing comment says where every item went. Their open items are three issues:
+  - #390 — fixed, to be confirmed in a live run;
+  - #391 — ready to fix, or decided and in progress;
+  - #392 — design calls, observations and measurements.
+
+  An item moves between them as its status changes, and `docs/known-issues.md` stays the record of each, by its ID. A round's review adds its new findings to these three and to known-issues rows; it does not open a round issue.
+- **Players can't overrule dice** (LINE-CLAIM-OVER-THE-DICE). What a move's dice decided binds over what a player's line takes for granted: the sixth round's a77 went "down to the cutter's wreck" that the dice had sent fleeing (a41), and the narration followed the line. The player's line still binds for the character's own acts and words (D5–D8). It does not make so what the dice made otherwise.
+- **One record of where everyone is** (CHARACTERS-MOVED-BY-THE-NARRATION): an overhaul, scoped as its own issue — the characters, the ship and the people in one record, and travel the only way to another settlement.
+- **The round's six enough-data fixes** are made at the review's recommendations: SIDECAR-NOTE-IN-THE-PROSE, OPENING-IN-THE-THIRD-PERSON, REPAIR-POINTS-UNREACHABLE, FULFILMENT-SILENT-ON-A-SPENT-DEEPEN, SHIP-BOUND-FOR-READ-AS-NEAR and EXPEDITION-LEGS-TURN-THE-SCENE.
+
+---
+
 ## The fifth live long haul's seams, mended (issue #388 — 2026-11-25)
 
 **Decision** (the maintainer: "fix the recommended items in 388 and any others you'd currently recommend"; each taken at the review's recommendation, and each the maintainer's to take back). Where a piece hands its work to the next:

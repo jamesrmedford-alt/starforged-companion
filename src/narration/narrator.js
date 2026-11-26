@@ -120,6 +120,9 @@ const MODULE_ID      = 'starforged-companion';
 /** campaignState fields a narrator sidecar writes (applySidecar + applySceneFrame). */
 const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']);
 
+/** The moves that take the ship somewhere: offered and not rolled, they move her nowhere (issue #389 #8). */
+const JOURNEY_MOVES = new Set(['set_a_course', 'undertake_an_expedition', 'finish_an_expedition']);
+
 /**
  * What the scene obliges a beat of play's narration (sceneTurns.js
  * sceneObligations), with the ship's line as the scene's one read has it
@@ -4603,6 +4606,20 @@ export function sessionVignetteWillRun(campaignState) {
 }
 
 /**
+ * The names a second-person set-piece must not call its character outside
+ * quoted speech: the full name and the first (issue #389 #4). Null with no
+ * character.
+ *
+ * @param {Object|null} character — the CHARACTER block's
+ * @returns {{ names: string[] }|null}
+ */
+function personNamesOf(character) {
+  const name = String(character?.name ?? '').replace(/\s+/g, ' ').trim();
+  if (!name) return null;
+  return { names: [name, name.split(' ')[0]] };
+}
+
+/**
  * Render a Begin Session opening vignette via the narrator API and return the
  * prose text. The caller is responsible for posting the chat card; see
  * `src/session/galleyVignette.js` for the participant-enumeration + card-post
@@ -4672,7 +4689,17 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   // label, a name or its pair is asked again once, failing open (issue #388
   // #11, ORACLE-WORD-WRITTEN-AS-ROLLED — checks.js materialViolations). A
   // local `ask`, so the playthrough harness files the call as this one's.
-  const obligations = obligationsFor({ mode: 'set-piece', material: rolledWordsOf(seeds, { told: `${systemPrompt}\n${userMessage}` }) });
+  // …and, in second person, to its character's "you" where they are in it —
+  // an opening, a spotlight; a closing cuts away from them (issue #389 #4,
+  // OPENING-IN-THE-THIRD-PERSON — checks.js personViolations). The
+  // perspective is the one its system prompt was told.
+  const perspective = resolveNarrationPerspective(settings.narrationPerspective, {
+    actingCharacters: Array.isArray(roundCharacters) ? roundCharacters.filter(Boolean).length : 0,
+    sessionPerspective: sessionPerspectiveOf(campaignState),
+  });
+  const closing = /^\s*CLOSING VIGNETTE\b/i.test(String(userMessage ?? ''));
+  const person = perspective === 'second_person' && !closing ? personNamesOf(character) : null;
+  const obligations = obligationsFor({ mode: 'set-piece', material: rolledWordsOf(seeds, { told: `${systemPrompt}\n${userMessage}` }), person });
   const checking = { judge: false, onVerdict: (v) => logObligationVerdict('session_vignette', v, campaignState, narrationId) };
   const ask = (addendum) => (addendum && xCard.interrupted('narrateSessionVignette') ? null : callNarratorAPI({
     label: addendum ? 'narrateSessionVignette:reask' : 'narrateSessionVignette',
@@ -5232,7 +5259,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       }
       const text = applyNarratorSidecar(raw, campaignState, { obligations: pacedObligations,
         moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-        mode: 'paced_narrative', ground: groundOf({ line: playerText }),
+        mode: 'paced_narrative', ground: groundOf({ line: playerText }), offer: suggestedMove ?? null,
       });
 
       if (!text?.trim()) {
@@ -7249,8 +7276,17 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   const shipGround = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '', decided: '' };
   const shipBinds = (c) => ctx.mode === 'inciting_incident'
     || factBinds({ basis: factBasis(c?.from ?? null, String(c?.value ?? ''), shipGround, { about: ['ship'] }) });
-  const bindingShipChanges = shipPositionChanges.filter(shipBinds);
-  if (shipPositionChanges.length && !movesTheShip) {
+  // A journey's arrival is its move's own (the walk rule's, above): a line
+  // that sets out on one, offered and not yet rolled, moves the ship nowhere —
+  // the sixth live long haul's a31, "take the Kobayashi IV to Bleakhold
+  // Station", was offered Set a Course and recorded her "near Bleakhold
+  // Station" before the roll (issue #389 #8, SHIP-BOUND-FOR-READ-AS-NEAR).
+  const journeyOffered = JOURNEY_MOVES.has(String(ctx.offer ?? ''));
+  const bindingShipChanges = journeyOffered ? [] : shipPositionChanges.filter(shipBinds);
+  if (shipPositionChanges.length && journeyOffered) {
+    console.debug?.(`${MODULE_ID} | shipPosition: ${shipPositionChanges.length} ship/position change(s) dropped — `
+      + `${ctx.offer} is offered, and its roll decides where the ship goes.`);
+  } else if (shipPositionChanges.length && !movesTheShip) {
     console.debug?.(`${MODULE_ID} | shipPosition: ${shipPositionChanges.length} ship/position change(s) of a `
       + `${ctx.mode ?? 'non-play'} narration dropped — only a beat of play moves the ship.`);
   } else if (shipPositionChanges.length && !bindingShipChanges.length) {

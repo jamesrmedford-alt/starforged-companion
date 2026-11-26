@@ -6529,7 +6529,7 @@ export function resolveVowHolderActor(vowName, preferredActorId = null) {
 // forged bond's track and said so (known-issues VOW-DEEPEN-BONDED-MARKS-TRACK).
 //
 // @returns {Promise<{ ok: boolean, bonded?: boolean, reason?: string, error?: string }>}
-export async function deepenLinkedConnection(connectionName, marks, { connectionId = null, actorId = null, by = null } = {}) {
+export async function deepenLinkedConnection(connectionName, marks, { connectionId = null, actorId = null, by = null, forVow = null } = {}) {
   try {
     const target = await findOpenConnection(connectionName, connectionId);
     if (!target?.__hostId) {
@@ -6540,7 +6540,7 @@ export async function deepenLinkedConnection(connectionName, marks, { connection
     if (target.bonded === true) return await offerBondedDevelopRoll(target, { actorId });
     const conn = await import("./entities/connection.js");
     await conn.markRelationshipProgress(target.__hostId, Math.max(1, marks), { by });
-    await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks));
+    await postDeepenBondCard(target.name ?? connectionName, Math.max(1, marks), { forVow });
     return { ok: true };
   } catch (err) {
     console.warn(`${MODULE_ID} | deepen connection failed:`, err?.message ?? err);
@@ -6608,7 +6608,7 @@ export async function deepenVowConnectionOnce({ vowName = null, vowId = null, ac
   }
   // A bond already forged is offered its roll instead, as the card's roller's
   // (deepenLinkedConnection): recorded the same way, so the vow offers it once.
-  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: linkId, actorId, by });
+  const res = await deepenLinkedConnection(connectionName, marks, { connectionId: linkId, actorId, by, forVow: vowName });
   if (res?.ok) await recordPayoffStep(copies, "deepen");
   return res;
 }
@@ -6698,10 +6698,16 @@ async function findOpenConnection(connectionName, connectionId = null) {
   return selectConnection(connections, connectionName, { strict: true });
 }
 
-async function postDeepenBondCard(name, marks) {
+// `forVow`: a won fight's 🤝 Deepen, which spends the vow's one deepen — said
+// on its card, so its fulfilment's silence is not a surprise (issue #389 #7,
+// FULFILMENT-SILENT-ON-A-SPENT-DEEPEN).
+async function postDeepenBondCard(name, marks, { forVow = null } = {}) {
+  const once = typeof forVow === "string" && forVow.trim()
+    ? ` This is &ldquo;${escapeChatHtml(forVow.trim())}&rdquo;'s deepen — a vow deepens its connection once, so its fulfilment will not deepen it again.`
+    : "";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 Your bond with <strong>${escapeChatHtml(name ?? "your connection")}</strong> deepens — +${marks} milestone${marks === 1 ? "" : "s"} of relationship progress.</p></div></div>`,
+      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 Your bond with <strong>${escapeChatHtml(name ?? "your connection")}</strong> deepens — +${marks} milestone${marks === 1 ? "" : "s"} of relationship progress.${once}</p></div></div>`,
       flags:   { [MODULE_ID]: { deepenBondCard: true } },
     });
   } catch (err) {
@@ -7120,6 +7126,14 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
       // A fulfilment's deepen is the fulfilment's (the session record's `by`, D12).
       await settle("deepen", await deepenLinkedConnection(connectionName, marks, { connectionId, actorId: rollerId,
         by: { move: "fulfill_your_vow", res: null } }), { connectionName, connectionId, marks });
+    } else if (connectionName) {
+      // Spent already — a won fight's 🤝 deepened the bond for this vow, and a
+      // vow deepens its connection once. The fulfilment says so where its
+      // deepen would have been: the sixth live long haul's a84 fulfilled a vow
+      // sworn to Tamsin, deepened nothing, rightly, and said nothing (issue
+      // #389 #7, FULFILMENT-SILENT-ON-A-SPENT-DEEPEN).
+      const target = await findOpenConnection(connectionName, connectionId).catch(() => null);
+      await postDeepenAlreadyPaidCard(target?.name ?? connectionName, item.name ?? vowName, { bonded: target?.bonded === true });
     }
 
     // Grant the promised reward (one-time; scaled by outcome). The fulfil path
@@ -9952,6 +9966,7 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
         ...(improveState ? { improve: improveState } : {}),
         ...(milestoneState ? { milestoneSuggestion: milestoneState } : {}),
         ...(connectionState ? { connectionSuggestion: connectionState } : {}),
+        ...(repairPointsOf(resolution) ? { repairPoints: repairPointsOf(resolution) } : {}),
         // A Batch Mode round's entry: its round and player (issue #340) —
         // the round finds its cards by them, and a recovery the card of an
         // entry rolled before a reload.
@@ -10101,6 +10116,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${awaiting ? renderKeepResultHtml(resolution) : ""}
       ${renderMilestoneSuggestionHtml(milestoneState, upgradeOffered)}
       ${renderConnectionSuggestionHtml(connectionState, upgradeOffered)}
+      ${renderRepairSpendHtml(resolution)}
       ${upgradeOffered && (milestoneState?.eligible || connectionState?.eligible)
         ? `<p class="sf-card-hint">${UPGRADE_FIRST_HINT}</p>`
         : ""}
@@ -10204,6 +10220,36 @@ function renderMilestoneSuggestionHtml(milestoneState, upgradeOffered = false) {
     `title="Mark progress on your vow per its rank${first}">⚑ Mark Progress on Vow</button>` +
     `<button type="button" class="sf-followup-btn" data-action="sf-attempt-fulfill-vow" ` +
     `title="Roll to fulfill your vow (progress roll)${first}">🏁 Attempt to Fulfill Vow</button>` +
+    `</div>`;
+}
+
+/**
+ * A Repair's hit earns points, spent in the repair dialog (moves/repair.js
+ * openRepairDialog): the outcome the dialog starts from, or null for any
+ * other move or a miss (which earns none).
+ *
+ * @param {Object} resolution
+ * @returns {{ outcome: "strong"|"weak" }|null}
+ */
+export function repairPointsOf(resolution) {
+  if (resolution?.moveId !== "repair") return null;
+  if (resolution.outcome === "strong_hit") return { outcome: "strong" };
+  if (resolution.outcome === "weak_hit") return { outcome: "weak" };
+  return null;
+}
+
+/**
+ * The Repair card's "🔧 Spend repair points" — how its points reach the sheet
+ * (issue #389 #5, REPAIR-POINTS-UNREACHABLE: the sixth live long haul's a62
+ * strong hit listed its points with nothing to spend them by but a typed
+ * `!repair`, and the ship stayed at integrity 4 of 5 while the story had her
+ * patched). Wired by wireRepairSpendButton.
+ */
+function renderRepairSpendHtml(resolution) {
+  if (!repairPointsOf(resolution)) return "";
+  return `<div class="sf-milestone-suggest-row sf-repair-spend-row">` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-repair-spend" ` +
+    `title="Allocate this Repair's points: integrity, a battered impact, a module, a companion or a device">🔧 Spend repair points</button>` +
     `</div>`;
 }
 
@@ -11184,6 +11230,39 @@ export function wireMilestoneSuggestionButton(message, root) {
   });
 }
 onChatMessageRender((message, root) => wireMilestoneSuggestionButton(message, root));
+
+/**
+ * Wire a Repair card's "🔧 Spend repair points": it opens the repair dialog on
+ * the clicker's client, from the card's outcome (a burned or improved result's
+ * if it was upgraded), and the GM stamps the card `repairSpent` once its
+ * points are applied (repair.js applyRepairSpends) — a roll's points are
+ * spent once. Exported for tests and Quench.
+ */
+export function wireRepairSpendButton(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.repairPoints) return;
+  const btn = root?.querySelector?.('[data-action="sf-repair-spend"]');
+  if (!btn) return;
+  if (liveCardFlags(message)?.repairSpent) {
+    btn.disabled = true;
+    btn.textContent = "🔧 Repair points spent";
+    return;
+  }
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const live = liveCardFlags(message) ?? f;
+    if (live?.repairSpent) return;
+    // A burned or improved Repair spends the result it became.
+    const upgraded = [live?.burn, live?.improve].find(u => u?.consumed && /hit$/.test(String(u.previewOutcome ?? "")));
+    const outcome = upgraded ? (upgraded.previewOutcome === "strong_hit" ? "strong" : "weak") : live.repairPoints.outcome;
+    const { openRepairDialog } = await import("./moves/repair.js");
+    await openRepairDialog(message, { outcome, sourceMessageId: message?.id ?? null });
+  });
+}
+onChatMessageRender((message, root) => wireRepairSpendButton(message, root));
 
 /**
  * Wire the per-vow buttons on a Reach a Milestone picker card (posted when

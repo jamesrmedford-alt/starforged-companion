@@ -830,7 +830,8 @@ earned" only once it lands). Each returns `{ ok }`; each that lands is
 recorded on every copy (`flags.fulfilPayoff.<legacy|deepen|reward>`) — the
 won-fight card's 🤝 Deepen records `deepen` there too, so a vow deepens its
 connection once, whichever lands first (`deepenVowConnectionOnce`, issue
-#326 D1) — and
+#326 D1; the fulfilment that finds it landed says so on its own note —
+`postDeepenAlreadyPaidCard`, issue #389 #7) — and
 those that do not go on one card whispered to the GMs
 (`postPayoffFailureCard`, flagged `payoffFailureCard` with the steps a retry
 needs) showing each value as it stands now. Its "↻ Retry these steps"
