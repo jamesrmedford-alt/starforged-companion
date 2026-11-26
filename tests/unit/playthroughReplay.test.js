@@ -256,7 +256,14 @@ describe('strict replay fails what a permissive replay only reported', () => {
   });
 
   it('and for the optional calls its recording made in that step, so they do not start in the next one', async () => {
-    const harness = harnessFor({ mode: 'replay', recording: RECORDING, strict: true });
+    // The recording made one in the opening — given here, not left to a
+    // re-record: whether the live run's opening called the tier helper is
+    // the run's, and the 2026-11-26 re-record's did not.
+    const recording = structuredClone(RECORDING);
+    const tier = recording.exchanges.find(x => x.kind === 'callHaiku>defaultCallTierAPI');
+    recording.exchanges = recording.exchanges.filter(x => !(x.step === 'open' && x.kind === 'callHaiku>defaultCallTierAPI'));
+    recording.exchanges.splice(recording.exchanges.findIndex(x => x.step === 'open') + 1, 0, { ...structuredClone(tier), step: 'open' });
+    const harness = harnessFor({ mode: 'replay', recording, strict: true });
     const open = SCENARIO.steps[0];
     harness.setStep('open');
     await harness.send(open.calls[0].kind, { system: promptFor(open.calls[0]) });

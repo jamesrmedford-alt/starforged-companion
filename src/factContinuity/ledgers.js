@@ -215,7 +215,20 @@ export function applySidecar(sidecar, ctx) {
     const shown   = subject.kind === 'text' && subject.text ? { subjectText: subject.text } : {};
     // Its basis rides on the value (overhaul 2 §5.1); the `previous` chain
     // keeps each value's own, so an X-Card restores a value with its basis.
-    const basis   = basisOf(c.from, typeof value === 'string' ? value : String(value ?? ''), subjectRef);
+    const offered = basisOf(c.from, typeof value === 'string' ? value : String(value ?? ''), subjectRef);
+    // A value restated as it stands, or cut to its own first words, keeps the
+    // basis it holds, or rises to the restatement's (raisedBasis — a truth's
+    // restatement's rule, overhaul 2 §5.3): a whereabouts the player's line
+    // set is not made colour by a narration that says it again untagged. The
+    // first-session playthrough's re-records (2026-11-26) had "Vance Oduya: at
+    // the berth console at Hollow Spire with the PC" from the line, then the
+    // same words untagged; and "in the dock office at Hollow Spire with the PC,
+    // going through the berth logs", then "in the dock office at Hollow Spire
+    // with the PC" — each time the scene ended on colour, and no LAST KNOWN
+    // was kept. A value that adds words is a new one: what it adds is the
+    // narration's.
+    const held    = idx >= 0 ? list[idx] : null;
+    const basis   = held && restatesStateValue(held.value, value) ? raisedBasis(entryBasis(held), offered) : offered;
     const entry   = { attribute, value, updatedAt: now, basis, ...shown, ...stamp, ...(previous ? { previous } : {}) };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
@@ -223,6 +236,24 @@ export function applySidecar(sidecar, ctx) {
   }
 
   return { truthIds, stateUpdates };
+}
+
+/**
+ * Whether a state value says the held one again: the same words (case and
+ * spacing aside), or the held value's own first words, two or more, ending
+ * where one of its words ends — the rest cut, nothing added.
+ *
+ * @param {*} held — the value the entry holds
+ * @param {*} value — the restatement
+ * @returns {boolean}
+ */
+function restatesStateValue(held, value) {
+  const norm = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const was = norm(held);
+  const now = norm(value).replace(/[\s,;:.]+$/, '');
+  if (!was || !now) return false;
+  if (was === norm(value) || was === now) return true;
+  return now.split(' ').length >= 2 && was.startsWith(now) && /^[^\p{L}\p{N}'’]/u.test(was.slice(now.length));
 }
 
 /**

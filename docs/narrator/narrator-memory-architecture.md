@@ -536,7 +536,12 @@ the scene's latest `COLOUR_BEATS` (6) narrations wrote or restated it: its
 narrations are its stamped cards (`sceneId`, invariant 1;
 `sceneNarrationsOf`), and with none stamped (a scene from before) it all
 stands. A restatement the dedup meets refreshes `said`; one the table's words
-bear out raises the basis (`raisedBasis` — never lowered); a GM's Keep in the
+bear out raises the basis (`raisedBasis` — never lowered) — a state value's
+too, said again as it stands or cut to two or more of its own first words,
+which keeps the basis it holds (`ledgers.js restatesStateValue`; a value that
+adds words is a new one, the narration's — RESTATED-WHEREABOUTS-LOST-BASIS:
+whereabouts the player's line set became colour when a narration repeated
+them, and the scene's end kept no LAST KNOWN); a GM's Keep in the
 correction dialog raises it to `gm` (`confirmTruth`); the save's merge carries
 both (`mergeSceneLedgers` → `withRestatement`). The X-Card takes its
 narration off what it restated. Colour sharing a let-go question's stem the
