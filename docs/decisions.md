@@ -47,11 +47,24 @@ rejected.
 
 **The recap's lines say where they happened** (RECAP-PLACES-AN-EVENT-BY-THE-NEXT): each source line is prefixed with its scene's place where it changes.
 
+**People met but not yet confirmed are tracked as real** (the maintainer: "Unconfirmed characters should be tracked as real until they are confirmed or dismissed"; PEOPLE-WAITING-AT-THE-ARRIVAL (c)).
+- **The canonical store.** A "New Entities Detected" card's pending person rows are the one store of such people, read by `entities/pendingDrafts.js` and never copied. Confirm makes a row the roster's; Dismiss drops it.
+- **Who is read.** `whereabouts.js pendingPeopleOf` reads the newest drafted first, at most eight. It never reads a dismissed name, a player character (round 8 drafted Mira Kestrel), or a name a recorded person goes by.
+- **Same evidence as a recorded person.** Their whereabouts are read as a recorded person's are: a scene's frame naming them. They join [here]'s people, [whereabouts], the frame a narration keeps, and a who-vow's people met.
+- **Matched by the whole name.** A draft's name is often a description ("Station Clerk", "Unknown Hatchway Figure"), whose words are anyone's. Across the eight kept runs, a word of the name would have "seen" Ilse Kestrel in 51 frames, by the PC's surname. There is one matcher for this, `nameMatch.js personSaidIn` (`exact`); the three copies in whereabouts, checks and the scene lifecycle now call it.
+- **The narrator is told them.** THE SCENE lists at most four, each with its description and where they are, so the fact block names them by the card's name. Before this, no frame in eight runs named a descriptive draft by its draft name.
+- **Where they came into the story is told, never checked.** It is the place of the scene their card was posted in. The detector drafts the people a narration mentions, not only those present, so a check on it would re-ask truthful narrations.
+
+**A journey's arrival is held to who is where** (the maintainer's "sounds good"; PEOPLE-WAITING-AT-THE-ARRIVAL):
+- A hit on Set a Course or Finish an Expedition is told NOT SO [arrival]: whoever the record has at another place is not waiting at the arrival, nor arriving with the characters.
+- It leaves out anyone who was with the characters as they set out: the present of the record's latest frame, `departedWith`. They may have come along, and the record cannot tell.
+- It is a certain check on the fact block's present alone. The journey's narration speaks of the places it crosses, so the place and motion readings stay off.
+- The kept first-session recording holds under it: its departure frames had Vance aboard. The CI replay is its proof, with no re-record.
+
 **Rejected or left for a call:**
-- *A certain check for harm on a beat whose price took no health.* The judge is measured first.
-- *A draft's last frame as whereabouts.* The [here] people reading still sees only the record's people (PEOPLE-WAITING (c)).
-- *Listing devices and beat endings as worn.* Round 8's "unhurried" and the comm voice's eight endings are not listed (THE-REFRAINS (d)).
-- *Changing the charter's scripted progress dice.* They let a 4-of-10 vow be won.
+- *A certain check for harm on a beat whose price took no health.* The judge is measured first; the maintainer agreed ("Ok").
+- *Listing devices and beat endings as worn.* Round 8's "unhurried" and the comm voice's eight endings are not listed (THE-REFRAINS (d)). The maintainer wants something more systematic than more lists, and held its design for now.
+- *Changing the charter's scripted progress dice.* They let a 4-of-10 vow be won. The maintainer had no opinion, so they stay as they are.
 
 **Measured by** the next live long haul. The fight must be told unbeaten until Take Decisive Action. An arrival's complication must come from the place. The who-vow's culprit must be met before the reveal. Quiet plans must come back with a clue. No line of speech may be said twice. The recap must place each event. The judge's calls and re-asks are counted inside the new caps.
 

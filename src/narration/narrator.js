@@ -99,7 +99,7 @@ import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, p
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, quietestPlan } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { readRecord } from '../record/read.js';
-import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf } from '../factContinuity/whereabouts.js';
+import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf, pendingPeopleOf, placeAtTime } from '../factContinuity/whereabouts.js';
 import { withoutMeterClaims } from '../factContinuity/sheetClaims.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
@@ -485,6 +485,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     endingTrackIds  = [],
     planIds         = [],
     beatClaim       = null,
+    arriving        = false,
   } = opts;
 
   // The scene's ledgers as they stand in the store (issue #325 W05; rules/
@@ -602,10 +603,18 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // 7): its frame, its present and its prose are read against it before it posts.
   // An oracle follow-up's too: a journey's complication is told at the
   // arrival, and is held to it (PEOPLE-WAITING-AT-THE-ARRIVAL, round 8's a72).
+  // A journey's arrival reads only those not with the characters as they set
+  // out ([arrival] — PEOPLE-WAITING-AT-THE-ARRIVAL): one who was may have come along.
   extras.here = (mode === 'move_resolution' || mode === 'paced_narrative' || mode === 'oracle_followup')
     ? hereOf(sceneState ?? campaignState, { underway: expeditionUnderway(extras.progressTracks),
-      vehicle: getCommandVehicle(campaignState ?? {})?.name ?? null })
+      vehicle: getCommandVehicle(campaignState ?? {})?.name ?? null, arriving: mode === 'move_resolution' && arriving === true })
     : null;
+  // The people a narration drafted that the table has neither confirmed nor
+  // dismissed, tracked as real until it does (the maintainer's call after the
+  // eighth live round): told in THE SCENE by the draft card's name, with
+  // where the record last had them with the characters, else where they came
+  // into the story — so the fact block names them so, and where they are is kept.
+  extras.pendingPeople = PENDING_PEOPLE_MODES.has(mode) ? pendingPeopleTold(sceneState ?? campaignState) : [];
 
   // The vow this scene serves (issue #353 R3): a linked track's vow, the
   // session's quest focus, or the only vow in play, with its progress — the
@@ -1534,6 +1543,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
     planIds:         owed.planIds,
     endingTrackIds,
     beatClaim,
+    // A hit on Set a Course or Finish an Expedition: the characters have arrived ([arrival]).
+    arriving: (resolution.moveId === 'set_a_course' || resolution.moveId === 'finish_an_expedition')
+      && (resolution.outcome === 'strong_hit' || resolution.outcome === 'weak_hit'),
   });
 
   const systemPrompt = buildNarratorSystemPrompt(
@@ -4825,18 +4837,57 @@ function beatPersonOf(settings, campaignState, character) {
 /** How many of the story's people DECIDE NOW lists for a who-vow's culprit. */
 const STORY_PEOPLE_LISTED = 8;
 
+/** The modes told the people met whom the table has not yet confirmed: the beats of play, a follow-up, an `@scene` answer. */
+const PENDING_PEOPLE_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution', 'oracle_followup', 'scene_interrogation']);
+
+/**
+ * The people met whom the table has not yet confirmed (whereabouts.js
+ * pendingPeopleOf), as THE SCENE tells them: each one's draft name and
+ * description, and where the record last had them with the characters —
+ * their name in a scene's frame — else the place of the scene they came into
+ * the story in (their draft card's time; a person mentioned there may never
+ * have been there, so this is told, never checked). Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @returns {Array<{ name: string, description: string, where: string|null }>}
+ */
+function pendingPeopleTold(campaignState) {
+  try {
+    const people = pendingPeopleOf(campaignState ?? {});
+    if (!people.length) return [];
+    let read = null;
+    try { read = readRecord({ session: 'campaign' }); } catch { read = null; }
+    return people.map((p) => {
+      const seen = read ? lastSeenWith(read, p.name, { exact: true }) : null;
+      const came = seen ? null : placeAtTime(read, p.at);
+      const where = seen
+        ? (seen.place?.name ? `last with the characters at ${seen.place.name}` : 'last with the characters, between places')
+        : (came ? `came into the story at ${came}` : null);
+      return { name: p.name, description: p.description ?? '', where };
+    });
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | the people not yet on record were not read for the scene:`, err?.message ?? err);
+    return [];
+  }
+}
+
 /**
  * The people the story has met, by name — its connection cards (people
- * recorded by Confirm or Make a Connection), the player characters apart —
- * for a who-vow's DECIDE NOW to choose from (VOW-WON-BY-A-STRANGER). Never throws.
+ * recorded by Confirm or Make a Connection), then the people a narration
+ * drafted that the table has neither confirmed nor dismissed (tracked as
+ * real until it does — whereabouts.js pendingPeopleOf), the player
+ * characters apart — for a who-vow's DECIDE NOW to choose from
+ * (VOW-WON-BY-A-STRANGER). Never throws.
  *
  * @param {Object|null} campaignState
  * @returns {string[]}
  */
 function storyPeopleOf(campaignState) {
   try {
-    const names = collectAllEntities(campaignState ?? {}).filter(e => e?.entityType === 'connection' && typeof e.name === 'string' && e.name.trim())
+    const entities = collectAllEntities(campaignState ?? {});
+    const names = entities.filter(e => e?.entityType === 'connection' && typeof e.name === 'string' && e.name.trim())
       .map(e => e.name.trim());
+    names.push(...pendingPeopleOf(campaignState ?? {}, { entities }).map(p => p.name));
     return [...new Set(names)].slice(0, STORY_PEOPLE_LISTED);
   } catch (err) {
     console.debug?.(`${MODULE_ID} | the story's people were not read for a who-vow's plan:`, err?.message ?? err);
@@ -7550,10 +7601,10 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       // and the Entities panel move them.
       // Nor is anyone present in person whom the record has at another place
       // — the beat's [here] people (CHARACTERS-MOVED-BY-THE-NARRATION, round 7).
-      const away = (Array.isArray(ctx.obligations) ? ctx.obligations : []).find(o => o?.kind === 'here')?.people ?? [];
+      const away = (Array.isArray(ctx.obligations) ? ctx.obligations : []).find(o => o?.kind === 'here' || o?.kind === 'arrival')?.people ?? [];
       const framed = framedAtThePlace(playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
         sceneId: campaignState.currentSceneId ?? null, line, about,
-      }), prior, campaignState, { elsewhere: away.map(p => p?.name).filter(Boolean) });
+      }), prior, campaignState, { elsewhere: away.filter(p => p?.name).map(p => (p.exact ? { name: p.name, exact: true } : p.name)) });
       if (framed && applySceneFrame(framed, campaignState, { narrationId })) {
         campaignState.sceneFrame = countSceneQuestionBeat(campaignState.sceneFrame, prior, { bookend, about });
       }

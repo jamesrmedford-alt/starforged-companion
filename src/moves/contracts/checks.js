@@ -49,6 +49,7 @@ import { touchesLetGo } from "../../factContinuity/provenance.js";
 import { tellingStems } from "../../world/tellingWords.js";
 import { MOVES } from "../../schemas.js";
 import { moveDisplayName } from "../../system/i18n.js";
+import { personSaidIn } from "../../entities/nameMatch.js";
 import { quotedLinesOf } from "../../narration/proseVariety.js";
 
 const MODULE_ID = "starforged-companion";
@@ -99,6 +100,10 @@ export function certainViolations(prose, obligations, { sidecar = null } = {}) {
   // record's place (CHARACTERS-MOVED-BY-THE-NARRATION, round 7).
   const here = (obligations ?? []).find(o => o?.kind === "here");
   if (here) out.push(...hereViolations(text, sidecar, here));
+  // [arrival]: a journey's arrival, its present alone — whoever was not with
+  // the characters as they set out is not waiting there (PEOPLE-WAITING-AT-THE-ARRIVAL).
+  const arrival = (obligations ?? []).find(o => o?.kind === "arrival");
+  if (arrival) out.push(...hereViolations(text, sidecar, { ...arrival, places: [] }).map(v => ({ ...v, tag: "arrival" })));
   if (kinds.has("apparatus")) {
     const body = bodyOf(text);
     const outcome = OUTCOME_NAME.exec(body);
@@ -194,12 +199,9 @@ function placeIn(text, places) {
   return null;
 }
 
-/** Whether a person's name is said in a text — the whole name, or a word of it of three letters or more (whereabouts.js nameSaidIn). */
-function personIn(text, name) {
-  const t = ` ${cleanText(text).toLowerCase().replace(/['’]s\b/g, "").replace(/[^\p{L}\p{N}'’\s-]+/gu, " ")} `;
-  const n = cleanText(name).toLowerCase();
-  if (!n || !t.trim()) return false;
-  return [n, ...n.split(" ").filter(w => w.length >= 3)].some(w => t.includes(` ${w} `));
+/** Whether a person's name is said in a text — the whole name, or (unless `exact`, a person not yet on record) a word of it of three letters or more (nameMatch.js personSaidIn, the one matcher). */
+function personIn(text, name, exact = false) {
+  return personSaidIn(text, name, { exact });
 }
 
 // The characters reaching a place, in the prose: a verb of arriving or going
@@ -263,8 +265,8 @@ export function hereViolations(prose, sidecar, o) {
   // Who is present in person.
   const remote = Array.isArray(frame?.remote) ? frame.remote : [];
   for (const entry of Array.isArray(frame?.present) ? frame.present : []) {
-    const person = (Array.isArray(o?.people) ? o.people : []).find(p => cleanText(p?.name) && personIn(entry, p.name));
-    if (!person || remote.some(r => personIn(r, person.name))) continue;
+    const person = (Array.isArray(o?.people) ? o.people : []).find(p => cleanText(p?.name) && personIn(entry, p.name, p.exact === true));
+    if (!person || remote.some(r => personIn(r, person.name, person.exact === true))) continue;
     out.push({ tag: "here", quote: cleanText(entry),
       note: `${person.name} is ${cleanText(person.where) || "elsewhere"}, not here: one heard over a comm goes under "remote", never "present" — `
         + "or leave them out" });

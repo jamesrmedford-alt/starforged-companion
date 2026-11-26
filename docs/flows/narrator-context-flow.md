@@ -1393,7 +1393,21 @@ one "in the scene's frame"; THE SCENE shows it as `Remote:`. The same
 read gives THE SCENE its `Elsewhere:` lines ("Tamsin Okoro — at Hollow Spire,
 not here"; "Hollow Spire — another place, reached only by a journey's move"),
 and a connection's card with no LAST KNOWN location says LAST SEEN with the
-characters (the session record). A move rolled
+characters (the session record). Since round 8, THE SCENE also lists the people
+met who are not yet on record (`Not yet on record —`, at most four):
+- **What it lists.** `extras.pendingPeople`, from `narrator.js
+  pendingPeopleTold` → `whereabouts.js pendingPeopleOf`, over the draft cards'
+  pending person rows. It is read in the move, paced, round, oracle-follow-up
+  and `@scene` modes.
+- **Each entry.** The draft's name and description, and where they are: "last
+  with the characters at X" from a frame that named them, else "came into the
+  story at X", the place of their card's scene (`placeAtTime`).
+- **Why.** The fact block names them by the card's name, so their whereabouts
+  can be kept.
+A journey's hit carries NOT SO [arrival] in place of [here]. It names who the
+record has elsewhere, leaving out the people of the latest frame
+(`departedWith`, who may have come along). It is held by [here]'s people
+reading alone, with the tag `arrival`. A move rolled
 at the GM's word carries TELL `[overridden]` in its move message; a
 round's entry refused at the roll carries its `[premise]` block in the
 round's message (`####`, under the entry). The paced card says it too

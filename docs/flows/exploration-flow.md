@@ -195,7 +195,11 @@ finish docks there and charts nothing.
   (its `report` says whether the token moved). A **miss sets out** (D1):
   waylaid, the characters are between places — the current location none
   (`index.js setOut`) — until an arrival. Whatever Ship Positioning says, the narrator
-  is told: the MOVE OUTCOME gains `[ARRIVAL: The ship has ARRIVED at <place>.
+  is told — and, since round 8, NOT SO [arrival] holds the hit's fact block
+  to who is where: nobody the record has elsewhere, who was not with the
+  characters as they set out (`whereabouts.js departedWith`, the latest
+  frame's present), is waiting at the arrival or arrives with them (a certain
+  check on the frame's present; PEOPLE-WAITING-AT-THE-ARRIVAL) — the MOVE OUTCOME gains `[ARRIVAL: The ship has ARRIVED at <place>.
   Open the scene there …]` — a strong hit's favouring the crew, ending on
   something unresolved there (`arrivalNarratorLine`; issue #348 PT08: it got
   "Arrived" with no place and narrated a launch) — for every narration of the

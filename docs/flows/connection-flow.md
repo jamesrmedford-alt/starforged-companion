@@ -206,7 +206,20 @@ recorded under its name promoted to it; its bond is §2's.
   removal): keyed to an id no card answers, a kept narration's facts about the
   NPC fell out of every prompt's scope and out of the scene-end migration.
 - **Entity-extraction drafts** — connections detected in any other narration
-  queue on the GM-whispered "New Entities Detected" card; Confirm creates the
+  queue on the GM-whispered "New Entities Detected" card. **A pending person
+  row is tracked as real** until Confirm or Dismiss (the maintainer's call
+  after round 8):
+  - The card's pending rows are its one store, read by
+    `entities/pendingDrafts.js pendingDraftRows`. `whereabouts.js
+    pendingPeopleOf` reads them, newest first and at most eight, never a
+    dismissed name, a PC's or a recorded person's.
+  - They join where people are: [here]'s people, [whereabouts], the frame a
+    narration keeps, and a who-vow's people met. Each is matched by its whole
+    name (`nameMatch.js personSaidIn` `exact`).
+  - THE SCENE lists them, so the fact block names them by the card's name.
+  - Confirm keeps them by that name; Dismiss drops them.
+
+  Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
   #302), Dismiss records the name in `dismissedEntities` (a copy of the
   latest store, on the GM's campaignState write chain —

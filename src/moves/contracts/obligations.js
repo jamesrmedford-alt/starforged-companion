@@ -83,6 +83,12 @@ const MODULE_ID = "starforged-companion";
 /** The moves that take the characters to another place: [whereabouts] is not theirs to keep (issue #393 D6). */
 const JOURNEY_MOVES = new Set(["set_a_course", "undertake_an_expedition", "finish_an_expedition"]);
 
+/** The journey moves whose hit arrives: the characters are at the destination when it is narrated. */
+const ARRIVAL_MOVES = new Set(["set_a_course", "finish_an_expedition"]);
+
+/** At most this many people elsewhere are named in an arrival's line (all are checked). */
+const ARRIVAL_PEOPLE_TOLD = 4;
+
 /** The three lists, in the order the block renders them. */
 const OBLIGATION_LISTS = Object.freeze(["TELL", "NOT YET", "NOT SO"]);
 
@@ -442,6 +448,17 @@ export const OBLIGATION_KINDS = Object.freeze({
   // and the beats after it followed the prose. Certain: the fact block's frame,
   // its present and the prose are read against the record before the
   // narration posts (checks.js hereViolations). Never on a journey's own move.
+  // A journey's arrival (PEOPLE-WAITING-AT-THE-ARRIVAL: the first-session
+  // re-records had the Hollow Spire dockmaster waiting at both ends of both
+  // journeys). Whoever was not with the characters as they set out is where
+  // the record has them. Held by [here]'s people reading alone (checks.js):
+  // the journey's own move speaks of the places it crosses.
+  arrival: Object.freeze({
+    list: "NOT SO", check: "certain",
+    text: ({ here = null, people = [] } = {}) => `The characters arrive at ${here}. Whoever was not with them as they set out `
+      + `is where the record has them — ${people.map(p => `${p.name} ${p.where}`).join("; ")}: never waiting at ${here}, `
+      + "nor arriving with the characters.",
+  }),
   here: Object.freeze({
     list: "NOT SO", check: "certain",
     text: ({ here = null, underway = null } = {}) => (here
@@ -835,6 +852,12 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
   // round 7) — every beat of play but a journey's own move. Its data rides on
   // the line for its certain check (checks.js hereViolations).
   const atPlace = (!journey && here && typeof here === "object" && (here.here || here.underway)) ? here : null;
+  // A journey's hit that arrives: who is elsewhere, and was not with them as
+  // they set out (whereabouts.js hereOf `arriving`), is not at the arrival.
+  const arrivalAt = (journey && ARRIVAL_MOVES.has(resolution?.moveId) && isHit(resolution?.outcome)
+    && here && typeof here === "object" && here.here && Array.isArray(here.people) && here.people.length) ? here : null;
+  const arrived = () => (arrivalAt ? [{ ...line("arrival", { here: arrivalAt.here, people: arrivalAt.people.slice(0, ARRIVAL_PEOPLE_TOLD) }),
+    here: arrivalAt.here, places: [], people: arrivalAt.people, markers: [] }] : []);
   const where = () => (atPlace ? [{ ...line("here", atPlace),
     here: atPlace.here ?? null, underway: atPlace.here ? null : (atPlace.underway ?? null),
     places: Array.isArray(atPlace.places) ? atPlace.places : [],
@@ -877,6 +900,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     out.push(...since());
     out.push(...resultObligations(resolution ?? (note ? { gateNote: note } : null), { speaker }));
     if (journeyUnasked(resolution, said, madeLine)) out.push(line("journey", { place: resolution.moveTarget ?? null }));
+    out.push(...arrived());
     if (madeLine === true) out.push(line("unsaid"));
     out.push(...state());
     out.push(...where());

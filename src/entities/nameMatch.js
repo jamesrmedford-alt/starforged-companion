@@ -330,6 +330,28 @@ export function placeNameAndLittleElse(label, placeName, kind, { journey = false
   return false;
 }
 
+/**
+ * Whether a text says a person's name: the whole name, or — unless `exact` —
+ * a word of it of three letters or more ("Tamsin" for Tamsin Okoro), as a
+ * whole word, the possessive too. The one matcher for where people are: the
+ * record's sightings (factContinuity/whereabouts.js nameSaidIn), the [here]
+ * check (moves/contracts/checks.js) and the frame a narration keeps
+ * (sceneLifecycle.js framedAtThePlace). A person not yet on record goes by
+ * the draft card's description of them ("Unknown Hatchway Figure", "Station
+ * Clerk"), whose words are anyone's: they are matched whole (`exact`). Pure.
+ *
+ * @param {string} text
+ * @param {string} name
+ * @param {{ exact?: boolean }} [opts]
+ * @returns {boolean}
+ */
+export function personSaidIn(text, name, { exact = false } = {}) {
+  const t = ` ${String(text ?? "").toLowerCase().replace(/['’]s\b/g, "").replace(/[^\p{L}\p{N}'’\s-]+/gu, " ").replace(/\s+/g, " ").trim()} `;
+  const n = String(name ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!n || !t.trim()) return false;
+  return (exact ? [n] : [n, ...n.split(" ").filter(w => w.length >= 3)]).some(w => t.includes(` ${w} `));
+}
+
 /** A name for comparing whole: lower case, single spaces, no leading article. */
 export function nameKey(name) {
   return String(name ?? "").toLowerCase().replace(/\s+/g, " ").trim().replace(/^(?:the|a|an)\s+/, "");

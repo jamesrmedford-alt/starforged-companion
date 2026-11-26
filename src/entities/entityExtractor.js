@@ -34,6 +34,7 @@ import { apiPost } from "../api-proxy.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag, ENTITY_ID_LISTS, unionIdList } from "./registry.js";
 
 import { getConnection, createConnection, updateConnection, roleTitleFromName } from "./connection.js";
+import { pendingDraftRows, isPendingDraftRow } from "./pendingDrafts.js";
 import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
@@ -153,9 +154,6 @@ export function normalizeEntityName(name) {
 function draftNameKey(name) {
   return normalizeEntityName(name).replace(/^(?:the|a|an) (?=\S)/, "");
 }
-
-/** Whether a draft row is still pending — no status, or "pending" (collectPendingDraftNames' rule). */
-const isPendingDraftRow = (d) => !d?.status || d.status === "pending";
 
 /**
  * Heuristic: does this look like an auto-generated placeholder name for an
@@ -4294,26 +4292,10 @@ function collectDraftRowNames(status, type = null) {
  * @returns {string[]}
  */
 function collectPendingDraftNames(type = null) {
-  try {
-    const messages = globalThis.game?.messages?.contents ?? [];
-    const names = new Set();
-    for (const m of messages) {
-      const f = m?.flags?.[MODULE_ID];
-      if (!f?.draftEntityCard) continue;
-      const drafts = Array.isArray(f.drafts) ? f.drafts : [];
-      for (const d of drafts) {
-        // Only "pending" drafts should suppress re-detection. Confirmed
-        // drafts are now established entities (caught by collectEstablished-
-        // EntityNames). Dismissed drafts are now in dismissedEntities.
-        if (d?.status && d.status !== "pending") continue;
-        if (type && d?.type !== type) continue;   // one type's rows (the pending people)
-        if (d?.name && typeof d.name === "string") names.add(d.name.trim());
-      }
-    }
-    return [...names];
-  } catch {
-    return [];
-  }
+  // The one reader of the pending rows (pendingDrafts.js): only "pending"
+  // drafts suppress re-detection — a confirmed one is an established entity
+  // now (collectEstablishedEntityNames), a dismissed one is in dismissedEntities.
+  return [...new Set(pendingDraftRows({ type }).map(r => r.name))];
 }
 
 function describeWorldJournalState(campaignState) {

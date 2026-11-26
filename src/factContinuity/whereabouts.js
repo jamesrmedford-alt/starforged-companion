@@ -17,6 +17,12 @@
  *     than the characters', is told so: the narration's NOT SO [whereabouts]
  *     (moves/contracts/obligations.js), the scene block's Elsewhere lines
  *     (narratorPrompt.js) and the reader's situation (readerSituation.js).
+ *   - A person a narration drafted and the table has neither confirmed nor
+ *     dismissed is tracked as a recorded person is (the maintainer's call
+ *     after the eighth live round, PEOPLE-WAITING-AT-THE-ARRIVAL (c);
+ *     pendingPeopleOf): read from the draft cards' pending rows, matched by
+ *     their whole name — a draft's name is often a description, "Station
+ *     Clerk", whose words are anyone's.
  *
  * The characters' own place is `currentLocationId` alone (D1).
  */
@@ -25,6 +31,9 @@ import { readRecord } from '../record/read.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { collectAllEntities } from '../context/relevanceResolver.js';
 import { placeNamedBy } from './sceneLifecycle.js';
+import { personSaidIn, nameKey, personNameMatch } from '../entities/nameMatch.js';
+import { pendingDraftRows } from '../entities/pendingDrafts.js';
+import { getPlayerActors } from '../character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -33,6 +42,14 @@ const WHERE_TYPES = new Set(['settlement', 'planet', 'location']);
 
 /** The people whose whereabouts are read: the NPC cards the roster holds (FOLDER-002 — `connection`). */
 const PEOPLE_TYPES = new Set(['connection']);
+
+/** Words of a draft's description-name that are anyone's ("Unknown Hatchway Figure", "Station Clerk"): never a trip word of theirs. */
+const GENERIC_PERSON_WORDS = new Set(['unknown', 'unnamed', 'unidentified', 'mysterious', 'figure', 'stranger', 'newcomer',
+  'silhouette', 'individual', 'operative', 'man', 'woman', 'person', 'voice', 'officer', 'clerk', 'hand', 'dockhand',
+  'worker', 'guard', 'pilot', 'trader', 'hauler', 'from', 'with', 'second', 'first', 'old', 'young']);
+
+/** At most this many people not yet on record are tracked a beat — the newest drafted first. */
+const PENDING_PEOPLE_MAX = 8;
 
 /** A place's words too common to trip the judge on their own ("the station"). */
 const GENERIC_PLACE_WORDS = new Set(['the', 'station', 'port', 'outpost', 'base', 'colony', 'dock', 'docks', 'ring',
@@ -46,19 +63,18 @@ const lower = (s) => clean(s).toLowerCase();
 const idOf = (e) => e?.journalId ?? e?._id ?? e?.id ?? null;
 
 /**
- * Whether a person's name is said in a text: the whole name, or a word of it
- * of three letters or more ("Tamsin" for Tamsin Okoro), as a whole word, the
- * possessive too. Pure.
+ * Whether a person's name is said in a text: the whole name, or — unless
+ * `exact`, a person not yet on record — a word of it of three letters or more
+ * ("Tamsin" for Tamsin Okoro), as a whole word, the possessive too
+ * (nameMatch.js personSaidIn, the one matcher). Pure.
  *
  * @param {string} text
  * @param {string} name
+ * @param {{ exact?: boolean }} [opts]
  * @returns {boolean}
  */
-export function nameSaidIn(text, name) {
-  const t = ` ${lower(text).replace(/['’]s\b/g, '').replace(/[^\p{L}\p{N}'’\s-]+/gu, ' ')} `;
-  const n = lower(name);
-  if (!n || !t.trim()) return false;
-  return [n, ...n.split(/\s+/).filter(w => w.length >= 3)].some(w => t.includes(` ${w} `));
+export function nameSaidIn(text, name, { exact = false } = {}) {
+  return personSaidIn(text, name, { exact });
 }
 
 /** Whether a place's whole name is said in a text, as whole words, any case. */
@@ -77,12 +93,13 @@ function placeSaidIn(text, name) {
  *
  * @param {Object} read — readRecord({ session: 'campaign' })
  * @param {string} name
+ * @param {{ exact?: boolean }} [opts] — the whole name only (a person not yet on record)
  * @returns {{ place: { id: string, type: string|null, name: string }|null, session: number|null, sceneId: string|null }|null}
  */
-export function lastSeenWith(read, name) {
+export function lastSeenWith(read, name, { exact = false } = {}) {
   if (!clean(name)) return null;
   const sessions = Array.isArray(read?.sessions) ? read.sessions : [];
-  const present = (frame) => (Array.isArray(frame?.present) ? frame.present : []).some(p => nameSaidIn(p, name));
+  const present = (frame) => (Array.isArray(frame?.present) ? frame.present : []).some(p => nameSaidIn(p, name, { exact }));
   for (let s = sessions.length - 1; s >= 0; s--) {
     const session = sessions[s];
     const scenes = Array.isArray(session?.scenes) ? session.scenes : [];
@@ -103,7 +120,7 @@ export function lastSeenWith(read, name) {
  * the record; else where the record last had them with the characters. The
  * place either names, when it names a recorded one. Never throws.
  *
- * @param {{ name: string, entityId?: string|null }} person
+ * @param {{ name: string, entityId?: string|null, exact?: boolean }} person — `exact`: a person not yet on record, matched by their whole name
  * @param {{ campaignState: Object, read?: Object|null }} ctx — `read`: the campaign's record, read once by the caller
  * @returns {{ where: string, placeId: string|null, placeName: string|null, from: 'last known'|'record', session: number|null }|null}
  */
@@ -119,7 +136,7 @@ export function whereaboutsOf(person, { campaignState, read = null } = {}) {
       return { where: knownText, placeId: place?.id ?? null, placeName: place ? placeNameOf(place.id, campaignState) : null,
         from: 'last known', session: Number.isFinite(known?.sessionNum) ? known.sessionNum : null };
     }
-    const seen = lastSeenWith(read, name);
+    const seen = lastSeenWith(read, name, { exact: person?.exact === true });
     if (!seen) return null;
     return {
       where: seen.place?.name ? `at ${seen.place.name}` : 'with the characters, between places',
@@ -138,6 +155,93 @@ function placeNameOf(id, campaignState) {
 }
 
 /**
+ * The people a narration drafted that the table has neither confirmed nor
+ * dismissed, tracked as real until it does (the maintainer's call after the
+ * eighth live round; entities/pendingDrafts.js — the draft cards' pending
+ * person rows, the one store of them). The newest drafted first, one a name,
+ * at most PENDING_PEOPLE_MAX: never a name the table dismissed, a player
+ * character's (a detector's slip — round 8 drafted Mira Kestrel), or one a
+ * recorded person goes by ("Clerk" for the Dock Clerk on record: that row is
+ * theirs). Each is matched by its whole name (`exact`). Never throws.
+ *
+ * @param {Object} campaignState
+ * @param {{ entities?: Object[]|null, messages?: Object[] }} [opts] — the roster, when the caller has read it; the chat log
+ * @returns {Array<{ name: string, description: string, at: number|null, cardId: string|null, exact: true }>}
+ */
+export function pendingPeopleOf(campaignState, { entities = null, messages = undefined } = {}) {
+  try {
+    const recorded = (entities ?? collectAllEntities(campaignState ?? {}))
+      .filter(e => PEOPLE_TYPES.has(e?.entityType) && clean(e.name)).map(e => clean(e.name));
+    let pcs = [];
+    try { pcs = getPlayerActors().map(a => clean(a?.name)).filter(Boolean); } catch { pcs = []; }
+    const dismissed = new Set((campaignState?.dismissedEntities ?? []).filter(n => typeof n === 'string').map(nameKey));
+    const out = [];
+    const seen = new Set();
+    for (const row of pendingDraftRows({ messages, type: 'connection' }).reverse()) {
+      const key = nameKey(row.name);
+      if (!key || seen.has(key) || dismissed.has(key)) continue;
+      seen.add(key);
+      if ([...recorded, ...pcs].some(n => nameKey(n) === key || personNameMatch(n, row.name))) continue;
+      out.push({ name: clean(row.name), description: row.description, at: row.at, cardId: row.cardId, exact: true });
+      if (out.length >= PENDING_PEOPLE_MAX) break;
+    }
+    return out;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | whereabouts: the people not yet on record were not read — none tracked:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * Who was with the characters when they set out on a journey (PEOPLE-WAITING-
+ * AT-THE-ARRIVAL — the first-session re-records' dockmaster waiting at both
+ * ends of both journeys): the present of the record's latest frame, the
+ * scene they left. Read at the arrival's narration, before its own frame. Each
+ * may have come along; no one else can be at the destination as they arrive.
+ * Pure.
+ *
+ * @param {Object|null} read — readRecord({ session: 'campaign' })
+ * @returns {string[]}
+ */
+export function departedWith(read) {
+  const sessions = Array.isArray(read?.sessions) ? read.sessions : [];
+  for (let s = sessions.length - 1; s >= 0; s--) {
+    const session = sessions[s];
+    const scenes = Array.isArray(session?.scenes) ? session.scenes : [];
+    const beats = Array.isArray(session?.beats) ? session.beats.filter(b => !b?.removed) : [];
+    for (let i = scenes.length - 1; i >= 0; i--) {
+      const sc = scenes[i];
+      const frames = [sc?.last, ...beats.filter(b => (b.scene ?? null) === (sc?.sceneId ?? null)).map(b => b.where).reverse(), sc?.where];
+      const frame = frames.find(f => Array.isArray(f?.present));
+      if (frame) return frame.present.filter(p => typeof p === 'string' && p.trim());
+    }
+  }
+  return [];
+}
+
+/**
+ * The place of the scene the record had under way at a moment — the scene
+ * begun at or before it and not ended before it, in any session — for where
+ * a person not yet on record came into the story (their draft card's time).
+ * Null between places, before any scene, or with no record. Pure.
+ *
+ * @param {Object|null} read — readRecord({ session: 'campaign' })
+ * @param {number|null} at
+ * @returns {string|null} the place's name
+ */
+export function placeAtTime(read, at) {
+  const t = Number(at);
+  if (!Number.isFinite(t)) return null;
+  let found = null;
+  for (const session of Array.isArray(read?.sessions) ? read.sessions : []) {
+    for (const sc of Array.isArray(session?.scenes) ? session.scenes : []) {
+      if (Number(sc?.startedAt) <= t && (sc.endedAt == null || t <= Number(sc.endedAt))) found = sc;
+    }
+  }
+  return clean(found?.place?.name) || null;
+}
+
+/**
  * What a beat is told of where things are (D5, D6): the characters' place,
  * and what the line names that is elsewhere — the recorded places other than
  * theirs it names whole, and the people it names whose whereabouts are
@@ -150,7 +254,7 @@ function placeNameOf(id, campaignState) {
  * @param {{ read?: Object|null, underway?: string }} [opts] — `read`: the campaign's record (default: read here);
  *   `underway`: the open expedition's label, when the characters are between places on it
  * @returns {{ here: string|null, underway: string|null, places: Array<{ id: string, name: string }>,
- *   people: Array<{ name: string, where: string, placeId: string|null }> }|null}
+ *   people: Array<{ name: string, where: string, placeId: string|null, exact?: true }> }|null} — `exact`: a person not yet on record
  */
 export function elsewhereOf(line, campaignState, { read = undefined, underway = '' } = {}) {
   try {
@@ -167,19 +271,23 @@ export function elsewhereOf(line, campaignState, { read = undefined, underway = 
     }
 
     const frame = campaignState.sceneFrame;
-    const presentNow = (name) => (Array.isArray(frame?.present) ? frame.present : []).some(p => nameSaidIn(p, name))
+    const presentNow = (name, exact) => (Array.isArray(frame?.present) ? frame.present : []).some(p => nameSaidIn(p, name, { exact }))
       && (frame?.sceneId ?? null) === (campaignState.currentSceneId ?? null);
-    const named = entities.filter(e => PEOPLE_TYPES.has(e?.entityType) && clean(e.name) && nameSaidIn(said, e.name) && !presentNow(e.name));
+    // The roster's people, and those not yet on record (whole names only).
+    const named = [
+      ...entities.filter(e => PEOPLE_TYPES.has(e?.entityType) && clean(e.name)).map(e => ({ name: clean(e.name), entityId: idOf(e) })),
+      ...pendingPeopleOf(campaignState, { entities }).map(p => ({ name: p.name, entityId: null, exact: true })),
+    ].filter(p => nameSaidIn(said, p.name, { exact: p.exact === true }) && !presentNow(p.name, p.exact === true));
     const people = [];
     if (named.length) {
       const record = read === undefined ? readRecord({ session: 'campaign' }) : read;
       for (const e of named) {
-        const w = whereaboutsOf({ name: e.name, entityId: idOf(e) }, { campaignState, read: record });
+        const w = whereaboutsOf(e, { campaignState, read: record });
         // Elsewhere: at another recorded place, by LAST KNOWN or the record. A
         // whereabouts naming no recorded place ("in the medbay") may be here:
         // it is not told.
         if (!w?.placeId || w.placeId === hereId) continue;
-        people.push({ name: clean(e.name), where: w.where, placeId: w.placeId });
+        people.push({ name: e.name, where: w.where, placeId: w.placeId, ...(e.exact ? { exact: true } : {}) });
         if (w.placeId && w.placeName && !places.some(p => p.id === w.placeId)) places.push({ id: w.placeId, name: w.placeName });
       }
     }
@@ -216,12 +324,15 @@ function placeCore(name) {
  * record has the characters nowhere. Never throws.
  *
  * @param {Object} campaignState
- * @param {{ read?: Object|null, underway?: string, vehicle?: string|null }} [opts] — `read`: the campaign's record
- *   (default: read here); `underway`: the open expedition's label; `vehicle`: the command vehicle's name
+ * @param {{ read?: Object|null, underway?: string, vehicle?: string|null, arriving?: boolean }} [opts] — `read`: the
+ *   campaign's record (default: read here); `underway`: the open expedition's label; `vehicle`: the command vehicle's
+ *   name; `arriving`: a journey's arrival — its people are only those not with the characters when they set out
+ *   (departedWith): one who was may have come along
  * @returns {{ here: string|null, hereId: string|null, underway: string|null, places: Array<{ id: string, name: string }>,
- *   people: Array<{ name: string, where: string, placeName: string|null }>, markers: string[] }|null}
+ *   people: Array<{ name: string, where: string, placeName: string|null, exact?: true }>, markers: string[] }|null} —
+ *   `exact`: a person not yet on record, matched by their whole name
  */
-export function hereOf(campaignState, { read = undefined, underway = '', vehicle = null } = {}) {
+export function hereOf(campaignState, { read = undefined, underway = '', vehicle = null, arriving = false } = {}) {
   try {
     if (!campaignState) return null;
     const hereId = campaignState.currentLocationId ?? null;
@@ -242,13 +353,19 @@ export function hereOf(campaignState, { read = undefined, underway = '', vehicle
       if (!places.some(p => p.id === idOf(e))) places.push({ id: idOf(e), name });
     }
     const people = [];
-    const named = entities.filter(e => PEOPLE_TYPES.has(e?.entityType) && clean(e.name));
+    // The roster's people, and those not yet on record (whole names only).
+    const named = [
+      ...entities.filter(e => PEOPLE_TYPES.has(e?.entityType) && clean(e.name)).map(e => ({ name: clean(e.name), entityId: idOf(e) })),
+      ...pendingPeopleOf(campaignState, { entities }).map(p => ({ name: p.name, entityId: null, exact: true })),
+    ];
     if (named.length && places.length) {
       const record = read === undefined ? readRecord({ session: 'campaign' }) : read;
+      const leftWith = arriving ? departedWith(record) : [];
       for (const e of named) {
-        const w = whereaboutsOf({ name: e.name, entityId: idOf(e) }, { campaignState, read: record });
+        if (leftWith.some(p => nameSaidIn(p, e.name, { exact: e.exact === true }))) continue;
+        const w = whereaboutsOf(e, { campaignState, read: record });
         if (!w?.placeId || !places.some(p => p.id === w.placeId)) continue;
-        people.push({ name: clean(e.name), where: w.where, placeName: w.placeName ?? null });
+        people.push({ name: e.name, where: w.where, placeName: w.placeName ?? null, ...(e.exact ? { exact: true } : {}) });
         if (people.length >= HERE_MAX) break;
       }
     }
@@ -273,7 +390,8 @@ export function elsewhereWords(elsewhere) {
     for (const w of lower(p?.name).split(/[^\p{L}\p{N}-]+/u)) if (w.length >= 3 && !GENERIC_PLACE_WORDS.has(w)) add(w);
   }
   for (const p of elsewhere?.people ?? []) {
-    for (const w of lower(p?.name).split(/[^\p{L}\p{N}-]+/u)) if (w.length >= 3) add(w);
+    // A person not yet on record goes by a description: its words that are anyone's trip nothing.
+    for (const w of lower(p?.name).split(/[^\p{L}\p{N}-]+/u)) if (w.length >= 3 && !(p?.exact && (GENERIC_PERSON_WORDS.has(w) || GENERIC_PLACE_WORDS.has(w)))) add(w);
   }
   return [...words];
 }

@@ -368,6 +368,18 @@ const STATE_KEPT_LONGEST = new Set(WHEREABOUTS_ATTRIBUTES);
 /** How a binding entry's basis is named in the block (overhaul 2 §5.5). */
 const BASIS_LABELS = Object.freeze({ player: 'the player', dice: 'the dice', gm: 'the GM', setup: 'the premise' });
 
+/** At most this many people not yet on record are told in THE SCENE — the newest drafted first. */
+const PENDING_PEOPLE_TOLD = 4;
+
+/** A text cut at its last whole word within `max` characters, marked "…" when cut. */
+function clipWords(text, max) {
+  const t = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const at = cut.lastIndexOf(' ');
+  return `${(at > max / 2 ? cut.slice(0, at) : cut).replace(/[\s,;:.—-]+$/, '')}…`;
+}
+
 /**
  * Build the Section 6.5 active-scene ledger block — fact-continuity scope §6,
  * reshaped by overhaul 2 (§5.5, D8) so the narrator weighs what binds apart
@@ -542,6 +554,19 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // the people whose whereabouts are one.
   for (const p of options?.elsewhere?.people ?? []) placeLines.push(`  Elsewhere: ${p.name} — ${p.where}, not here`);
   for (const p of options?.elsewhere?.places ?? []) placeLines.push(`  Elsewhere: ${p.name} — another place, reached only by a journey's move`);
+  // The people met whom the table has not yet confirmed — tracked as real
+  // until it does (the maintainer's call after round 8): the fact block names
+  // them by this name, so where they are can be kept.
+  const pending = (Array.isArray(options?.pendingPeople) ? options.pendingPeople : []).filter(p => typeof p?.name === 'string' && p.name.trim())
+    .slice(0, PENDING_PEOPLE_TOLD);
+  if (pending.length) {
+    placeLines.push('  Not yet on record — people met; when one is in the scene, the fact block names them so, in "present" or "remote":');
+    for (const p of pending) {
+      const what = typeof p.description === 'string' && p.description.trim() ? ` — ${clipWords(p.description.trim(), 90).replace(/[\s.;,:]+$/, '')}` : '';
+      const where = typeof p.where === 'string' && p.where.trim() ? `; ${p.where.trim()}` : '';
+      placeLines.push(`    ${p.name.trim()}${what}${where}`);
+    }
+  }
   const frameLines = [];
   if (frame) {
     if (read.where)          frameLines.push(`  Where:    ${read.where} — as the narration has it`);
@@ -1992,7 +2017,7 @@ function formatEntityCardsBlock(entityCards) {
  */
 function formatLedgerSection(campaignState, settings = {}, {
   matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
-  nameChanges = null, progressTracks = [], elsewhere = null,
+  nameChanges = null, progressTracks = [], elsewhere = null, pendingPeople = [],
 } = {}) {
   const {
     factContinuityEnabled         = true,
@@ -2016,6 +2041,7 @@ function formatLedgerSection(campaignState, settings = {}, {
     nameChanges,
     underway: expeditionUnderway(progressTracks),
     elsewhere,
+    pendingPeople,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -2688,6 +2714,8 @@ export function buildNarratorSystemBlocks(
     nameChanges: extras?.nameChanges ?? null,
     progressTracks,
     elsewhere: extras?.elsewhere ?? null,
+    // The people met whom the table has not yet confirmed (whereabouts.js pendingPeopleOf).
+    pendingPeople: Array.isArray(extras?.pendingPeople) ? extras.pendingPeople : [],
   });
   if (ledgerBlock) parts.push(ledgerBlock);
 
