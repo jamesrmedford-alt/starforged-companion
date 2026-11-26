@@ -739,8 +739,14 @@ and the request carries them as separate `system` blocks
   prose mode, call after call; cached for an hour.
 - **world snapshot** (`## WORLD SNAPSHOT`, issue #357 — "The world snapshot",
   below) — when the narration has one: the whole world state as it stood when
-  the snapshot was taken, stored text sent byte for byte. The same for every
-  prose mode until a new one is taken; cached for an hour.
+  the snapshot was taken, stored text sent byte for byte — in the names the
+  table uses now: a name change's old name is written new as it is sent
+  (`narratorPrompt.js` `inTheNamesNow`, `writeNewNames`; issue #389 #2 — a77's
+  Lore read "Ashen Wake: driven off the docking ring…" beside "'Ashen Wake' is
+  now 'Cinder Wren'"). The Lore block sent with no snapshot is written the same
+  way; NAMES THE TABLE CHANGED reads both as kept, so it is told as before. The
+  same for every prose mode until a new one is taken or a name changes; cached
+  for an hour.
 - **this narration** (`## THIS NARRATION`) — [0m] the mode's role
   description, HOW A BEAT ENDS, perspective and length; [2]; the opening
   scene's sidecar addendum (`sidecarModeAddendum`). The same for one mode at
@@ -1281,7 +1287,9 @@ in the prose ([premise] by its refusal's code — "starts on the cuts" under
 a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
 [oracle], [state]; [unsaid] by speech words, on a move made from a button or
 the map — its line the table's own (`madeLine`), shown as "THE MOVE — made
-from a button or the map; the player wrote no line", issue #388 #10) sends one Haiku call (`api-proxy.js`, label
+from a button or the map; the player wrote no line", issue #388 #10; [dice]
+by a word of its subject's name, or of what a name change says it is, the
+possessive too) sends one Haiku call (`api-proxy.js`, label
 `obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
 consistency check on). A failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels
@@ -1308,8 +1316,20 @@ is only offered (SUGGESTED MOVE's "It has not been made…" half, moved here);
 NOT SO `[sheet]`: no sheet changes in narration (the instruction's "Nor does
 anything…" sentence, moved here — for a refused line, "No move was rolled for
 this line, and none will be"); NOT SO `[apparatus]`: no dice, no sheet number,
-no outcome's or move's name. A move rolled at the GM's word carries TELL
-`[overridden]` in its move message; a
+no outcome's or move's name. NOT SO `[dice]` (issue #389 #2,
+LINE-CLAIM-OVER-THE-DICE; decisions.md: players can't overrule dice): what the
+dice decided of what the line names stands — "What the dice decided stands —
+Cinder Wren: engines hit and burning; driven off the docking ring with her guns
+silent. A line that takes otherwise for granted does not make it so: tell what
+is there." `narrator.js` `diceFactsOf` reads the record (`readRecord({ session:
+'campaign' })`, its names corrected): every session's established truths of
+basis `dice` whose subject the line names — a word of its name, or of what one
+of the record's name changes says it is ("the cutter's wreck" names the Cinder
+Wren, "raider cutter") — the latest first, at most four. A paced line and a
+typed move's narration carry it (a move made from a card has no line, and
+none); Batch Mode rounds do not yet. The fact block's rules say the same: what
+a line takes for granted against the dice is not tagged "line". A move rolled
+at the GM's word carries TELL `[overridden]` in its move message; a
 round's entry refused at the roll carries its `[premise]` block in the
 round's message (`####`, under the entry). The paced card says it too
 (`<p class="sf-cannot-make">`, flag `cannotMake` — the runner's check reads

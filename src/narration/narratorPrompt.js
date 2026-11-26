@@ -157,6 +157,12 @@ export function appendSidecarInstruction(options = {}) {
     '  { "subject": "Kael Dros", "fact": "holds the datapad the PC handed him",',
     '  "from": "line" } and { "subject": "Kael Dros", "attribute": "location",',
     '  "value": "in the cargo bay with the PC", "from": "line" }.',
+    // Players can't overrule dice (issue #389 #2): the line binds the
+    // character's own acts and words, never what the dice decided otherwise.
+    '- A line that takes for granted what the dice decided otherwise — the',
+    '  wreck of a ship the dice sent fleeing, a dead man talking — does not',
+    '  make it so: narrate what the dice made true, and tag none of what the',
+    '  line assumed "line".',
     '- REQUIRED: when your prose establishes or changes WHERE a named',
     '  character is (their location, the vessel or structure they are',
     '  aboard) or their physical condition (wounded, dying, well), you MUST',
@@ -2534,6 +2540,9 @@ export function buildNarratorSystemBlocks(
   //      With a world snapshot (issue #357) all four are in it, whole — every
   //      threat, the whole landscape, all confirmed lore — and IN PLAY NOW
   //      names the threats in motion; nothing is sent twice.
+  // The Lore sent with no snapshot, as kept: NAMES THE TABLE CHANGED reads
+  // the old names in it, though it is sent in the new ones (issue #389 #2).
+  let loreAsKept = '';
   if (!isMetaMode) {
     if (!snapshot) {
       const threatsBlock = formatActiveThreatsBlock(activeThreats);
@@ -2541,7 +2550,10 @@ export function buildNarratorSystemBlocks(
       const factionsBlock = formatFactionLandscapeBlock(factionLandscape);
       if (factionsBlock) parts.push(factionsBlock);
       const loreBlock = formatEstablishedLoreBlock(confirmedLore);
-      if (loreBlock) parts.push(loreBlock);
+      if (loreBlock) {
+        loreAsKept = loreBlock;
+        parts.push(inTheNamesNow(loreBlock, extras?.nameChanges ?? campaignState?.nameChanges));
+      }
       const recapBlock = formatWorldLoreRecapBlock(loreRecap);
       if (recapBlock) parts.push(recapBlock);
     }
@@ -2701,7 +2713,7 @@ export function buildNarratorSystemBlocks(
   const namesBlock = formatNameChangesBlock(extras?.nameChanges ?? campaignState?.nameChanges, {
     sessionId: campaignState?.currentSessionId ?? null,
     texts: [
-      ...standing, snapshot?.text ?? '', ...modeParts, ...parts,
+      ...standing, snapshot?.text ?? '', loreAsKept, ...modeParts, ...parts,
       ...(Array.isArray(extras?.nameChangeTexts) ? extras.nameChangeTexts : []),
     ],
   });
@@ -2714,7 +2726,11 @@ export function buildNarratorSystemBlocks(
 
   return {
     standing: standing.join(SECTION_RULE),
-    snapshot: snapshot ? snapshot.text.trim() : '',
+    // In the names the table uses now (issue #389 #2): a correction's old
+    // name in its Lore read "Ashen Wake: driven off the docking ring…", and
+    // the sixth live long haul's a77 narrator wrote the wreck of the "Cinder
+    // Wren" beside it. NAMES THE TABLE CHANGED still tells the change.
+    snapshot: snapshot ? inTheNamesNow(snapshot.text.trim(), extras?.nameChanges ?? campaignState?.nameChanges) : '',
     mode:     modeParts.join(SECTION_RULE),
     beat:     parts.join(SECTION_RULE),
     cached:   !isMetaMode,
@@ -4107,4 +4123,11 @@ function toLabel(key) {
     .replace(/\band\b/gi, '&')
     .replace(/^\w/, c => c.toUpperCase())
     .trim();
+}
+
+/** A prompt's text in the names the table uses now (nameChanges.js writeNewNames); unchanged with none (issue #389 #2). */
+function inTheNamesNow(text, nameChanges) {
+  const changes = Array.isArray(nameChanges) ? nameChanges : [];
+  if (!text || !changes.length) return text;
+  return writeNewNames(text, changes, { otherNames: actorNames() });
 }

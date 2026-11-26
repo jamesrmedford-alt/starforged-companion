@@ -17,6 +17,8 @@ rejected.
 
   An item moves between them as its status changes, and `docs/known-issues.md` stays the record of each, by its ID. A round's review adds its new findings to these three and to known-issues rows; it does not open a round issue.
 - **Players can't overrule dice** (LINE-CLAIM-OVER-THE-DICE). What a move's dice decided binds over what a player's line takes for granted: the sixth round's a77 went "down to the cutter's wreck" that the dice had sent fleeing (a41), and the narration followed the line. The player's line still binds for the character's own acts and words (D5–D8). It does not make so what the dice made otherwise.
+  - How it is held: the narration of a paced line or a typed move is told NOT SO [dice] for each truth of the dice (basis `dice`, every session's record) whose subject the line names, by its name now or by what a name change says it is. It is a judge line: a narration that names the subject is checked, and re-asked once if it breaks the line. The fact block's rules say what a line takes for granted against the dice is not tagged "line".
+  - Not part of it: a GM's truths, which the decision did not name, and Batch Mode rounds, whose two obligation builders do not read the line's state yet.
 - **One record of where everyone is** (CHARACTERS-MOVED-BY-THE-NARRATION): an overhaul, scoped as its own issue — the characters, the ship and the people in one record, and travel the only way to another settlement.
 - **The round's six enough-data fixes** are made at the review's recommendations: SIDECAR-NOTE-IN-THE-PROSE, OPENING-IN-THE-THIRD-PERSON, REPAIR-POINTS-UNREACHABLE, FULFILMENT-SILENT-ON-A-SPENT-DEEPEN, SHIP-BOUND-FOR-READ-AS-NEAR and EXPEDITION-LEGS-TURN-THE-SCENE.
 

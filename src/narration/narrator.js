@@ -96,6 +96,7 @@ import { withoutUntoldTruths } from '../world/secrets.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
+import { readRecord } from '../record/read.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
 
@@ -119,6 +120,63 @@ const MODULE_ID      = 'starforged-companion';
 
 /** campaignState fields a narrator sidecar writes (applySidecar + applySceneFrame). */
 const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']);
+
+/** The most a beat is told of what the dice decided about what its line names (issue #389 #2). */
+const DICE_FACTS_MAX = 4;
+const DICE_STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'into', 'their', 'there', 'where', 'what', 'have',
+  'been', 'were', 'they', 'them', 'your', 'about', 'over', 'down', 'back', 'still', 'then', 'than', 'just', 'some']);
+const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
+  .filter(w => w.length >= 4 && !DICE_STOP.has(w));
+
+/**
+ * What the dice decided about what the player's line names (issue #389 #2,
+ * LINE-CLAIM-OVER-THE-DICE; decisions.md: players can't overrule dice). Every
+ * session's record (record/read.js readRecord, in the names the table uses
+ * now — a correction's old name is read as the new one), its truths of the
+ * dice (basis "dice": a rolled move's result), whose subject the line names:
+ * by a word of its name, or of what one of the record's name changes says it
+ * is — "raider cutter" for the Cinder Wren, the sixth live long haul's "the
+ * cutter's wreck" — or the name of what a change says the subject is. The
+ * latest first, at most DICE_FACTS_MAX. Never throws: a record that cannot be
+ * read tells nothing.
+ *
+ * @param {string} line
+ * @param {{ source?: Object }} [opts] — the record to read (default: the stored pages)
+ * @returns {Array<{ subject: string, fact: string, words: string[] }>}
+ */
+export function diceFactsOf(line, { source } = {}) {
+  try {
+    const said = new Set(diceWords(line));
+    if (!said.size) return [];
+    const record = readRecord({ session: 'campaign' }, source);
+    const changes = Array.isArray(record?.names) ? record.names : [];
+    const same = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+    const facts = [];
+    const seen = new Set();
+    for (const session of [...(record?.sessions ?? [])].reverse()) {
+      for (const t of [...(session?.open?.established ?? [])].reverse()) {
+        if (t?.basis !== 'dice') continue;
+        // As the record's views read it (summaryView.js subjectText): its words, or the name read gave it.
+        const subject = typeof t.subject === 'string' ? t.subject.trim()
+          : String(t.subject?.text ?? t.subject?.name ?? '').trim();
+        const fact = String(t.fact ?? '').trim();
+        if (!subject || !fact) continue;
+        const also = changes.flatMap(c => (same(c?.to, subject) ? [c.about] : same(c?.about, subject) ? [c.to] : []));
+        const words = [...new Set([subject, ...also].flatMap(diceWords))];
+        if (!words.some(w => said.has(w))) continue;
+        const key = `${subject.toLowerCase()}|${fact.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        facts.push({ subject, fact, words });
+        if (facts.length >= DICE_FACTS_MAX) return facts;
+      }
+    }
+    return facts;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: what the dice decided could not be read — none told:`, err?.message ?? err);
+    return [];
+  }
+}
 
 /** The moves that take the ship somewhere: offered and not rolled, they move her nowhere (issue #389 #8). */
 const JOURNEY_MOVES = new Set(['set_a_course', 'undertake_an_expedition', 'finish_an_expedition']);
@@ -1410,7 +1468,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // A move pressed on a card has no line of the player's (issue #388 #10).
   const madeLine = resolution.inputMethod === 'button';
   const moveObligations = [...obligationsFor({ mode: 'move', resolution, situation: touched.situation,
-    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince, madeLine }),
+    line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince, madeLine,
+    dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? '') }),
     ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const userMessage  = buildNarratorUserMessage(
     resolution,
@@ -5221,7 +5280,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       // One list for the block and its checks (overhaul 4, slice 4) — with what
       // the scene obliges (overhaul 2 §10.3).
       pacedObligations = [...obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
-        situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince }),
+        situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince,
+        dice: diceFactsOf(playerText ?? '') }),
         ...sceneObligationsOf(extras.sceneLedger, campaignState)];
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,

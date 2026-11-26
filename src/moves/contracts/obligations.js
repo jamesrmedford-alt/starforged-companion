@@ -50,6 +50,11 @@
  *   [material]   a set-piece's rolled words, never written as rolled — as a
  *                name, a label or together (issue #388 #11; the MATERIAL
  *                block's own rule, sceneSeeds.js formatMaterial)
+ *   [person]     a second-person set-piece's character is "you", never their
+ *                name (issue #389 #4, OPENING-IN-THE-THIRD-PERSON)
+ *   [dice]       what the dice decided of what the player's line names
+ *                stands over what the line takes for granted (issue #389 #2,
+ *                LINE-CLAIM-OVER-THE-DICE; narrator.js diceFactsOf)
  *
  * The table's cards a result's obligations read (unansweredCardsFor — moved
  * here from resultUpgrade.js withUnansweredCards): the outcome's choice card
@@ -363,6 +368,17 @@ export const OBLIGATION_KINDS = Object.freeze({
       "and confesses nothing in this narration, in quotes or told (\"you tell her that …\"): what they say is the player's. " +
       "Tell what the move does, and what the others do and say.",
     judge: () => "The player's character (\"you\") speaks — says, asks, promises or confesses something, in quotes or told (\"you tell her that …\").",
+  }),
+  // What the dice decided about what the player's line names (issue #389
+  // #2, LINE-CLAIM-OVER-THE-DICE — the maintainer: "Players can't overrule
+  // dice"): the sixth live long haul's a77 went "down to the cutter's wreck"
+  // that the dice had sent fleeing (a41), and the narration followed the line.
+  // Judge-class, tripped by the subject's name in the prose (checks.js).
+  dice: Object.freeze({
+    list: "NOT SO", check: "judge",
+    text: ({ subject, fact }) => `What the dice decided stands — ${subject}: ${fact}. A line that takes otherwise for granted `
+      + "does not make it so: tell what is there.",
+    judge: ({ subject, fact }) => `The narration tells as true something this result of the dice denies — ${subject}: ${fact}.`,
   }),
   // A second-person set-piece's character is "you" (issue #389 #4,
   // OPENING-IN-THE-THIRD-PERSON: three of the sixth live round's six openings
@@ -686,13 +702,18 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
  *   cast?: string[], speaker?: string|null,
  *   material?: { words: string[], pairs: string[][], onRecord: string[] }|null,
  *   person?: { names: string[] }|null,
+ *   dice?: Array<{ subject: string, fact: string, words: string[] }>,
  *   madeLine?: boolean }} input — `madeLine`: a move pressed on a card, its line the card's ([unsaid]);
  *   `person`: a second-person set-piece's character, by the names the prose must not call them ([person])
  * @returns {Array<{ kind: string, list: string, text: string }>}
  */
 export function obligationsFor({ mode, resolution = null, refusal = null, offer = null, note = null, oracle = null,
-  situation = null, line: said = "", cast = [], speaker = null, chosenSince = [], material = null, person = null, madeLine = false } = {}) {
+  situation = null, line: said = "", cast = [], speaker = null, chosenSince = [], material = null, person = null, madeLine = false,
+  dice = [] } = {}) {
   const out = [];
+  // What the dice decided about what the line names: told after the state (issue #389 #2).
+  const decided = () => (Array.isArray(dice) ? dice : []).filter(f => f?.subject && f?.fact)
+    .map(f => ({ ...line("dice", f), words: Array.isArray(f.words) ? f.words : [] }));
   const state = () => stateFacts({ situation, line: said, target: resolution?.moveTarget ?? null, cast })
     .map(fact => line("state", { fact }));
   // A cost chosen after its narration, told here — a beat of play (D10).
@@ -702,6 +723,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     if (refusal?.premise) out.push(line("premise", { refusal }));
     if (offer) out.push(line("offer", { offer }));
     out.push(...state());
+    out.push(...decided());
     out.push(line("sheet", { mode, refused: !!refusal }));
     out.push(line("apparatus", { offer }));
   } else if (mode === "move") {
@@ -709,6 +731,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     out.push(...resultObligations(resolution ?? (note ? { gateNote: note } : null), { speaker }));
     if (madeLine === true) out.push(line("unsaid"));
     out.push(...state());
+    out.push(...decided());
     out.push(line("sheet", { mode }));
     out.push(line("apparatus", {}));
   } else if (mode === "round-entry") {

@@ -290,6 +290,7 @@ function tripWords(o, { refusalCode = null, offer = null, question = "", person 
     case "state":   return person && /not a bond/.test(o.text) ? ["bond", "bonded"] : (/No fight/.test(o.text) ? FIGHT_WORDS : null);
     case "place":   return DOCKED_WORDS;
     case "unsaid":  return SPEECH_WORDS;
+    case "dice":    return Array.isArray(o.words) && o.words.length ? o.words.flatMap(w => [w, `${w}'s`, `${w}’s`]) : null;
     default:        return null;
   }
 }
