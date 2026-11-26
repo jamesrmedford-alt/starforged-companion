@@ -390,6 +390,14 @@ all 27 beats with no check violated and is kept, reviewed in full, at
 `playwright/explorations/long-haul-live-20261125-232143/` (its findings, issue
 #389). Both are re-scored by the checks mended after them.
 
+**The seventh live round** (2026-11-26, $2.85, one run) measured #390's fixes,
+overhaul 8 among them. It was the first live long haul to play all 27 beats
+with no check violated and no fact lost, and is kept, reviewed in full, at
+`playwright/explorations/long-haul-live-20261126-030646/`. The record of where
+the characters are held, and the narration did not: a skiff hop took the
+character to another settlement with no journey (its findings are in #390–#392
+and `docs/known-issues.md`, LONG-HAUL-ROUND-7).
+
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
 sixty-five in-fiction lines that name no move (but one that names its move on
