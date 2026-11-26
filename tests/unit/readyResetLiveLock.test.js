@@ -76,7 +76,9 @@ function liveSession(extra = {}) {
   };
 }
 
-const SETTINGS = { chronicleAutoEntry: false, narratorSessionSummary: false, autoRecapEnabled: false };
+// The scripted narration tells Kira by name: the third person, as told — a
+// second-person beat that names its character is asked again (BEAT-IN-THE-THIRD-PERSON).
+const SETTINGS = { chronicleAutoEntry: false, narratorSessionSummary: false, autoRecapEnabled: false, narrationPerspective: 'third_person' };
 
 /** gm-1 loads a world whose stored lock is `lock`, alone with a player. */
 async function loadWithLock(lock, extra = {}) {

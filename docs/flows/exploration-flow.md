@@ -497,7 +497,12 @@ finish docks there and charts nothing.
   "within the settlement" cannot be read: a line moves nobody, and the
   frame's `where` is a spot within the place — a frame naming another
   recorded place keeps the scene's last `where` (D4, `sceneLifecycle.js
-  framedAtThePlace`); between places it is taken whole. An expedition's new
+  framedAtThePlace`); between places it is taken whole. Since round 7 the
+  prose is held to it too, before it posts: NOT SO [here] (certain,
+  `checks.js hereViolations`) asks again a narration whose frame, present or
+  prose puts the characters at another recorded settlement or planet, and a
+  paced card then offers Set a Course for it (`narrator.js journeyOfferOf`) —
+  a60's skiff flight to Hollow Spire (CHARACTERS-MOVED-BY-THE-NARRATION). An expedition's new
   track for another place **sets out** (D2): the current location is none —
   aboard, between places — until its finish arrives; one for the place they
   are at, or begun at a site (vault, derelict) for no other recorded place,

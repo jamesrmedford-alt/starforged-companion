@@ -516,6 +516,64 @@ export function nameMentioned(name, passage) {
   return false;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// A vow that asks who (VOW-FULFILLED-UNANSWERED; tellingWords.js vowAsksWho)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A person's titles, said before a name ("Captain Joss Varrow"). */
+const NAME_TITLES = "Captain|Commander|Broker|Officer|Chief|Magistrate|Overseer|Director|Agent|Doctor|Dr\\.?|Lady|Lord|Sister|Brother|Mother|Father|Warden|Marshal|Admiral|Elder|Factor|Governor";
+const TITLE_RE = new RegExp(`^(?:${NAME_TITLES})$`);
+/** Capitalised words that open a sentence or a phrase, never a name of their own. */
+const NOT_A_NAME = new Set(["the", "a", "an", "this", "that", "their", "her", "his", "its", "one", "someone", "no", "every", "each"]);
+
+/**
+ * Whether a plan's truth names a person (VOW-FULFILLED-UNANSWERED): one of
+ * the story's people by name, or a name it gives — two capitalised words, or
+ * a title and one ("Captain Joss Varrow") — none of whose words is a place's,
+ * a ship's, a faction's or the vow's own (`notNames`). "Someone inside
+ * Bleakhold's Corporate offices" names no one; nor does "a faction inside the
+ * lanes' own water trade" (round 7's a75). Pure.
+ *
+ * @param {string} truth
+ * @param {{ people?: string[], notNames?: string[] }} [opts]
+ * @returns {boolean}
+ */
+export function truthNamesSomeone(truth, { people = [], notNames = [] } = {}) {
+  const text = String(truth ?? "");
+  if (!text.trim()) return false;
+  // One of the story's people: their whole name, or a word of it of three
+  // letters or more ("Tamsin" for Tamsin Okoro), as a whole word.
+  const said = new Set(words(text).map(w => w.replace(/'s$/, "")));
+  if ((people ?? []).some(n => String(n ?? "").trim() && (nameMentioned(n, text) || words(n).some(w => w.length >= 3 && said.has(w))))) return true;
+  const blocked = new Set((notNames ?? []).flatMap(n => String(n ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u)).filter(w => w.length >= 3));
+  const re = new RegExp(`(?:\\b(?:${NAME_TITLES})\\s+\\p{Lu}[\\p{L}'’-]+|\\p{Lu}[\\p{L}'’-]+(?:\\s+\\p{Lu}[\\p{L}'’-]+)+)`, "gu");
+  for (const m of text.matchAll(re)) {
+    const own = m[0].replace(/['’]s\b/g, "").split(/\s+/)
+      .filter((w, i, all) => !TITLE_RE.test(w) && !(i === 0 && NOT_A_NAME.has(w.toLowerCase()) && all.length > 1));
+    const titled = TITLE_RE.test(m[0].split(/\s+/)[0]);
+    if (!own.length || (own.length < 2 && !titled)) continue;
+    if (own.some(w => blocked.has(w.toLowerCase()) || NOT_A_NAME.has(w.toLowerCase()))) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * A plan's truth with the one behind it named (VOW-FULFILLED-UNANSWERED): the
+ * truth as it stands, then "The one behind it is <name>." Pure — the name is
+ * drawn by the caller (secrets.js, from the name oracle).
+ *
+ * @param {string} truth
+ * @param {string} name
+ * @returns {string}
+ */
+export function truthWithWho(truth, name) {
+  const t = String(truth ?? "").trim();
+  const who = String(name ?? "").replace(/\s+/g, " ").trim();
+  if (!who) return t;
+  return `${t}${t && !/[.!?…]$/.test(t) ? "." : ""}${t ? " " : ""}The one behind it is ${who}.`;
+}
+
 // The telling words a reveal is read by — the common ones left out, each
 // stemmed — are tellingWords.js's, which a scene question's provenance reads
 // too (overhaul 2): a leaf, so its readers read no plan.
@@ -617,6 +675,8 @@ export function selectRelevantSkeletons(records, ctx = {}) {
     frame.location,
     frame.situation,
     ...(Array.isArray(frame.present) ? frame.present : []),
+    // Over a comm, not here in person — still in the scene (round 7's a57).
+    ...(Array.isArray(frame.remote) ? frame.remote : []),
   ].filter(v => typeof v === "string" && v.trim()).join(" \n ");
   const inScene = (r) => !!ctx.sceneId && r.sceneId === ctx.sceneId;
   const relevant = (r) => {

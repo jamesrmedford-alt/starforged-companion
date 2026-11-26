@@ -885,7 +885,8 @@ move), and the card's hint naming the move a variant varies keeps the
 variant (`narrator.reconcileSuggestedMove` — PACING-ROLL-NO-SCENE-CHALLENGE).
 The classifier names the challenge the move is part of; the router keeps it,
 or the sole open one, on the card by id (`suggestedMoveTargetId`), and the
-Roll (`cardActions.applyPacedRoll`) forwards it as `forcedMoveTargetId` — with
+Roll (`cardActions.applyPacedRoll`) forwards it as `forcedMoveTargetId` (and
+a [here] re-ask's Set a Course its place, `narrator.journeyOfferOf`) — with
 two challenges open it named none and the scoring asked which
 (PACED-VARIANT-NO-TARGET). A Roll pressed after that challenge ended is the
 ordinary move, whatever else is open: `readMove` and `rollMove` hand the

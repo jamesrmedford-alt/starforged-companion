@@ -110,7 +110,9 @@ describe("the paced card's Roll is the narrator's to press (PACED-ROLL-OPEN-PRES
     const [post] = forced('face_danger');
     expect(post, 'the forced move was posted').toBeTruthy();
     expect(post.speaker?.actor).toBe('pc-kira');
-    expect(post.content).toBe('Kira forces the hatch and dives through.');
+    // The Roll posts the move rolled from the offer, its line on the flags (OFFER-FLOW-FRICTION, offerLine.js).
+    expect(post.content).toContain('Face Danger — rolled from the offer above');
+    expect(post.flags[MODULE_ID].offerLine).toBe('Kira forces the hatch and dives through.');
     expect(post.flags[MODULE_ID]).toMatchObject({ bypassPacing: true, forcedMoveId: 'face_danger', deferWhileBusy: true });
     expect(flags(id).rolled, 'claimed on the GM-authored card').toBe(true);
 

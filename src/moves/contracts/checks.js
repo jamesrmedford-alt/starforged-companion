@@ -10,8 +10,12 @@
  *             a move's display name of two words or more outside the closing
  *             offer line; a sheet number), [match] (the word, for a roll that
  *             matched), [material] (a set-piece's rolled word as a label, a
- *             name or its pair — materialViolations) — a failure is re-asked
- *             once
+ *             name or its pair — materialViolations), [person] (a second-
+ *             person narration's character by name — personViolations), and
+ *             [here] (the fact block's frame, its present or the prose
+ *             putting the characters at another place than the record's —
+ *             hereViolations, which reads the fact block too) — a failure is
+ *             re-asked once
  *   floor     a lexical minimum: [vow] (the prose shares a word with the
  *             vow's name, or says what is still not known — re-asked once);
  *             [chosen] (a word of the cost's meter — logged); [letgo] (a stem
@@ -84,10 +88,14 @@ const quoteAround = (text, index, len) => text.slice(Math.max(0, index - 30), Ma
  * @param {Array<{ kind: string }>} obligations
  * @returns {Array<{ tag: string, quote: string }>}
  */
-export function certainViolations(prose, obligations) {
+export function certainViolations(prose, obligations, { sidecar = null } = {}) {
   const kinds = new Set((obligations ?? []).map(o => o?.kind));
   const text = String(prose ?? "");
   const out = [];
+  // [here]: the fact block's frame, its present, and the prose, against the
+  // record's place (CHARACTERS-MOVED-BY-THE-NARRATION, round 7).
+  const here = (obligations ?? []).find(o => o?.kind === "here");
+  if (here) out.push(...hereViolations(text, sidecar, here));
   if (kinds.has("apparatus")) {
     const body = bodyOf(text);
     const outcome = OUTCOME_NAME.exec(body);
@@ -137,6 +145,139 @@ export function personViolations(body, { names = [] } = {}) {
 
 const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const capitalised = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [here] — where the characters are, by the record
+// ─────────────────────────────────────────────────────────────────────────────
+
+const cleanText = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+
+/** A place name's trailing words too common to be said with it ("Bleakhold Station" is told "Bleakhold"). */
+const PLACE_SUFFIXES = new Set(["station", "port", "outpost", "base", "colony", "hub", "city", "town", "habitat", "settlement", "depot"]);
+
+/** A place's name, and its core when a trailing word is generic ("Bleakhold Station" → "Bleakhold"). */
+function placeForms(name) {
+  const full = cleanText(name);
+  if (!full) return [];
+  const words = full.split(" ");
+  while (words.length > 1 && PLACE_SUFFIXES.has(words.at(-1).toLowerCase())) words.pop();
+  const core = words.join(" ");
+  return core !== full && core.length >= 4 ? [full, core] : [full];
+}
+
+/**
+ * The first place of `places` a text names, by its name or its core, as whole
+ * words — written as a name is, with its capitals: a planet called Haven is
+ * not "a safe haven".
+ */
+function placeIn(text, places) {
+  const t = String(text ?? "");
+  for (const p of places ?? []) {
+    for (const form of placeForms(p?.name)) {
+      const m = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(form)}(?![\\p{L}\\p{N}])`, "u").exec(t);
+      if (m) return { place: p, index: m.index, form };
+    }
+  }
+  return null;
+}
+
+/** Whether a person's name is said in a text — the whole name, or a word of it of three letters or more (whereabouts.js nameSaidIn). */
+function personIn(text, name) {
+  const t = ` ${cleanText(text).toLowerCase().replace(/['’]s\b/g, "").replace(/[^\p{L}\p{N}'’\s-]+/gu, " ")} `;
+  const n = cleanText(name).toLowerCase();
+  if (!n || !t.trim()) return false;
+  return [n, ...n.split(" ").filter(w => w.length >= 3)].some(w => t.includes(` ${w} `));
+}
+
+// The characters reaching a place, in the prose: a verb of arriving or going
+// there, then (within a clause) a preposition and the place — or "reach" and
+// the place — said of "you", "your …" or their craft; or a sentence opened by
+// the going itself ("The walk to the Hollow Spire docks takes …", round 6's
+// a64). A sentence of what could or would happen moves no one.
+const MOTION = String.raw`(?:arriv(?:e|es|ed|ing)|land(?:s|ed|ing)?|dock(?:s|ed|ing)?|touch(?:es|ed|ing)? down|set(?:s|ting)? down|`
+  + String.raw`nos(?:e|es|ed|ing) (?:down|in)|descend(?:s|ed|ing)?|fl(?:y|ies|ew|ying)|walk(?:s|ed|ing)?|cross(?:es|ed|ing)?|`
+  + String.raw`r(?:ide|ides|ode|iding)|pull(?:s|ed|ing)? in|head(?:s|ed|ing)? (?:back|down|in)|return(?:s|ed|ing)?|go(?:es)? back|went back)`;
+const GOING_NOUN = String.raw`(?:walk|trip|hop|flight|ride|crossing|journey|run|drop)`;
+const NOT_DONE = /\b(?:could|would|might|may|can|should|shall|will|if|unless|whether|until)\b|['’]ll\b/i;
+/** A frame's words for a place it is away from or bound for, just before the place's name. */
+const AWAY_FROM = /\b(?:from|toward|towards|for|beyond|past|leaving|behind|away from|out of|en route to)\s+(?:the\s+)?$/i;
+const CRAFT = /\b(?:you|your|yours|skiff|shuttle|lander|launch|pod)\b/i;
+
+/** The sentences of a narration's prose, quoted speech blanked (a speaker may talk of going anywhere). */
+function toldSentences(prose) {
+  const told = String(prose ?? "").replace(/"[^"\n]*"|“[^”\n]*”/g, (q) => " ".repeat(q.length));
+  return told.split(/(?<=[.!?…])\s+/).map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * [here]: does the narration put the characters at another place than the
+ * record's (CHARACTERS-MOVED-BY-THE-NARRATION — the seventh live round's a60:
+ * the line "I fly the Kobayashi IV's skiff to her stall" named no one, and the
+ * prose flew Mira to Hollow Spire while the record had her at Bleakhold
+ * Station)? Three readings, each certain:
+ *   - the fact block's frame: its "location" names another recorded place
+ *     (and not the characters' own);
+ *   - its "present": a person the record has at another place, in person —
+ *     one heard over a comm goes under "remote";
+ *   - the prose: a sentence takes "you" or their craft to another place.
+ * Between places (on an expedition), any recorded place is another. One
+ * violation a reading, each with a note for the re-ask.
+ *
+ * @param {string} prose — the narration's prose
+ * @param {Object|null} sidecar — its fact block (sidecarParser.extractSidecar)
+ * @param {{ hereName?: string|null, here?: string|null, underway?: string|null, places?: Array<{ id?: string, name: string }>,
+ *   people?: Array<{ name: string, where: string }>, markers?: string[] }} o — the [here] line and its data
+ * @returns {Array<{ tag: "here", quote: string, note: string, placeId?: string|null, placeName?: string }>}
+ */
+export function hereViolations(prose, sidecar, o) {
+  const out = [];
+  const here = cleanText(o?.here);
+  const places = (Array.isArray(o?.places) ? o.places : []).filter(p => cleanText(p?.name));
+  const at = here ? `at ${here}` : "between places";
+  const going = (p) => `the characters are ${at}: ${p.name} is reached only by a journey's move — when the line seeks it, `
+    + "tell them making ready to go, and stop there";
+  // The frame's where.
+  const frame = sidecar?.sceneFrame ?? null;
+  const location = cleanText(frame?.location);
+  if (location && places.length && !(here && placeIn(location, [{ name: here }]))) {
+    const hit = placeIn(location, places);
+    // A place the frame is away from, or bound for, is not where it puts them:
+    // "the cockpit, a day out from Hollow Spire".
+    const away = hit && AWAY_FROM.test(location.slice(0, hit.index));
+    if (hit && !away) out.push({ tag: "here", quote: location, note: `the fact block's "location" puts them at ${hit.place.name}; ${going(hit.place)}`,
+      placeId: hit.place.id ?? null, placeName: hit.place.name });
+  }
+  // Who is present in person.
+  const remote = Array.isArray(frame?.remote) ? frame.remote : [];
+  for (const entry of Array.isArray(frame?.present) ? frame.present : []) {
+    const person = (Array.isArray(o?.people) ? o.people : []).find(p => cleanText(p?.name) && personIn(entry, p.name));
+    if (!person || remote.some(r => personIn(r, person.name))) continue;
+    out.push({ tag: "here", quote: cleanText(entry),
+      note: `${person.name} is ${cleanText(person.where) || "elsewhere"}, not here: one heard over a comm goes under "remote", never "present" — `
+        + "or leave them out" });
+    break;
+  }
+  // The prose.
+  if (places.length) {
+    const craft = (Array.isArray(o?.markers) ? o.markers : []).map(cleanText).filter(m => m.length >= 3);
+    const craftRe = craft.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${craft.map(escapeRe).join("|")})(?![\\p{L}\\p{N}])`, "iu") : null;
+    for (const s of toldSentences(prose)) {
+      if (NOT_DONE.test(s)) continue;
+      const hit = placeIn(s, places);
+      if (!hit || (here && placeIn(s, [{ name: here }]))) continue;
+      const before = s.slice(0, hit.index);
+      const reaching = new RegExp(`\\b${MOTION}\\b[^.!?]{0,48}?\\b(?:to|toward|towards|into|onto|at|on|in)\\s+(?:the\\s+)?$`, "i").test(before)
+        || /\breach(?:es|ed|ing)?\s+(?:the\s+)?$/i.test(before);
+      const opened = new RegExp(`^(?:the\\s+)?${GOING_NOUN}\\s+(?:back\\s+|down\\s+|over\\s+|across\\s+)?to\\s+(?:the\\s+)?$`, "i").test(before);
+      if (opened || (reaching && (CRAFT.test(s) || craftRe?.test(s)))) {
+        out.push({ tag: "here", quote: s.slice(0, 200), note: `the prose takes them to ${hit.place.name}; ${going(hit.place)}`,
+          placeId: hit.place.id ?? null, placeName: hit.place.name });
+        break;
+      }
+    }
+  }
+  return out;
+}
 
 /**
  * [material]: a set-piece's rolled word written as it was rolled (issue #388
@@ -380,7 +521,10 @@ export function redraftBlock(draft, violations, obligations) {
   const broke = [...new Set(violations.map(v => v.tag))].map((tag) => {
     const o = byTag.get(tag);
     const quote = violations.find(v => v.tag === tag && v.quote)?.quote;
-    return `- [${tag}] ${o?.text ?? ""}${quote ? ` (it says: "${quote}")` : ""}`;
+    // What a certain check found, in its own words ([here]: what the frame,
+    // the present or the prose said, and what the record says instead).
+    const notes = [...new Set(violations.filter(v => v.tag === tag && v.note).map(v => v.note))];
+    return `- [${tag}] ${o?.text ?? ""}${quote ? ` (it says: "${quote}")` : ""}${notes.length ? ` — ${notes.join("; ")}.` : ""}`;
   });
   return `## YOUR DRAFT — NOT POSTED\n"${String(draft ?? "").trim()}"\n\nThis breaks:\n${broke.join("\n")}\n`
     + "Write the narration again; keep everything else.";
@@ -406,8 +550,9 @@ export async function narrateKeepingObligations(call, obligations, { apiKey = nu
   if (typeof raw !== "string" || !raw.trim() || !Array.isArray(obligations) || !obligations.length) {
     return { raw, reasked: false, verdicts, stillBroken: [] };
   }
-  const prose = extractSidecar(raw).prose ?? raw;
-  const certain = certainViolations(prose, obligations);
+  const first = extractSidecar(raw);
+  const prose = first.prose ?? raw;
+  const certain = certainViolations(prose, obligations, { sidecar: first.sidecar });
   const floor = floorViolations(prose, obligations, ctx);
   for (const v of floor.logged) verdicts.push({ ...v, class: "floor", action: "logged" });
   let broken = [...certain.map(v => ({ ...v, class: "certain" })), ...floor.reask.map(v => ({ ...v, class: "floor" }))];
@@ -435,7 +580,8 @@ export async function narrateKeepingObligations(call, obligations, { apiKey = nu
     onVerdict?.({ verdicts, reasked: true, stillBroken: broken });
     return { raw, reasked: true, verdicts, stillBroken: broken };
   }
-  const stillBroken = certainViolations(extractSidecar(again).prose ?? again, obligations).map(v => ({ ...v, class: "certain" }));
+  const second = extractSidecar(again);
+  const stillBroken = certainViolations(second.prose ?? again, obligations, { sidecar: second.sidecar }).map(v => ({ ...v, class: "certain" }));
   onVerdict?.({ verdicts, reasked: true, stillBroken });
   return { raw: again, reasked: true, verdicts, stillBroken };
 }

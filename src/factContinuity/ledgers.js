@@ -531,7 +531,13 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
   const present   = Array.isArray(frame.present)
     ? frame.present.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim())
     : [];
-  if (!location && !situation && !present.length) return false;
+  // Who is heard or seen over a comm, not here in person (sidecarParser.js
+  // normaliseSceneFrame; round 7's CHARACTERS-MOVED-BY-THE-NARRATION) — the
+  // scene block shows them, and no whereabouts reads them as here.
+  const remote    = Array.isArray(frame.remote)
+    ? frame.remote.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim()).slice(0, 8)
+    : [];
+  if (!location && !situation && !present.length && !remote.length) return false;
 
   const sceneId = campaignState.currentSceneId ?? null;
   const prior   = campaignState.sceneFrame;
@@ -546,6 +552,7 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
     location,
     present,
     situation,
+    ...(remote.length ? { remote } : {}),
     ...question,
     ...(letGo.length ? { letGo } : {}),
     sceneId,

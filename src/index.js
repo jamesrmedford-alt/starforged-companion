@@ -24,6 +24,7 @@
 
 import { CampaignStateSchema, rankName } from "./schemas.js";
 import { mapConsequences, buildLoremasterContext, expeditionPlanRequest, matchLine } from "./moves/resolver.js";
+import { lineOf } from "./moves/offerLine.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
 import {
   renderBurnButtonHtml,
@@ -897,7 +898,7 @@ function recordLine(message, speakerActorId) {
     who:  { user: messageAuthorId(message), actor: speakerActorId },
     ref:  { line: message.id ?? null },
     d:    { via, ...(forcedMoveId ? { forcedMoveId } : {}), ...(repost ? { repost: true } : {}) },
-    text: String(message.content ?? ""),
+    text: lineOf(message),
   });
 }
 
@@ -1034,7 +1035,8 @@ export function registerChatHook() {
     // the recap and the summary are given in place of a telling of it.
     recordLine(message, speakerActorId);
 
-    const narration = message.content;
+    // An offer's Roll carries the player's line on its flags (offerLine.js).
+    const narration = lineOf(message);
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
 
     // The line is narrated as it stands, with no move read into it (issue

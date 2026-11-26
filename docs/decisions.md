@@ -6,6 +6,27 @@ rejected.
 
 ---
 
+## The narration held to the record in code, before it posts (2026-11-26)
+
+**Decision** (the maintainer: "Do all 6 fixes, open a pr, then another long haul" — the six of the review after seven live rounds). Where the record gives a definite answer, the narration is checked against it in code before it posts, and a draft that disagrees is asked again; where it gives none, the narrator is told what to reach past.
+
+**Why.** Seven rounds made the record right and left the prose free. The fixes that held were in code (the record, the certain checks: no dice words since round 4, the set-piece's material); the ones that did not were prompt lines and judge checks — every fiction-against-facts obligation ([whereabouts], [dice], [price], [cost], [fight], [offer], [oracle], [state], [unsaid], [premise]) is judge-class, and the long haul has run with the judge off in all eight runs. Round 7's a60–a64: the narration's own fact block put the characters at the Hollow Spire docks five times; the record refused each frame and the prose posted anyway, and the next beats followed the prose.
+
+**What:**
+- **NOT SO [here]**, certain, on every beat of play but a journey's move: the fact block's frame naming another recorded settlement or planet, its present holding in person someone the record has at one, or a sentence taking "you" or their craft there (checks.js `hereViolations`; the data from whereabouts.js `hereOf`). Asked again with what the record says; the paced card then offers Set a Course for that place. A location is never "another place" — it records no settlement (overhaul 8's D3 as built) — so only settlements and planets are.
+- **A comm voice is `remote`**, a new optional frame field, never `present`: the fact block's rule says so, a "(on comms)" mark is moved there by the parser, the scene block and the reader show it, and no whereabouts reads it as here. The record never takes in person someone it has elsewhere.
+- **[person] on every second-person beat**, not only set-pieces.
+- **The sheet is the only source of a character's meters**: a fact block entry telling a PC's health, spirit, supply or momentum changing is not kept (factContinuity/sheetClaims.js). The prose is not checked for it.
+- **A vow that asks who is won by a name**: DECIDE NOW tells its plan to name the one behind it, and a decided plan whose truth names no one is given a name from the name oracle (Given Name + Family Name) when it is filed (secrets.js `namedIfAWhoVow`).
+- **An offer's Roll posts no line again** — the lighter of the review's two offer fixes: the Roll posts the move, rolled from the offer above, and the player's line rides on its flags (`offerLine`, read by moves/offerLine.js `lineOf` from a GM's post). Rejected for now: narrating nothing until the offer is answered — the only version that makes a double telling impossible, but it reverses overhaul 1's narrate-then-offer and puts a click before any prose.
+- **Details already worn**, listed in THIS BEAT'S PROSE: a word or pair in three of the last six narrations, names, the scene frame's words and the player's line apart (proseVariety.js `wornDetails`). Advice, not a check: a hard check would fire on 24 of round 7's 44 narrations, mostly on names and scene nouns.
+
+**Rejected:** a word-overlap check on an offer's second narration — the eight offered pairs of round 7 share 20–34% of their words, no more than any two neighbouring beats (20–35%), so it cannot tell a retelling. Turning the judge on in the long haul — the 400-call cap (round 7 used 332; the judge adds about 70); the judge lines are for the short scenarios to measure.
+
+**Measured by** the next live long haul: no narration of play at another place than the record's without a journey's move; the [here] re-asks and their cost; no third-person beat; the vow fulfilled with a name; no offer's line posted twice; the refrain count against round 7's 39.
+
+---
+
 ## Overhaul 8: one record of where everyone is, as built (issue #393 — 2026-11-26)
 
 **Decision** (the maintainer: "Do the where characters are overhaul"; #393's D1–D7 at its design's recommendation, built as below — each the maintainer's to take back).

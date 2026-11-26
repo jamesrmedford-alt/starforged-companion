@@ -47,6 +47,8 @@ import { marksForSourceRank, selectFulfilVow } from "./milestone.js";
 import { toMoveId } from "../schemas.js";
 import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 import { gatePress } from "./contracts/pressGate.js";
+import { offerRollContent } from "./offerLine.js";
+import { moveDisplayName } from "../system/i18n.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -1177,7 +1179,11 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
       // that is no move (PACED-CARD-OLD-MOVE-NAME).
       const moveId = toMoveId(f.suggestedMove);
       if (!moveId) return null;
-      return { content: f.playerText, flags: {
+      // The line was said, and its beat narrated, on this card: the Roll posts
+      // the move rolled from it, not the line again — the line rides on the
+      // flags for the pipeline and the record (offerLine.js; OFFER-FLOW-FRICTION).
+      return { content: offerRollContent(moveDisplayName(moveId)), flags: {
+        offerLine: f.playerText,
         forcedMoveId: moveId,
         // A scene-challenge Roll's challenge, as the Finish an Expedition
         // button forwards its track (PACED-VARIANT-NO-TARGET).

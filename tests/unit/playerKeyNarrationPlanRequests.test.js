@@ -41,7 +41,9 @@ let restore;
 beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1] }); }, 30_000);
 afterAll(() => table?.teardown());
 beforeEach(async () => {
-  restore = await resetSkeletonTable(table);
+  // The scripted narrations tell Kira by name: the third person, as told — a
+  // second-person beat that names its character is asked again (BEAT-IN-THE-THIRD-PERSON).
+  restore = await resetSkeletonTable(table, { narrationPerspective: 'third_person' });
   table.addActor({
     id: 'pc-kira', name: 'Kira', type: 'character', hasPlayerOwner: true, ownership: { 'pl-1': 3 },
     items: { contents: [

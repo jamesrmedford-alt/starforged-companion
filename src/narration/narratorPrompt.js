@@ -18,6 +18,7 @@ import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
 import { lengthPhrase, sentenceRule } from './proseVariety.js';
 import { obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
 import { connectionStanding } from '../moves/situation.js';
+import { vowAsksWho } from '../world/tellingWords.js';
 
 /**
  * The scene's own lines for a beat's obligations block (overhaul 2 §10.3 —
@@ -107,7 +108,8 @@ export function appendSidecarInstruction(options = {}) {
     exampleLines.push(
       '      "sceneFrame": {',
       '        "location":  "Lyra\'s orbital graveyard",',
-      '        "present":   ["Venri Quint", "Vance"],',
+      '        "present":   ["Venri Quint"],',
+      '        "remote":    ["Vance"],',
       '        "situation": "Hailing Vance\'s shuttle across the debris field",',
       '        "question":  "Will Vance let them board?"',
       '      }',
@@ -237,12 +239,14 @@ export function appendSidecarInstruction(options = {}) {
       '  player\'s line moves it. "location": where the characters are, in a',
       '  few words — a room, a street, a deck, a stall — never where the ship',
       '  is in space: the ship\'s position says that, and a move of the ship is',
-      '  a ship/position change. "present": every named character present or',
-      '  directly engaged (include characters on comms); "situation": the',
+      '  a ship/position change. "present": every named character here in',
+      '  person; "remote": a named character heard or seen over a comm, a',
+      '  screen or a call — never in "present"; "situation": the',
       '  situation in one sentence. Include it on EVERY response — it replaces',
       '  the previous snapshot. Keep names exactly as established. When the',
-      '  player\'s line has moved the scene, write it where the line put it, and',
-      '  never explain a difference in the prose.',
+      '  player\'s line has moved the scene within the characters\' place, write',
+      '  it where the line put it, and never explain a difference in the prose;',
+      '  a line never takes them to another place — that is a journey\'s move.',
       // Known-issues NARRATOR-REFRAINS: the rule read "Set it on the scene's
       // first beat; afterwards copy it unchanged … it is kept for the scene",
       // and nothing ends a scene but the table — a session's opening hook was
@@ -542,6 +546,8 @@ export function buildLedgerBlock(campaignState, options = {}) {
   if (frame) {
     if (read.where)          frameLines.push(`  Where:    ${read.where} — as the narration has it`);
     if (read.present.length) frameLines.push(`  Present:  ${read.present.join(', ')}`);
+    // Heard or seen over a comm — not here in person (round 7's a57).
+    if (read.remote.length)  frameLines.push(`  Remote:   ${read.remote.join(', ')} — over a comm, not here in person`);
     if (read.now)            frameLines.push(`  Now:      ${read.now} — as the narration has it`);
     // What the scene is deciding (issue #353 R2) — the player's (overhaul 2
     // §7.2). With none standing, a narration that can set one is asked for
@@ -714,6 +720,7 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
     ship,
     where: fresh(frame?.location),
     present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
+    remote: (Array.isArray(frame?.remote) ? frame.remote : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
     now: fresh(frame?.situation),
     question: fresh(question),
     letGo: frame ? normaliseLetGo(frame.letGo).map(e => e.text) : [],
@@ -744,6 +751,7 @@ export function formatSceneForReading(scene) {
   }
   if (scene.where) bits.push(`where: ${scene.where}`);
   if (Array.isArray(scene.present) && scene.present.length) bits.push(`present: ${scene.present.join(', ')}`);
+  if (Array.isArray(scene.remote) && scene.remote.length) bits.push(`over a comm, not here: ${scene.remote.join(', ')}`);
   if (scene.now) bits.push(`now: ${scene.now}`);
   if (scene.question) bits.push(`turns on: ${scene.question}`);
   if (Array.isArray(scene.letGo) && scene.letGo.length) bits.push(`play let go: ${scene.letGo.map(t => `"${t}"`).join(', ')}`);
@@ -1777,16 +1785,18 @@ export const BEAT_SHAPE_LABEL = 'How this narration is built:';
  * shape picked for this beat (extras.beatShape; pickBeatShape — never the one
  * before's), and the levity permission. '' when there is none of them.
  *
- * @param {{ usedImages?: string[], beatShape?: { hint?: string }|null, levity?: string }} [beat]
+ * @param {{ usedImages?: string[], wornDetails?: string[], beatShape?: { hint?: string }|null, levity?: string }} [beat] —
+ *   `wornDetails`: what the recent narrations kept coming back to (proseVariety.js wornDetails)
  * @returns {string}
  */
-export function formatBeatProseBlock({ usedImages = [], beatShape = null, levity = 'default' } = {}) {
+export function formatBeatProseBlock({ usedImages = [], wornDetails = [], beatShape = null, levity = 'default' } = {}) {
   const images = (Array.isArray(usedImages) ? usedImages : [])
     .filter(i => typeof i === 'string' && i.trim())
     .map(i => i.replace(/\s+/g, ' ').trim());
+  const worn = (Array.isArray(wornDetails) ? wornDetails : []).filter(w => typeof w === 'string' && w.trim()).map(w => w.trim());
   const hint = typeof beatShape?.hint === 'string' ? beatShape.hint.trim() : '';
   const levityLine = LEVITY_BEAT_LINES[levity] ?? '';
-  if (!images.length && !hint && !levityLine) return '';
+  if (!images.length && !worn.length && !hint && !levityLine) return '';
 
   const lines = ["## THIS BEAT'S PROSE"];
   if (hint) {
@@ -1804,6 +1814,19 @@ export function formatBeatProseBlock({ usedImages = [], beatShape = null, levity
       'The recent narrations made these comparisons. Do not use any of them again, or another',
       'drawn from the same source:',
       ...images.map(i => `- ${i}`),
+    );
+  }
+  // The details the recent narrations kept coming back to (NARRATION-REFRAINS-RISING,
+  // round 7: Tamsin's pen, the ledger boy, the data chit, beat after beat).
+  if (worn.length) {
+    lines.push(
+      '',
+      '### DETAILS ALREADY WORN',
+      '',
+      'The recent narrations kept coming back to these. Reach for something else this beat —',
+      'another sense, another person, another thing in the place; use one again only where the',
+      'player\'s line turns on it:',
+      ...worn.map(w => `- ${w}`),
     );
   }
   return lines.join('\n');
@@ -2262,6 +2285,7 @@ const ANSWER_BLOCK =
  *   Selects the role description and downstream wording. Defaults to
  *   "move_resolution" for back-compat with existing call sites and tests.
  * @param {string[]} [extras.usedImages]       — the comparisons the recent narrations made ([8d])
+ * @param {string[]} [extras.wornDetails]      — the details the recent narrations kept coming back to ([8d])
  * @param {{ hint: string }|null} [extras.beatShape] — the shape picked for this beat ([8d])
  * @param {{ text: string, changesText?: string }|null} [extras.worldSnapshot] — the world snapshot's
  *   block and what changed since, rendered (issue #357)
@@ -2321,6 +2345,7 @@ export function buildNarratorSystemBlocks(
     decideNowRequests    = null,
     plannedSubjects      = [],
     usedImages           = [],
+    wornDetails          = [],
     beatShape            = null,
     worldSnapshot        = null,
     inPlay               = null,
@@ -2721,7 +2746,7 @@ export function buildNarratorSystemBlocks(
   // for the beat, the levity permission said again where the outcome is, and
   // the comparisons the recent narrations already made. The beat modes only.
   if (BEAT_PROSE_MODES.has(resolvedMode)) {
-    const beatProse = formatBeatProseBlock({ usedImages, beatShape, levity: narrationLevity });
+    const beatProse = formatBeatProseBlock({ usedImages, wornDetails, beatShape, levity: narrationLevity });
     if (beatProse) parts.push(beatProse);
   }
 
@@ -3091,18 +3116,23 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       'that result\'s place — once — and add "rerolled": "<the result it replaces>" to that entry.',
     );
     const rerollOf = (x) => (typeof x?.reroll === 'string' && x.reroll ? ` Re-roll: ${x.reroll}.` : '');
+    // A vow that asks who is won by a name (VOW-FULFILLED-UNANSWERED): its
+    // truth names the one behind it — and one that names no one is given a
+    // name from the name oracle when it is filed (secrets.js namedIfAWhoVow).
+    const whoOf = (kind, name) => (kind === 'vow' && vowAsksWho(name)
+      ? ' Its truth names the one behind it — a person, by name: someone the story has met, or a new name.' : '');
     for (const q of requests) {
       const seeds = Array.isArray(q.oracleSeeds) && q.oracleSeeds.length ? ` Oracle: ${q.oracleSeeds.join('; ')}.` : '';
       const journey = q.kind === 'expedition'
         ? ' Its truth is what waits at the end, its clues are 2-4 waypoints in order, its escalation the danger along the way.'
         : '';
-      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${journey}${seeds}${rerollOf(q)}`);
+      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${journey}${whoOf(q.kind, q.label)}${seeds}${rerollOf(q)}`);
     }
     for (const r of pending) {
       const seeds = Array.isArray(r.oracleSeeds) && r.oracleSeeds.length ? ` Oracle: ${r.oracleSeeds.join('; ')}` : '';
       const what = r.kind === 'mystery' && r.question
         ? `the hidden answer to ${skeletonHeading(r).replace(/^Mystery — /, '')}.${seeds}${seeds ? ' — use the pair that fits.' : ''}`
-        : `${skeletonHeading(r)}.${seeds}`;
+        : `${skeletonHeading(r)}.${whoOf(r.kind, r.subject?.name)}${seeds}`;
       lines.push(`- id ${r.id}: ${what}${rerollOf(r)}`);
     }
     // Issue #354 P2-30: one enemy named three ways got three plans. Names

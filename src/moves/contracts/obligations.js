@@ -55,6 +55,11 @@
  *   [whereabouts] what the line names elsewhere — another place, a person at
  *                one — is reached only by a journey's move (issue #393 D6;
  *                factContinuity/whereabouts.js elsewhereOf)
+ *   [here]       where the characters are by the record, on every beat of
+ *                play but a journey's move: the narration's frame, its
+ *                present and its prose never put them at another place
+ *                (CHARACTERS-MOVED-BY-THE-NARRATION, round 7; whereabouts.js
+ *                hereOf; held by checks.js hereViolations)
  *   [dice]       what the dice decided of what the player's line names
  *                stands over what the line takes for granted (issue #389 #2,
  *                LINE-CLAIM-OVER-THE-DICE; narrator.js diceFactsOf)
@@ -393,6 +398,21 @@ export const OBLIGATION_KINDS = Object.freeze({
     },
     judge: ({ places = [], people = [] }) => `The narration has the characters walk to, travel to or arrive at ${places.length ? namesList(places) : "another place"}`
       + `${people.length ? `, or has ${namesList(people)} with them in person` : ""} — with no journey's move.`,
+  }),
+  // Where the characters are, by the record (CHARACTERS-MOVED-BY-THE-NARRATION,
+  // the seventh live round): the record held at a60–a64 — five frames naming
+  // the Hollow Spire docks were refused for it — and the prose posted anyway
+  // ("The skiff clears the ring and noses down toward Hollow Spire's docks"),
+  // and the beats after it followed the prose. Certain: the fact block's frame,
+  // its present and the prose are read against the record before the
+  // narration posts (checks.js hereViolations). Never on a journey's own move.
+  here: Object.freeze({
+    list: "NOT SO", check: "certain",
+    text: ({ here = null, underway = null } = {}) => (here
+      ? `The characters are at ${here}: they go to another place only by a journey's move — never narrate them reaching one — `
+        + `and the fact block's "location" is a spot within ${here}.`
+      : `The characters are between places, on the expedition ${underway}: they reach a place only by the journey's move — `
+        + "never narrate them arriving at one."),
   }),
   // What the dice decided about what the player's line names (issue #389
   // #2, LINE-CLAIM-OVER-THE-DICE — the maintainer: "Players can't overrule
@@ -736,22 +756,42 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
  *   dice?: Array<{ subject: string, fact: string, words: string[] }>,
  *   whereabouts?: { here: string|null, underway: string|null, places: Array<{ name: string }>,
  *     people: Array<{ name: string, where: string }>, words: string[] }|null,
+ *   here?: { here: string|null, underway: string|null, places: Array<{ id: string, name: string }>,
+ *     people: Array<{ name: string, where: string, placeName: string|null }>, markers: string[] }|null,
  *   madeLine?: boolean }} input — `madeLine`: a move pressed on a card, its line the card's ([unsaid]);
- *   `person`: a second-person set-piece's character, by the names the prose must not call them ([person])
+ *   `person`: a second-person narration's character — a set-piece's, or a beat of play's — by the names
+ *   the prose must not call them ([person]); `here`: where the record has the characters, the other
+ *   places and the people at one (whereabouts.js hereOf) — [here] on a beat of play but a journey's move
  * @returns {Array<{ kind: string, list: string, text: string }>}
  */
 export function obligationsFor({ mode, resolution = null, refusal = null, offer = null, note = null, oracle = null,
   situation = null, line: said = "", cast = [], speaker = null, chosenSince = [], material = null, person = null, madeLine = false,
-  dice = [], whereabouts = null } = {}) {
+  dice = [], whereabouts = null, here = null } = {}) {
   const out = [];
+  const journey = mode === "move" && JOURNEY_MOVES.has(resolution?.moveId);
+  // Where the characters are, by the record (CHARACTERS-MOVED-BY-THE-NARRATION,
+  // round 7) — every beat of play but a journey's own move. Its data rides on
+  // the line for its certain check (checks.js hereViolations).
+  const atPlace = (!journey && here && typeof here === "object" && (here.here || here.underway)) ? here : null;
+  const where = () => (atPlace ? [{ ...line("here", atPlace),
+    here: atPlace.here ?? null, underway: atPlace.here ? null : (atPlace.underway ?? null),
+    places: Array.isArray(atPlace.places) ? atPlace.places : [],
+    people: Array.isArray(atPlace.people) ? atPlace.people : [],
+    markers: Array.isArray(atPlace.markers) ? atPlace.markers : [] }] : []);
   // What the line names elsewhere (issue #393 D6) — never on a journey's own
   // move: Set a Course and the expedition moves are how the characters get there.
+  // With [here] told, its first sentence is [here]'s.
   const elsewhere = () => {
     const w = whereabouts && typeof whereabouts === "object" ? whereabouts : null;
     if (!w || (!(w.places ?? []).length && !(w.people ?? []).length)) return [];
-    if (mode === "move" && JOURNEY_MOVES.has(resolution?.moveId)) return [];
-    return [{ ...line("whereabouts", w), words: Array.isArray(w.words) ? w.words : [] }];
+    if (journey) return [];
+    const told = atPlace ? { ...w, here: null, underway: null } : w;
+    return [{ ...line("whereabouts", told), words: Array.isArray(w.words) ? w.words : [] }];
   };
+  // A second-person beat of play's character is "you" (BEAT-IN-THE-THIRD-PERSON,
+  // round 7: a11, a69, a72) — as a set-piece's is (issue #389 #4).
+  const personNames = Array.isArray(person?.names) ? [...new Set(person.names.map(n => String(n ?? "").trim()).filter(n => n.length >= 2))] : [];
+  const you = () => (personNames.length ? [{ ...line("person", { names: personNames }), names: personNames }] : []);
   // What the dice decided about what the line names: told after the state (issue #389 #2).
   const decided = () => (Array.isArray(dice) ? dice : []).filter(f => f?.subject && f?.fact)
     .map(f => ({ ...line("dice", f), words: Array.isArray(f.words) ? f.words : [] }));
@@ -764,19 +804,23 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     if (refusal?.premise) out.push(line("premise", { refusal }));
     if (offer) out.push(line("offer", { offer }));
     out.push(...state());
+    out.push(...where());
     out.push(...elsewhere());
     out.push(...decided());
     out.push(line("sheet", { mode, refused: !!refusal }));
     out.push(line("apparatus", { offer }));
+    out.push(...you());
   } else if (mode === "move") {
     out.push(...since());
     out.push(...resultObligations(resolution ?? (note ? { gateNote: note } : null), { speaker }));
     if (madeLine === true) out.push(line("unsaid"));
     out.push(...state());
+    out.push(...where());
     out.push(...elsewhere());
     out.push(...decided());
     out.push(line("sheet", { mode }));
     out.push(line("apparatus", {}));
+    out.push(...you());
   } else if (mode === "round-entry") {
     if (resolution && resolution.kind === "move") out.push(...resultObligations(resolution, { speaker, entry: true }));
     else if (refusal?.premise) out.push(line("premise", { refusal }));
@@ -798,8 +842,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
         pairs: Array.isArray(material.pairs) ? material.pairs : [],
         onRecord: Array.isArray(material.onRecord) ? material.onRecord : [] });
     }
-    const names = Array.isArray(person?.names) ? [...new Set(person.names.map(n => String(n ?? "").trim()).filter(n => n.length >= 2))] : [];
-    if (names.length) out.push({ ...line("person", { names }), names });
+    out.push(...you());
   }
   return out;
 }

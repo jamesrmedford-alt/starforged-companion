@@ -1034,7 +1034,10 @@ CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 entries, each clipped, `extras.pinnedChronicle`: the Chronicle panel's pin
 was saved onto a flag nothing read, issue #345 AA07) · [8b]
 party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
-P2-21, P2-22, P2-27 — the move, paced and round modes only; its shape is
+P2-21, P2-22, P2-27 — the move, paced and round modes only; with DETAILS
+ALREADY WORN since round 7 — `beatVariety`'s `wornDetails` over the same six
+cards, names, the scene frame's words and the player's line apart,
+NARRATION-REFRAINS-RISING — beside IMAGES ALREADY USED; its shape is
 said as the narrator's instruction about the narration, under `BEAT_SHAPE_LABEL`,
 never as a director's "Open on…", which came back as prose — issue #377 item 2:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
@@ -1280,7 +1283,15 @@ together — `materialViolations`, issue #388 #11; label
 `narrateSessionVignette:reask`) and, in second person on an opening or a
 spotlight, [person] (the character's name outside quoted speech —
 `personViolations`, issue #389 #4; a closing cuts away and is not held to
-it); **floor** — [vow]
+it) — and on every paced and move narration told in the second person
+(`narrator.js beatPersonOf`, BEAT-IN-THE-THIRD-PERSON, round 7) — and, on every
+beat of play but a journey's move, [here] (`hereViolations`, which reads the
+fact block too: its frame naming another recorded settlement or planet, its
+present holding in person someone the record has at one, a sentence taking
+"you" or their craft there — each with the note the re-ask carries; the data
+from `whereabouts.js hereOf`, `extras.here`; CHARACTERS-MOVED-BY-THE-NARRATION,
+round 7 — a [here] re-ask on a paced line makes its card's Roll Set a Course
+for the place it found, `journeyOfferOf`); **floor** — [vow]
 (a word of the vow's name, or what is still not known) and [chosen]
 (logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
 in the prose ([premise] by its refusal's code — "starts on the cuts" under
@@ -1340,7 +1351,11 @@ another recorded place — their own LAST KNOWN location, else the place of the
 latest scene whose frames had them present (`lastSeenWith`, the session
 record); a person in the scene's frame is here. A judge line, tripped by the
 names' words (`elsewhereWords`, generic place words left out); never on a
-journey's own move (Set a Course, Undertake or Finish an Expedition). The same
+journey's own move (Set a Course, Undertake or Finish an Expedition). With
+[here] beside it (every beat of play since round 7), its first sentence is
+[here]'s. A voice over a comm is the frame's `remote`, never `present` (the
+fact block's rule; a "(on comms)" mark the parser moves there), so it is no
+one "in the scene's frame"; THE SCENE shows it as `Remote:`. The same
 read gives THE SCENE its `Elsewhere:` lines ("Tamsin Okoro — at Hollow Spire,
 not here"; "Hollow Spire — another place, reached only by a journey's move"),
 and a connection's card with no LAST KNOWN location says LAST SEEN with the
@@ -1575,7 +1590,11 @@ and marks what the beat showed — `reveals`: a clue, a step played, an ending,
 the truth itself (only once decided — a "truth" reveal of a plan still waiting
 for its decision changes nothing, issue #362 AC16 — and only when the prose
 told it: `secrets.withoutUntoldTruths`, run in `applyNarratorSidecar` on the
-narration's own reveals before the ledger and the plans read them, takes
+narration's own reveals before the ledger and the plans read them — and, after
+it, `sheetClaims.withoutMeterClaims`, which drops a new truth or state change
+telling a PC's (or their ship's) health, spirit, supply or momentum changing:
+the sheet is the only source of meters (PRICE-TOLD-WITH-A-COST-NOT-PAID, round
+7's "the effort cost Mira supply") — takes
 "truth" off a reveal whose prose has none of the truth's own words
 (`skeletons.proseTellsTruth`, the plan's subject and question left out; the
 reveal's clues, step and ending stand, and the GM's console names the plan).

@@ -116,7 +116,9 @@ describe('a step toward a vow said in the fiction: offered on the card, made by 
     expect(forced, 'the forced move was posted').toBeTruthy();
     expect(forced.flags[MODULE_ID]).toMatchObject({ bypassPacing: true, forcedMoveId: 'reach_a_milestone' });
     expect(forced.speaker?.actor).toBe('pc-mira');
-    expect(forced.content).toBe(LINE);
+    // The Roll posts the move rolled from the offer, its line on the flags (OFFER-FLOW-FRICTION, offerLine.js).
+    expect(forced.content).toContain('Reach a Milestone — rolled from the offer above');
+    expect(forced.flags[MODULE_ID].offerLine).toBe(LINE);
 
     // A dangerous vow: a milestone is two boxes (8 ticks).
     expect(vow.system.current).toBe(24);

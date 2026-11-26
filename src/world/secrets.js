@@ -35,7 +35,12 @@ import {
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
   normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel, selectRelevantSkeletons,
   MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS, PLAN_REQUESTS_PER_NARRATION, proseTellsTruth,
+  truthNamesSomeone, truthWithWho,
 } from "./skeletons.js";
+import { vowAsksWho } from "./tellingWords.js";
+import { collectAllEntities } from "../context/relevanceResolver.js";
+import { getPlayerActors } from "../character/actorBridge.js";
+import { rollOracle } from "../oracles/roller.js";
 import { GM_RELAY_SOCKET, hasActiveGM } from "../multiplayer/gmRelay.js";
 
 import { sameSubject, personNameMatch, withoutTitle, isBareTitle } from "../entities/nameMatch.js";
@@ -944,6 +949,76 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
   return out;
 }
 
+/** The kinds of entity that are people, for a plan's truth (VOW-FULFILLED-UNANSWERED). */
+const PERSON_TYPES = new Set(["connection", "npc"]);
+
+/**
+ * The story's names, for whether a plan's truth names a person
+ * (skeletons.js truthNamesSomeone): its people — the roster's NPC cards — and
+ * the names that are no person's: its places, ships and factions, the player
+ * characters (never the one behind a vow they swore), and the vow's own
+ * words. Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @param {Object} record — the plan
+ * @returns {{ people: string[], notNames: string[] }}
+ */
+function namesOfTheStory(campaignState, record) {
+  const people = [];
+  const notNames = [String(record?.subject?.name ?? "")];
+  try {
+    for (const e of collectAllEntities(campaignState ?? {})) {
+      const name = String(e?.name ?? "").trim();
+      if (!name) continue;
+      (PERSON_TYPES.has(e?.entityType) ? people : notNames).push(name);
+    }
+  } catch (err) { console.debug?.(`${MODULE_ID} | secrets: the story's names were not read:`, err?.message ?? err); }
+  try { for (const actor of getPlayerActors() ?? []) if (actor?.name) notNames.push(actor.name); }
+  catch (err) { console.debug?.(`${MODULE_ID} | secrets: the player characters were not read:`, err?.message ?? err); }
+  return { people, notNames };
+}
+
+/** A name drawn from the name oracle — Given Name and Family Name — or null when it draws none. */
+function drawPersonName() {
+  try {
+    const given = rollOracle("given_name")?.result;
+    const family = rollOracle("family_name")?.result;
+    const name = [given, family].map(x => String(x ?? "").trim()).filter(x => x && x !== "—").join(" ");
+    return name || null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: no name was drawn for the one behind a vow:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * A decided plan for a vow that asks who, whose truth names no one, is given
+ * the one behind it — a name drawn from the name oracle, written into its
+ * truth (VOW-FULFILLED-UNANSWERED: five live long hauls running, a "find who"
+ * vow was fulfilled with "No name is written yet" — the plan's truth held
+ * none, and the fulfilment may tell nothing more than its truth). The same
+ * narration's version (`narrationId`). Any other plan, or one that names
+ * someone, as it is. Never throws.
+ *
+ * @param {Object|null} record — the plan as written
+ * @param {{ narrationId?: string|null, campaignState?: Object|null }} [opts]
+ * @returns {Promise<Object|null>} the plan as it now stands
+ */
+async function namedIfAWhoVow(record, { narrationId = null, campaignState = null } = {}) {
+  try {
+    if (!record?.id || record.kind !== "vow" || !vowAsksWho(record.subject?.name) || !String(record.truth ?? "").trim()) return record;
+    if (truthNamesSomeone(record.truth, namesOfTheStory(campaignState, record))) return record;
+    const name = drawPersonName();
+    if (!name) return record;
+    const named = await updateSkeleton(record.id, r => ({ ...r, truth: truthWithWho(r.truth, name) }), { narrationId });
+    if (named) console.info(`${MODULE_ID} | secrets: the vow "${record.subject?.name}" asks who and its plan named no one — the one behind it is ${name} (from the name oracle).`);
+    return named ?? record;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the one behind a vow was not named:`, err?.message ?? err);
+    return record;
+  }
+}
+
 /**
  * Apply a narration's plan side-data on the canonical GM (narrator.js
  * applySidecarSideData; a relayed sidecar's too):
@@ -1011,7 +1086,8 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const planned = req.subject ? null
         : (plannedAs(plan?.sameAs, req.kind) ?? (plan?.subject ? activePlanAbout(plan.subject, req.kind) : null));
       if (planned) {
-        const merged = await updateSkeleton(planned.id, r => withAlias(mergePlanInto(r, plan), plan.subject), { narrationId });
+        const merged = await namedIfAWhoVow(await updateSkeleton(planned.id, r => withAlias(mergePlanInto(r, plan), plan.subject), { narrationId }),
+          { narrationId, campaignState });
         if (merged) {
           out.decided += 1;
           reportSnapshotEvent("plan_decided");
@@ -1029,10 +1105,10 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       if (known) {
         const link = req.subject.id && !known.subject.id ? { ...req.subject } : null;
         if (known.status === "active" && (plan || link)) {
-          const joined = await updateSkeleton(known.id, r => {
+          const joined = await namedIfAWhoVow(await updateSkeleton(known.id, r => {
             const next = plan ? mergePlanInto(r, plan) : r;
             return link ? { ...next, subject: link } : next;
-          }, { narrationId });
+          }, { narrationId }), { narrationId, campaignState });
           if (joined && plan) {
             out.decided += 1;
             reportSnapshotEvent("plan_decided");
@@ -1055,7 +1131,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       };
       const decided = plan ? applyPlanToSkeleton(normaliseSkeleton({ ...base, id: "pending" }), plan) : base;
       const record = req.subject && plan ? { ...decided, subject: { ...req.subject } } : decided;
-      const filed = await createSkeleton(record, { narrationId });
+      const filed = await namedIfAWhoVow(await createSkeleton(record, { narrationId }), { narrationId, campaignState });
       if (filed) {
         out.filed += 1;
         await showRollsIfSet(filed);
@@ -1078,7 +1154,8 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
         }
         continue;
       }
-      const decided = await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId });
+      const decided = await namedIfAWhoVow(await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId }),
+        { narrationId, campaignState });
       if (decided) {
         out.decided += 1;
         reportSnapshotEvent("plan_decided");

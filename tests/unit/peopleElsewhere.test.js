@@ -195,7 +195,10 @@ describe('a64, through the paced narration', () => {
     const system = narration.system.map(b => b.text).join('\n');
     expect(system).toContain('  Elsewhere: Tamsin Okoro — at Hollow Spire, not here');
     expect(system).toContain('  Elsewhere: Hollow Spire — another place, reached only by a journey\'s move');
-    expect(narration.messages[0].content).toContain('- [whereabouts] The characters are at Bleakhold Station. Hollow Spire is another place');
+    // Where the characters are is [here]'s, on every beat of play since round 7
+    // (narrationHeldToThePlace.test.js); [whereabouts] tells what the line names elsewhere.
+    expect(narration.messages[0].content).toContain('- [here] The characters are at Bleakhold Station');
+    expect(narration.messages[0].content).toContain('- [whereabouts] Hollow Spire is another place');
     // Her card says where the record last had her with the characters.
     expect(system).toContain('LAST SEEN with the characters (the session record): at Hollow Spire (Session 2)');
   });

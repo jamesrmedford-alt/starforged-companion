@@ -163,9 +163,11 @@ export function readLineSituation(actor, { campaignState = null, line = "" } = {
   const frame = campaignState?.sceneFrame;
   if (frame && typeof frame === "object") {
     const present = Array.isArray(frame.present) ? frame.present.map(clean).filter(Boolean) : [];
+    // Heard or seen over a comm, not here in person (round 7's a57).
+    const remote = Array.isArray(frame.remote) ? frame.remote.map(clean).filter(Boolean) : [];
     const where = clean(frame.location) || null;
     const now = clean(frame.situation) || null;
-    if (where || present.length || now) situation.frame = { where, present, now };
+    if (where || present.length || remote.length || now) situation.frame = { where, present, remote, now };
   }
   situation.site = getCurrentSiteKind(campaignState ?? {});
   // The place, the ship and the frame as one read, with the table's new names
@@ -325,6 +327,7 @@ export function buildReaderSituationBlock(situation) {
     const parts = [
       s.frame.where ? `where: ${s.frame.where}` : null,
       s.frame.present?.length ? `present: ${capped(s.frame.present, ", ")}` : null,
+      s.frame.remote?.length ? `over a comm, not here: ${capped(s.frame.remote, ", ")}` : null,
       s.frame.now ? `now: ${s.frame.now}` : null,
     ].filter(Boolean);
     lines.push(`- Scene — ${parts.join("; ")}.`);

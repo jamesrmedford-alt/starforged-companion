@@ -191,6 +191,74 @@ export function elsewhereOf(line, campaignState, { read = undefined, underway = 
   }
 }
 
+/** What another place is for [here]'s certain check: a settlement or a planet. A location records no settlement (D3 as built), so it may be a spot within the characters' own. */
+const OTHER_PLACE_TYPES = new Set(['settlement', 'planet']);
+
+/** At most this many places and people ride on a beat's [here]. */
+const HERE_MAX = 12;
+
+/** A place's name with its generic trailing words dropped ("Bleakhold Station" → "bleakhold"), for telling one place within another's name. */
+function placeCore(name) {
+  const words = lower(name).split(' ');
+  while (words.length > 1 && ['station', 'port', 'outpost', 'base', 'colony', 'hub', 'city', 'town', 'habitat', 'settlement', 'depot'].includes(words.at(-1))) words.pop();
+  return words.join(' ');
+}
+
+/**
+ * Where the record has the characters, for a beat of play's certain [here]
+ * (CHARACTERS-MOVED-BY-THE-NARRATION, the seventh live round): their place
+ * (`currentLocationId`), or the expedition they are on between places; every
+ * other recorded settlement and planet; and every person — the roster's NPC
+ * cards — whose whereabouts (whereaboutsOf) are one of those places. A place
+ * whose name holds the characters' own, or is held in it, is not another
+ * ("Hollow Spire docks" within "Hollow Spire"). The command vehicle's name
+ * rides along: the prose's "you" may be told as their ship. Null when the
+ * record has the characters nowhere. Never throws.
+ *
+ * @param {Object} campaignState
+ * @param {{ read?: Object|null, underway?: string, vehicle?: string|null }} [opts] — `read`: the campaign's record
+ *   (default: read here); `underway`: the open expedition's label; `vehicle`: the command vehicle's name
+ * @returns {{ here: string|null, hereId: string|null, underway: string|null, places: Array<{ id: string, name: string }>,
+ *   people: Array<{ name: string, where: string, placeName: string|null }>, markers: string[] }|null}
+ */
+export function hereOf(campaignState, { read = undefined, underway = '', vehicle = null } = {}) {
+  try {
+    if (!campaignState) return null;
+    const hereId = campaignState.currentLocationId ?? null;
+    const entities = collectAllEntities(campaignState);
+    const here = hereId ? clean(entities.find(e => idOf(e) === hereId)?.name) || null : null;
+    const way = here ? null : (clean(underway) || null);
+    if (!here && !way) return null;
+    const hereCore = here ? placeCore(here) : '';
+    const within = (name) => {
+      if (!hereCore) return false;
+      const core = placeCore(name);
+      return !!core && (hereCore.includes(core) || core.includes(hereCore));
+    };
+    const places = [];
+    for (const e of entities) {
+      const name = clean(e?.name);
+      if (!OTHER_PLACE_TYPES.has(e?.entityType) || idOf(e) === hereId || !name || within(name)) continue;
+      if (!places.some(p => p.id === idOf(e))) places.push({ id: idOf(e), name });
+    }
+    const people = [];
+    const named = entities.filter(e => PEOPLE_TYPES.has(e?.entityType) && clean(e.name));
+    if (named.length && places.length) {
+      const record = read === undefined ? readRecord({ session: 'campaign' }) : read;
+      for (const e of named) {
+        const w = whereaboutsOf({ name: e.name, entityId: idOf(e) }, { campaignState, read: record });
+        if (!w?.placeId || !places.some(p => p.id === w.placeId)) continue;
+        people.push({ name: clean(e.name), where: w.where, placeName: w.placeName ?? null });
+        if (people.length >= HERE_MAX) break;
+      }
+    }
+    return { here, hereId, underway: way, places: places.slice(0, HERE_MAX), people, markers: clean(vehicle) ? [clean(vehicle)] : [] };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | whereabouts: where the record has the characters was not read — [here] not told:`, err?.message ?? err);
+    return null;
+  }
+}
+
 /**
  * The words that trip [whereabouts]'s judge (D6): the other places' names and
  * the people's, word by word (three letters or more), the possessive too. Pure.

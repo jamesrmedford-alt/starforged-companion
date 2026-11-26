@@ -911,6 +911,14 @@ export function placeNamedBy(where, campaignState) {
 /** What the characters' place can be: as `!at` names one — never a ship. */
 const WHERE_TYPES = new Set(['settlement', 'planet', 'location']);
 
+/** Whether a frame's present entry names a person — the whole name, or a word of it of three letters or more (whereabouts.js nameSaidIn). */
+function nameInEntry(entry, name) {
+  const t = ` ${String(entry ?? '').toLowerCase().replace(/['’]s\b/g, '').replace(/[^\p{L}\p{N}'’\s-]+/gu, ' ').replace(/\s+/g, ' ')} `;
+  const n = String(name ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!n || !t.trim()) return false;
+  return [n, ...n.split(' ').filter(w => w.length >= 3)].some(w => t.includes(` ${w} `));
+}
+
 /**
  * The frame a narration may keep (issue #393 D4 — the frame never names
  * another place; overhaul 8, CHARACTERS-MOVED-BY-THE-NARRATION). While the
@@ -924,13 +932,30 @@ const WHERE_TYPES = new Set(['settlement', 'planet', 'location']);
  * taken whole. A line no longer walks the characters to another place (D3):
  * only travel, the GM's `!at` and the Entities panel move them. Never throws.
  *
+ * Nor does its present hold, in person, someone the record has at another
+ * place (`elsewhere` — the beat's [here] people, whereabouts.js hereOf): a
+ * narration whose re-ask still put them here keeps them out of the record, so
+ * the next beat does not read them as here (CHARACTERS-MOVED-BY-THE-NARRATION,
+ * round 7 — a57's comm call made Tamsin "present" at Bleakhold). One heard
+ * over a comm is under `remote`, and stays there.
+ *
  * @param {Object|null} frame — the fact block's frame, as the beat's rules made it (playersFrame / bookendFrame)
  * @param {Object|null} prior — the stored frame
  * @param {Object} campaignState
+ * @param {{ elsewhere?: string[] }} [opts] — the names of the people the record has at another place
  * @returns {Object|null} the frame to apply
  */
-export function framedAtThePlace(frame, prior, campaignState) {
+export function framedAtThePlace(frame, prior, campaignState, { elsewhere = [] } = {}) {
   try {
+    const away = (Array.isArray(elsewhere) ? elsewhere : []).map(n => String(n ?? '').trim()).filter(Boolean);
+    if (frame && away.length && Array.isArray(frame.present) && frame.present.length) {
+      const kept = frame.present.filter(p => !away.some(name => nameInEntry(p, name)));
+      if (kept.length !== frame.present.length) {
+        console.debug?.(`${MODULE_ID} | sceneLifecycle: the frame's present named someone the record has elsewhere — `
+          + 'kept out of the record (round 7, CHARACTERS-MOVED-BY-THE-NARRATION).');
+        frame = { ...frame, present: kept };
+      }
+    }
     const here = campaignState?.currentLocationId ?? null;
     const where = typeof frame?.location === 'string' ? frame.location.trim() : '';
     if (!frame || !here || !where) return frame;

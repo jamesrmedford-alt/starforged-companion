@@ -468,7 +468,10 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   stated whatever the model. The offer's Roll (`cardActions.applyPacedRoll`)
   forces the move with no target and asks no reader, so the connection is
   found from the player's line — the next bullet's `enrichBondedDevelop`
-  (`favourPacedRollDevelopsNamedConnection.test.js` walks it). It carries
+  (`favourPacedRollDevelopsNamedConnection.test.js` walks it); the line rides
+  on the Roll's flags as `offerLine` (`offerLine.js lineOf` — the Roll posts
+  the move, rolled from the offer above, not the line again: OFFER-FLOW-FRICTION,
+  round 7). It carries
   `fromOffer`: the move's narration is told the line was narrated on the
   offer and goes on from there (issue #388 #14, BEAT-TOLD-TWICE;
   `offeredRollGoesOnFromItsOffer.test.js`). A plea for trust or a tie is

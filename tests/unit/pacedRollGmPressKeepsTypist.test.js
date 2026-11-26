@@ -92,7 +92,9 @@ describe('issue #362 AC74 — a GM\'s Roll on a PC-less player\'s line posts it 
     await gmPresses(card);
     expect(forcedPosts()).toHaveLength(1);
     expect(forcedPosts()[0].speaker?.alias).toBe('Pat');
-    expect(forcedPosts()[0].content).toBe(LINE);
+    // The Roll posts the move rolled from the offer, its line on the flags (OFFER-FLOW-FRICTION, offerLine.js).
+    expect(forcedPosts()[0].content).toContain('rolled from the offer above');
+    expect(forcedPosts()[0].flags[MODULE_ID].offerLine).toBe(LINE);
   }, 30_000);
 
   it('control: a card that names its roller is posted as that roller', async () => {
@@ -109,7 +111,9 @@ describe('issue #362 AC74 — a GM\'s Roll on a PC-less player\'s line posts it 
     const card = await pacedCardFor();
     await gmPresses(card);
     expect(forcedPosts()).toHaveLength(1);
-    expect(forcedPosts()[0].content).toBe(LINE);
+    // The Roll posts the move rolled from the offer, its line on the flags (OFFER-FLOW-FRICTION, offerLine.js).
+    expect(forcedPosts()[0].content).toContain('rolled from the offer above');
+    expect(forcedPosts()[0].flags[MODULE_ID].offerLine).toBe(LINE);
     // It spoke as { actor: 'pc-kira', alias: 'Kira' } — another player's character (AC74).
     expect(forcedPosts()[0].speaker?.alias, 'the line keeps the speaker it was typed under').toBe('Pat');
     expect(forcedPosts()[0].speaker?.actor ?? null, "not another player's character").toBe(null);

@@ -157,6 +157,87 @@ export function recentImages(narrations, { cards = IMAGE_SOURCE_CARDS, limit = I
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Details already worn (NARRATION-REFRAINS-RISING, the seventh live round)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A detail is worn when it is in this many of the recent narrations… */
+export const WORN_IN_CARDS = 3;
+/** …of the newest this many. */
+export const WORN_SOURCE_CARDS = 6;
+/** The most worn details listed. */
+export const WORN_LISTED_MAX = 6;
+
+// Words that carry no detail of their own: the grammar, the generic verbs of
+// narration, and the scene's ordinary motion.
+const WORN_STOP = new Set(`about above across after again against along also although among another around away back because
+before behind being below beneath beside between beyond both cannot could does doing done down during each either else enough
+even ever every from have having here hers herself himself into itself just least less like little many more most much must
+near neither never next nothing once only onto other others ours over perhaps quite rather same says said should since some
+something somewhere soon still such than that their theirs them then there these they thing things this those though through
+till together toward towards under until upon very what when where whether which while whom whose will with within without
+would yours your yourself looks look looked turns turn turned takes take took gives give gave makes make made goes went comes
+come came keeps keep kept holds held lets sets puts gets says asks asked tells told knows know knew sees seen seem seems
+seemed wait waits waiting moment long first last next time again already almost quiet quietly slowly enough
+the and her his him you she was for but not all one out now too has had its who how why can did get got let may our own say
+see way yet off are any few new old two put set ask own lot far yes per via nor than its ago due end met use`.split(/\s+/).filter(Boolean));
+
+/** A narration's content words, in order: lowercase, three letters or more ("pen", "boy"), no stop word and no name — its italic offer line left out. */
+function detailWords(text, names) {
+  const prose = String(text ?? '').replace(/<[^>]*>/g, ' ').replace(/\*[^*\n]+\*|(?<![\p{L}\p{N}])_[^_\n]+_(?![\p{L}\p{N}])/gu, ' ')
+    .replace(/[*_]/g, ' ').toLowerCase();
+  return prose.split(/[^\p{L}'’-]+/u)
+    .map(w => w.replace(/^['’-]+|['’-]+$/g, '').replace(/['’]s$/, ''))
+    .map(w => (w.length >= 3 && !WORN_STOP.has(w) && !names.has(w) ? w : null));
+}
+
+/**
+ * The details the recent narrations kept coming back to — the seventh live
+ * round's cold read: "Tamsin's pen stops, scratches or hangs in almost every
+ * beat she appears in", "the ledger boy has stopped counting", "turns on her
+ * dead drive"; 39 words and phrases were in a third or more of a session's
+ * narrations (19 in round 4). A word or a pair of words, names apart, in
+ * WORN_IN_CARDS of the newest WORN_SOURCE_CARDS narrations; a pair before the
+ * words it holds, the most-worn first. What the narrator is told to reach past.
+ *
+ * @param {string[]} narrations — narrator prose, oldest first (the session's last cards)
+ * @param {{ names?: string[], keep?: string[], cards?: number, min?: number, limit?: number }} [opts] — `names`: the
+ *   story's names (people, places, ships), never listed — a name is the story's, not a refrain; `keep`: the
+ *   scene's own words and the player's line — what the scene is about is no refrain either
+ * @returns {string[]}
+ */
+export function wornDetails(narrations, { names = [], keep = [], cards = WORN_SOURCE_CARDS, min = WORN_IN_CARDS, limit = WORN_LISTED_MAX } = {}) {
+  const texts = (Array.isArray(narrations) ? narrations : []).filter(t => typeof t === 'string' && t.trim()).slice(-cards);
+  if (texts.length < min) return [];
+  const nameWords = new Set([...(names ?? []), ...(keep ?? [])].flatMap(n => String(n ?? '').toLowerCase().split(/[^\p{L}'’-]+/u))
+    .map(w => w.replace(/['’]s$/, '')).filter(w => w.length >= 3));
+  const df = new Map();       // phrase → in how many narrations
+  const newest = new Map();   // phrase → the newest narration it is in
+  texts.forEach((text, i) => {
+    const words = detailWords(text, nameWords);
+    const seen = new Set();
+    for (let k = 0; k < words.length; k++) {
+      if (!words[k]) continue;
+      seen.add(words[k]);
+      if (words[k + 1]) seen.add(`${words[k]} ${words[k + 1]}`);
+    }
+    for (const p of seen) { df.set(p, (df.get(p) ?? 0) + 1); newest.set(p, i); }
+  });
+  const worn = [...df.entries()].filter(([, n]) => n >= min)
+    .sort((a, b) => (b[1] - a[1]) || ((newest.get(b[0]) ?? 0) - (newest.get(a[0]) ?? 0))
+      || (b[0].split(' ').length - a[0].split(' ').length));
+  const out = [];
+  for (const [phrase] of worn) {
+    // A word a listed pair holds is the pair's; a pair holding a listed word replaces it.
+    if (phrase.includes(' ')) {
+      for (const w of phrase.split(' ')) { const at = out.indexOf(w); if (at >= 0) out.splice(at, 1); }
+    } else if (out.some(p => p.includes(' ') && p.split(' ').includes(phrase))) continue;
+    if (!out.includes(phrase)) out.push(phrase);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // A shape for each beat (P2-27)
 // ─────────────────────────────────────────────────────────────────────────────
 

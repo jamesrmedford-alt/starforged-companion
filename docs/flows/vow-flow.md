@@ -322,7 +322,9 @@ All real progress lands on **item ticks** (`system.current`) via
     "reach_a_milestone"` and its Roll button (the narrator's own closing hint,
     when it names another move, takes the button instead —
     `reconcileSuggestedMove`) → the press relays `paced.roll` →
-    `cardActions.applyPacedRoll` posts the line again as its speaker with
+    `cardActions.applyPacedRoll` posts the move, rolled from the offer, as its
+    speaker — the line on its flags as `offerLine`, read by `offerLine.js lineOf`
+    (OFFER-FLOW-FRICTION, round 7; it posted the line again until then) — with
     `forcedMoveId` → `readMove`'s forced interpretation (the move has no
     stat, so no model is asked) → the confirm dialog → the pipeline branch
     above: the roller's sole open vow is marked by its rank, several ask on
@@ -569,7 +571,15 @@ went by name alone, so a reworded vow lost its plan, issue #362 AC14); a
 typed swear with no vow Item behind it stays name-only); the scene's sidecar `plans` decides
 it into the GM-only Secrets journal (`secrets.applyPlanSideData` — a request
 about a subject that already has a plan, the same vow sworn again, files no
-second one, issue #362 AC14). No scene
+second one, issue #362 AC14). A vow that asks who (`tellingWords.vowAsksWho` —
+"Find who…", "whose", "unmask", "identify") is won by a name
+(VOW-FULFILLED-UNANSWERED, five live rounds running): DECIDE NOW tells its plan
+"Its truth names the one behind it", and a decided plan whose truth names no
+one (`truthNamesSomeone` — a story's person, or a name the truth gives that is
+no place's, ship's, faction's or the vow's own) is given one from the name
+oracle as it is filed (`secrets.namedIfAWhoVow`, Given Name + Family Name, "The
+one behind it is …", the deciding narration's version), so THIS BEAT ENDS A VOW
+has a name to tell. No scene
 (the setting off, no key, a failure): the request is filed with its roll
 alone (`secrets.fileRequestedPlan`) for a later narration to decide. The
 plan reaches the narrator as [6.6] UNREVEALED while its vow is the one the

@@ -300,19 +300,37 @@ function normaliseSceneFrame(frame) {
   if (!frame || typeof frame !== 'object' || Array.isArray(frame)) return null;
   const location  = typeof frame.location  === 'string' ? frame.location.trim()  : '';
   const situation = typeof frame.situation === 'string' ? frame.situation.trim() : '';
-  const present   = Array.isArray(frame.present)
+  const listed    = Array.isArray(frame.present)
     ? frame.present.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim())
     : [];
-  if (!location && !situation && !present.length) return null;
+  // Who is here in person, and who is heard or seen over a comm, a screen or a
+  // call (`remote` — CHARACTERS-MOVED-BY-THE-NARRATION, round 7: a57's comm call
+  // put Tamsin in "present", and the record read her as at Bleakhold). A
+  // present entry the narration marked as on the comm goes under remote.
+  const present = [];
+  const remote = [];
+  for (const p of listed) {
+    const bare = p.replace(COMM_MARK, '').trim();
+    if (bare !== p && bare) remote.push(bare); else present.push(p);
+  }
+  for (const r of Array.isArray(frame.remote) ? frame.remote : []) {
+    const name = typeof r === 'string' ? r.trim() : '';
+    if (name && !remote.includes(name)) remote.push(name);
+  }
+  if (!location && !situation && !present.length && !remote.length) return null;
   // The scene's question — what is being decided here — and whether this
   // beat answered it (issue #353 R2; kept by ledgers.applySceneFrame).
   const question  = typeof frame.question === 'string' ? frame.question.replace(/\s+/g, ' ').trim().slice(0, SCENE_QUESTION_MAX) : '';
   return {
     location, present, situation,
+    ...(remote.length ? { remote } : {}),
     ...(question ? { question } : {}),
     ...(frame.questionAnswered === true ? { questionAnswered: true } : {}),
   };
 }
+
+/** A present entry's own mark that its person is not here in person: "Tamsin Okoro (on comms)", "Vance — over the comm". */
+const COMM_MARK = /\s*(?:[([]\s*|[—–,-]\s*)(?:on|over|via|by|through)\s+(?:the\s+|a\s+)?(?:comms?|comm[- ]?link|radio|vid(?:eo)?(?:[- ]?link)?|screen|channel|call|hail)\s*[)\]]?\s*$/i;
 
 /** The longest scene question kept (a question, not a paragraph). */
 const SCENE_QUESTION_MAX = 160;
