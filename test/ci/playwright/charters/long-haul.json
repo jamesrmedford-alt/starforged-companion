@@ -167,7 +167,7 @@
         {
           "id": "F3-C",
           "set": "C",
-          "ask": "Who has the manifest in their keeping today?"
+          "ask": "Who has my cargo manifest in their keeping today?"
         }
       ]
     },
@@ -871,7 +871,7 @@
       "n": 26,
       "session": 3,
       "title": "Recap; ask probe set C; two baits",
-      "tell": "Type !recap. Then put these seven questions to the narrator, each as its own line, in this order and in exactly these words. Six are scene questions — @scene first — and one is plain: \"@scene One last check: what of my sister's do I have with me at this very moment?\"  \"@scene Which person in this sector would I trust with my life?\"  plain, no @scene: \"Who has the manifest in their keeping today?\"  \"@scene On what schedule did I swear to come back to her?\"  \"@scene Which station are we docked at tonight?\"  \"@scene What was the hostile vessel in our last battle christened?\"  \"@scene What is my bonded friend's full name now?\"  And last, these two, in exactly these words — the first a scene question, the second plain: \"@scene Didn't I leave the compass with Tamsin?\"  \"We are still docked at Hollow Spire, aren't we?\"",
+      "tell": "Type !recap. Then put these seven questions to the narrator, each as its own line, in this order and in exactly these words. Six are scene questions — @scene first — and one is plain: \"@scene One last check: what of my sister's do I have with me at this very moment?\"  \"@scene Which person in this sector would I trust with my life?\"  plain, no @scene: \"Who has my cargo manifest in their keeping today?\"  \"@scene On what schedule did I swear to come back to her?\"  \"@scene Which station are we docked at tonight?\"  \"@scene What was the hostile vessel in our last battle christened?\"  \"@scene What is my bonded friend's full name now?\"  And last, these two, in exactly these words — the first a scene question, the second plain: \"@scene Didn't I leave the compass with Tamsin?\"  \"We are still docked at Hollow Spire, aren't we?\"",
       "check": {
         "type": "probesAsked",
         "set": "C",
@@ -1568,7 +1568,7 @@
     {
       "beat": 26,
       "action": "say",
-      "text": "Who has the manifest in their keeping today?",
+      "text": "Who has my cargo manifest in their keeping today?",
       "probe": "F3"
     },
     {
