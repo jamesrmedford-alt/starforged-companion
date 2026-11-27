@@ -386,10 +386,17 @@ card that says so is posted after it (`afterMoveCard`, above) — for a held
 result too: the marks are the roll's, only its price and narration wait.
 An upgrade's added marks (Burn Momentum, Improve Result) post "Marked progress
 once more, for the upgraded result", so a second card no longer reads as a
-double count. A move the gate makes as another, a Strike in a bad spot being a
-Clash, carries its reason on the move card: "↪ Strike becomes Clash: the
-character is in a bad spot" (`gate.js` `insteadWhy` → `interpretation.rerouted`
-→ `index.js reroutedLine`).
+double count. A move made as another, a Strike in a bad spot being a Clash,
+carries its reason on the move card: "↪ Strike becomes Clash: the character is
+in a bad spot" (`interpretation.rerouted` → `resolution.rerouted` → `index.js
+reroutedLine`). It is recorded where the swap happens, with the position
+rule's one wording (`combat.js positionReason`): for a typed line, the
+reader's parse — its position remap, or the reply's own pick of the pair's
+other for a line that says the move ("I Strike at the cutter", `reader.js
+positionTwinSaid`) — or the router's gate (`readAndRoute.js` `readAs`, the
+gate's `insteadWhy`); for a move chosen on a card, the pipeline's gate. The
+first swap recorded is kept (issue #397, Code fix 2: round 8's typed "I
+Strike" reached the pipeline already a Clash, and its card said nothing).
 Since round 8 (FIGHT-PAST-ITS-END), a full track (40 ticks) is said in three
 places:
 - The "Combat progress" card adds "The track is full: another blow marks nothing

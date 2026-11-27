@@ -103,7 +103,7 @@ describe('one line, read once, against the whole situation', () => {
     expect(asked.userText).toMatch(/- Place: Bleakhold Station\./);
 
     expect(decision).toMatchObject({ runMove: true, decision: 'MOVE', suggestedMove: null, moveId: 'clash', category: 'combat', confidence: 0.9, unmade: null });
-    expect(decision.reading.interpretation).toMatchObject({ moveId: 'clash', statUsed: 'edge', positionConstraintApplied: true,
+    expect(decision.reading.interpretation).toMatchObject({ moveId: 'clash', statUsed: 'edge', rerouted: { from: 'strike', why: 'the character is in a bad spot' },
       stakes: { hit: 'Your burst rakes the cutter\'s flank.', miss: 'Her guns find your hull first.' } });
     expect(decision.route).toMatchObject({ route: 'roll', why: 'a fight is open: a fight never hedges' });
   }, 30_000);

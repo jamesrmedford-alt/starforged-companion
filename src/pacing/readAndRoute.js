@@ -242,7 +242,7 @@ export async function readAndRoute({
     check: gateCheck(gate),
     toFellowPc: (moveId) => lineIsToAFellowPlayerCharacter(moveId, playerText, speakerName, { campaignState }),
   });
-  if (route.remapped && route.moveId) reading = readAs(reading, route.moveId, route.remapped.why);
+  if (route.remapped && route.moveId) reading = readAs(reading, route.moveId, route.remapped);
 
   // The challenge an offered scene-challenge move is part of, by id — the
   // one the reading named, else the sole open one (router.js's rule).
@@ -304,8 +304,11 @@ function gateCheck(gate) {
     }
     if (!verdict) return { ok: true, why: "", instead: null };
     if (verdict.ok) {
+      // The reroute's reason is the gate's own (`insteadWhy` — the position
+      // predicate's "the character is in a bad spot"), which the move card
+      // tells (issue #397, Code fix 2).
       return verdict.instead && verdict.instead !== moveId && MOVES[verdict.instead]
-        ? { ok: false, why: verdict.note || `made as ${moveDisplayName(verdict.instead)}`, instead: verdict.instead }
+        ? { ok: false, why: verdict.insteadWhy || verdict.note || `made as ${moveDisplayName(verdict.instead)}`, instead: verdict.instead }
         : { ok: true, why: "", instead: null };
     }
     return { ok: false, why: verdict.why || "it cannot be made now", instead: null, verdict };
@@ -316,13 +319,19 @@ function gateCheck(gate) {
  * The reading made as another move — the gate's `instead`: the position
  * pair's other, a scene-challenge variant's ordinary move. Its stat stays
  * where the other lists it, else that move's first; its stakes stand (the
- * same attempt).
+ * same attempt). The swap rides as `rerouted`, which the move card tells
+ * (issue #397, Code fix 2); a swap the reader recorded already is kept.
+ *
+ * @param {Object} reading
+ * @param {string} moveId — the move it is made as
+ * @param {{ from: string|null, why: string }} remapped — the move it was, and the gate's reason
  */
-function readAs(reading, moveId, why) {
+function readAs(reading, moveId, { from = null, why = "" } = {}) {
   const move = MOVES[moveId];
   const was = reading.interpretation;
   if (!move || !was) return { ...reading, moveId };
   const listed = Array.isArray(move.stat) ? move.stat : [];
+  const swapped = from ?? reading.moveId ?? null;
   return {
     ...reading,
     moveId,
@@ -333,6 +342,7 @@ function readAs(reading, moveId, why) {
       statUsed: listed.length && move.progressMove !== true ? (listed.includes(was.statUsed) ? was.statUsed : listed[0]) : null,
       isProgressMove: move.progressMove === true,
       rationale: `${was.rationale ? `${was.rationale} ` : ""}(Made as ${moveDisplayName(moveId)}: ${why}.)`,
+      ...(was.rerouted || !swapped || swapped === moveId ? {} : { rerouted: { from: swapped, why: why || null } }),
     },
   };
 }

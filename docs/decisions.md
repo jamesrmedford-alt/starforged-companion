@@ -71,7 +71,7 @@ rejected.
 - DICE-LINES-UNBOUNDED: never the table's own side, never the current scene's, at most two a subject.
 - SHIP-LEFT-NEAR-ON-SETTING-OUT: the ship sets out with the characters.
 - UNNAMED-FIGURE-PRONOUN-DRIFT: a pending person is told with their pronouns.
-- A gate reroute is told on its card ("↪ Strike becomes Clash: the character is in a bad spot"): the gate returns the reroute's reason (`insteadWhy`).
+- A gate reroute is told on its card ("↪ Strike becomes Clash: the character is in a bad spot"): the gate returns the reroute's reason (`insteadWhy`). A typed line's swap is recorded where it happens, by the line reader's position remap or the router's gate, in the position rule's one wording (`combat.js positionReason`); as first built only the pipeline's own gate recorded it, so a typed "I Strike" — round 8's own case — said nothing (issue #397, Code fix 2). The reader's write-only `positionConstraintApplied` and the interpreter's `keptInKind` are retired.
 - An upgrade's extra progress reads "once more".
 - The Begin card names its vow as the dialog's.
 - Set a Course has asides of its own.

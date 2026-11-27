@@ -173,6 +173,22 @@ export async function finishCombat({ moveTarget, moveTargetId = null }, deps) {
 export const isTrackPosition = (p) => p === "in_control" || p === "bad_spot";
 
 /**
+ * Why a combat move is made as its position's twin: the roller's position, as
+ * the move card says it — "↪ Strike becomes Clash: the character is in a bad
+ * spot." The one wording, read by POSITION's reroute (contracts/predicates.js) and by the line
+ * reader's own remap (reader.js parseReading; issue #397, Code fix 2: a typed line is
+ * swapped there, before the gate). Null for no position.
+ *
+ * @param {"in_control"|"bad_spot"|null} position — where the roller is
+ * @returns {string|null}
+ */
+export function positionReason(position) {
+  if (position === "bad_spot") return "the character is in a bad spot";
+  if (position === "in_control") return "the character is in control";
+  return null;
+}
+
+/**
  * A fight's position for a character: their own (`positions[actorId]`, set
  * by their moves, their badge and their panel toggle), else the fight's
  * last-set one (`combatState`). Position is per character (rulebook, Battle
