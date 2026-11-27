@@ -3055,6 +3055,19 @@ export function formatSnapshotPlan(r) {
 }
 
 /**
+ * What a decided who-vow plan carries when its truth names someone the story
+ * has not met (VOW-WON-BY-A-STRANGER): show them before the truth comes out.
+ * The one wording, for a plan written out under UNREVEALED and one the world
+ * snapshot holds (IN PLAY FOR THIS NARRATION).
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function strangerLine(name) {
+  return `Not yet in play: ${name}. Before this truth is revealed, show ${name} in the story — seen, met, or spoken of by name — as one of its clues.`;
+}
+
+/**
  * [6.6] UNREVEALED — the narrative skeleton's hidden plans for this beat
  * (issue #353 "What the narrator sees"), and — with the sidecar — DECIDE NOW,
  * the plans this narration must decide: a price that revealed a new enemy
@@ -3122,14 +3135,16 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
   const budget = Math.max(0, Number(maxTokens) || 0) * 4;   // ~4 characters a token
   let used = lines.join('\n').length;
   const entries = [];
+  // A who-vow's culprit the story has not met is shown before the truth comes
+  // out (VOW-WON-BY-A-STRANGER: round 8's vow was won by a name the player
+  // never saw) — told with the plan, whether it is written out here or held
+  // by the world snapshot (issue #397, Code fix 1: the snapshot, on by
+  // default, held round 8's plan in every narration, and the line rode only
+  // with a plan written out here).
+  const strangerOf = (r) => (typeof strangers?.[r.id] === 'string' && strangers[r.id].trim() ? strangerLine(strangers[r.id].trim()) : '');
   for (const r of decided) {
-    // A who-vow's culprit the story has not met is shown before the truth
-    // comes out (VOW-WON-BY-A-STRANGER: round 8's vow was won by a name the
-    // player never saw).
-    const stranger = typeof strangers?.[r.id] === 'string' && strangers[r.id].trim() ? strangers[r.id].trim() : null;
-    const entry = formatSkeletonEntry(r) + (stranger
-      ? `\n- Not yet in play: ${stranger}. Before this truth is revealed, show ${stranger} in the story — seen, met, or spoken of by name — as one of its clues.`
-      : '');
+    const stranger = strangerOf(r);
+    const entry = formatSkeletonEntry(r) + (stranger ? `\n- ${stranger}` : '');
     if (entries.length && used + entry.length > budget) break;   // the first always shows
     entries.push(entry);
     used += entry.length;
@@ -3149,7 +3164,7 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
       '### IN PLAY FOR THIS NARRATION',
       'Each of these is written out under HIDDEN PLANS in WORLD SNAPSHOT — or, changed since, under',
       'CHANGED SINCE THE SNAPSHOT, which wins. Use these and no other plan the snapshot holds:',
-      ...named.map(r => `- ${skeletonHeading(r)} (id ${r.id})`),
+      ...named.map(r => `- ${skeletonHeading(r)} (id ${r.id})${strangerOf(r) ? `\n  ${strangerOf(r)}` : ''}`),
     );
   }
   // The vow this beat's move fulfils is told now — with the fact block, which

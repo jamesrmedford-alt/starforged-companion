@@ -582,10 +582,16 @@ one behind it is …", the deciding narration's version), so THIS BEAT ENDS A VO
 has a name to tell. Since round 8, the name is someone the story has met where one
 fits (VOW-WON-BY-A-STRANGER, the maintainer's call):
 - DECIDE NOW lists the story's people (`narrator.js storyPeopleOf`, its
-  connection cards, at most eight) and asks for one of them.
+  connection cards, then the pending drafts, at most eight) and asks for one of
+  them.
 - A new name is shown in play before the truth is revealed.
 - A decided plan whose truth names someone not yet met is told "Not yet in play:
-  X …" (`skeletons.strangerNamedIn`, `extras.strangers`).
+  X …" (`skeletons.strangerNamedIn`, `extras.strangers`). A pending draft is met
+  only by its whole name (`exact`, from `pendingPeopleOf`); a recorded person by
+  a word of their name that is no filler (`skeletons.personMetIn`, which
+  `truthNamesSomeone` shares). The line rides with the plan both where it is
+  written out and where the world snapshot holds it (IN PLAY FOR THIS
+  NARRATION; `narratorPrompt.strangerLine`; issue #397 Code fix 1).
 - A plan quiet for three scenes comes back with a clue (A THREAD GONE QUIET,
   `skeletons.quietestPlan`).
 No scene

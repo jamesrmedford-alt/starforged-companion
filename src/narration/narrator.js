@@ -4917,7 +4917,9 @@ function storyPeopleOf(campaignState) {
  * Each decided plan of a vow that asks who, whose truth names someone the
  * story has not met — id → that name (skeletons.js strangerNamedIn): shown in
  * play before its truth is revealed (formatUnrevealedBlock). Places, ships and
- * the PCs are no names. Never throws.
+ * the PCs are no names. A pending draft's name — often a description, "The
+ * Man From the Berth" — is matched whole, as everywhere a draft is (issue
+ * #397, Code fix 1). Never throws.
  *
  * @param {Object[]} plans — the plans in play
  * @param {string[]} people — storyPeopleOf
@@ -4928,9 +4930,10 @@ function strangersOfWhoPlans(plans, people, campaignState) {
   const out = {};
   try {
     const notNames = storyNamesOf(campaignState);
+    const exact = pendingPeopleOf(campaignState ?? {}).map(p => p.name);
     for (const r of Array.isArray(plans) ? plans : []) {
       if (r?.kind !== 'vow' || !vowAsksWho(r.subject?.name) || typeof r.truth !== 'string' || !r.truth.trim()) continue;
-      const stranger = strangerNamedIn(r.truth, { people, notNames: notNames.filter(n => !(people ?? []).includes(n)) });
+      const stranger = strangerNamedIn(r.truth, { people, exact, notNames: notNames.filter(n => !(people ?? []).includes(n)) });
       if (stranger) out[r.id] = stranger;
     }
   } catch (err) {

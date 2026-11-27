@@ -585,11 +585,34 @@ const NOT_A_NAME = new Set(["the", "a", "an", "this", "that", "their", "her", "h
 export function truthNamesSomeone(truth, { people = [], notNames = [] } = {}) {
   const text = String(truth ?? "");
   if (!text.trim()) return false;
-  // One of the story's people: their whole name, or a word of it of three
-  // letters or more ("Tamsin" for Tamsin Okoro), as a whole word.
-  const said = new Set(words(text).map(w => w.replace(/'s$/, "")));
-  if ((people ?? []).some(n => String(n ?? "").trim() && (nameMentioned(n, text) || words(n).some(w => w.length >= 3 && said.has(w))))) return true;
+  if (personMetIn(text, people)) return true;
   return nameWrittenIn(text, notNames) !== null;
+}
+
+/**
+ * Whether a text names one of the story's people: their whole name, or —
+ * for a recorded person — a word of it of three letters or more that is no
+ * filler ("Tamsin" for Tamsin Okoro; never "the" of "The Broker"), as a whole
+ * word. A name on `exact` — a pending draft's, often a description ("The Man
+ * From the Berth"), whose words are anyone's — counts only whole (issue #397,
+ * Code fix 1: round 8's draft made every truth with "the" in it name someone
+ * met). Pure.
+ *
+ * @param {string} text
+ * @param {string[]} [people] — the people met
+ * @param {string[]} [exact] — the names matched only whole
+ * @returns {boolean}
+ */
+function personMetIn(text, people = [], exact = []) {
+  const whole = new Set((exact ?? []).map(n => String(n ?? "").trim().toLowerCase()).filter(Boolean));
+  const said = new Set(words(text).map(w => w.replace(/'s$/, "")));
+  return [...(people ?? []), ...(exact ?? [])].some((n) => {
+    const name = String(n ?? "").trim();
+    if (!name) return false;
+    if (nameMentioned(name, text)) return true;
+    if (whole.has(name.toLowerCase())) return false;
+    return words(name).some(w => w.length >= 3 && !NAME_FILLER.has(w) && said.has(w));
+  });
 }
 
 /** The first person's name a text writes — "Dalen Voss", "Captain Ree" — not one of `notNames`, or null. */
@@ -611,17 +634,18 @@ function nameWrittenIn(text, notNames = []) {
  * The one a who-vow's truth names, when the story has not met them — round
  * 8's "Dalen Voss, of the Spire's own administration", whom the player never
  * saw before the vow was won (VOW-WON-BY-A-STRANGER). Null when the truth
- * names one of the story's people (`people`) or no one. Pure.
+ * names one of the story's people (`people`; a pending draft's name, on
+ * `exact`, only whole — personMetIn) or no one. Pure.
  *
  * @param {string} truth
- * @param {{ people?: string[], notNames?: string[] }} [opts] — the people met; words that are no name (places, ships)
+ * @param {{ people?: string[], exact?: string[], notNames?: string[] }} [opts] — the people met; the names of
+ *   theirs matched only whole (the pending drafts'); words that are no name (places, ships)
  * @returns {string|null}
  */
-export function strangerNamedIn(truth, { people = [], notNames = [] } = {}) {
+export function strangerNamedIn(truth, { people = [], exact = [], notNames = [] } = {}) {
   const text = String(truth ?? "");
   if (!text.trim()) return null;
-  const said = new Set(words(text).map(w => w.replace(/'s$/, "")));
-  if ((people ?? []).some(n => String(n ?? "").trim() && (nameMentioned(n, text) || words(n).some(w => w.length >= 3 && said.has(w))))) return null;
+  if (personMetIn(text, people, exact)) return null;
   return nameWrittenIn(text, notNames);
 }
 

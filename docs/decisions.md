@@ -17,9 +17,11 @@ rejected.
 - This supersedes the previous entry's "Rejected: turning the judge on in the long haul".
 
 **The one behind a who-vow is someone the story has met, where one fits** (VOW-WON-BY-A-STRANGER; the call "prefer someone met; show a new one first"):
-- A who-vow's DECIDE NOW lists the story's people (its connection cards, at most eight) and asks for one of them if one fits, else a new name.
+- A who-vow's DECIDE NOW lists the story's people (its connection cards, then the people met whom the table has not yet confirmed — the pending drafts — at most eight) and asks for one of them if one fits, else a new name.
 - A new name is shown in play, by name, before the truth is revealed.
 - A decided who-plan whose truth names someone not yet met is told "Not yet in play: X. Before this truth is revealed, show X in the story — seen, met, or spoken of by name — as one of its clues." The check is `skeletons.js` `strangerNamedIn`.
+- The line rides with the plan wherever the plan is told: written out under UNREVEALED, or named under IN PLAY FOR THIS NARRATION when the world snapshot holds it (`narratorPrompt.js` `strangerLine`, one wording for both). As first built it rode only with a plan the snapshot did not hold, so with the snapshot on, the default, it was never told (issue #397, Code fix 1).
+- A pending draft counts as met only by its whole name, as everywhere a draft is matched (`strangerNamedIn`'s `exact`). A recorded person is met by a word of their name, never by its filler ("the" of "The Broker"). As first built, round 8's draft "The Man From the Berth" made any truth with "the" in it name someone met. `truthNamesSomeone` shares the rule (`skeletons.js` `personMetIn`).
 - The reason: round 8's vow was won by "Dalen Voss … whose face is not one you have seen". That is a name, as VOW-FULFILLED-UNANSWERED asked, but an answer the player could not have reached.
 
 **A thread gone quiet comes back** (the call "yes, after a few quiet scenes"):

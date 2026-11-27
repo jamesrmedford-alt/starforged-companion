@@ -820,7 +820,8 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   the snapshot holds no unit for keeps its card (ENTITIES IN SCENE / CURRENT
   LOCATION); UNREVEALED keeps its rules and DECIDE NOW and names the plans in
   play by heading and id (`coveredIds`), a plan the snapshot does not hold
-  printed as before. The ledger [6.5], CHARACTER, PARTY, clocks, tracks,
+  printed as before. A covered who-plan's stranger line rides under its name
+  there (`strangerLine`; issue #397 Code fix 1). The ledger [6.5], CHARACTER, PARTY, clocks, tracks,
   recent oracles and STORY SO FAR are unchanged. The rules name none of the
   sections one layout lacks — the sidecar's identity anchor is for "a
   character or faction who has no card of their own in this prompt", the
@@ -1026,10 +1027,13 @@ asked requests list under DECIDE NOW with their oracle rolls, only when the side
 is on; every prose mode, never a meta one; `formatUnrevealedBlock`.
 Round 8's calls add two things to it:
 - **A who-vow's culprit.** DECIDE NOW lists `extras.storyPeople` — the story's
-  connection cards, at most eight — as the culprit to prefer.
+  connection cards, then the pending drafts, at most eight — as the culprit to
+  prefer.
 - **A stranger shown first.** A decided who-plan whose truth names someone not
-  met (`skeletons.strangerNamedIn` → `extras.strangers`) is told "Not yet in
-  play: X …".
+  met (`skeletons.strangerNamedIn` → `extras.strangers`; a pending draft met
+  only by its whole name, `exact`) is told "Not yet in play: X …" — under its
+  entry when the plan is written out, under its name in IN PLAY FOR THIS
+  NARRATION when the world snapshot holds it (one wording, `strangerLine`).
 - **A thread gone quiet.** On a beat of play, the plan in play quiet for
   `QUIET_SCENES` scenes (`skeletons.quietestPlan` over `narrationCardTimes`,
   `extras.quietThread`, its id added to `planIds`) is named under A THREAD GONE
