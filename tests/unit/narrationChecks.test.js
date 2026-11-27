@@ -48,7 +48,11 @@ describe("the certain checks", () => {
     expect(certainViolations("It is a strong hit: the lock gives.", apparatus).map(v => v.tag)).toEqual(["apparatus"]);
     expect(certainViolations("She takes 2 health of damage.", apparatus)).toHaveLength(1);
     expect(certainViolations("You Gather Information from the logs.", apparatus)).toHaveLength(1);
-    expect(certainViolations("The lock gives.\n\n*If you want to read the logs, this could be a Gather Information.*", apparatus)).toEqual([]);
+    // Where it was offered a move — its lines hold [offer] — the closing line is the rules' own (issue #399's audit N32)…
+    const offered = [...apparatus, { kind: "offer", list: "NOT YET", text: "Gather Information is only offered." }];
+    expect(certainViolations("The lock gives.\n\n*If you want to read the logs, this could be a Gather Information.*", offered)).toEqual([]);
+    // …and offered none, it is narration: a move's name in it is a move's name.
+    expect(certainViolations("The lock gives.\n\n*If you want to read the logs, this could be a Gather Information.*", apparatus).map(v => v.tag)).toEqual(["apparatus"]);
     // A one-word move's name is an ordinary word.
     expect(certainViolations("You strike the hatch and it gives.", apparatus)).toEqual([]);
   });
@@ -111,7 +115,9 @@ describe("the judge (fail-open)", () => {
     const v = await judgeNarration("She starts on the cuts.", pacedRefused().filter(o => o.kind === "premise"), { apiKey: "sk-test" });
     expect(v).toMatchObject({ judged: true, violations: [{ tag: "premise", quote: "starts on the cuts" }] });
     expect(apiPost).toHaveBeenCalledTimes(1);
-    expect(apiPost.mock.calls[0][3]).toEqual({ label: "obligationJudge" });
+    expect(apiPost.mock.calls[0][3]).toMatchObject({ label: "obligationJudge" });
+    // Its own cancel, for its cutoff (issue #399's audit N7).
+    expect(apiPost.mock.calls[0][3].signal).toBeInstanceOf(AbortSignal);
   });
   it("an error or an unparsed answer passes the narration; no key, no call", async () => {
     judgeReplies.push(new Error("overloaded"));

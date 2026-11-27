@@ -139,7 +139,7 @@ describe('what the dice decided of what the line names (diceFactsOf)', () => {
 describe('NOT SO [dice]: the line does not make otherwise so', () => {
   const FACTS = [{ subject: 'Cinder Wren', fact: A41_FACT }];
 
-  it('a paced line and a typed move carry it, after the sheet\'s state; no other mode does', () => {
+  it('a paced line, a typed move and a Batch Mode round carry it, after the sheet\'s state; no other mode does', () => {
     for (const mode of ['paced', 'move']) {
       const lines = obligationsFor({ mode, resolution: mode === 'move' ? { moveId: 'gather_information', outcome: 'strong_hit' } : null, line: A77_LINE, dice: FACTS });
       const dice = lines.find(o => o.kind === 'dice');
@@ -150,9 +150,11 @@ describe('NOT SO [dice]: the line does not make otherwise so', () => {
       expect(formatObligationsBlock(lines), mode).toContain(`- [dice] What the dice decided stands — Cinder Wren: ${A41_FACT}. `
         + 'A line that takes otherwise for granted does not make it so: tell what is there.');
     }
-    for (const mode of ['round', 'oracle', 'set-piece']) {
+    for (const mode of ['oracle', 'set-piece']) {
       expect(obligationsFor({ mode, dice: FACTS }).map(o => o.kind), mode).not.toContain('dice');
     }
+    // A Batch Mode round is a beat of play: it has carried it since issue #399's audit N28.
+    expect(obligationsFor({ mode: 'round', dice: FACTS }).map(o => o.kind)).toContain('dice');
     expect(obligationsFor({ mode: 'paced', line: A77_LINE }).map(o => o.kind)).not.toContain('dice');
   });
 

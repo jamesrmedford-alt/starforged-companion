@@ -32,7 +32,7 @@ import { getConnection } from '../entities/connection.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { generatedName } from '../entities/nameMatch.js';
-import { judgedView, judgeMayAct, judgedLine, JUDGED_LINES_RULE, quoteInNarration } from '../moves/contracts/checks.js';
+import { judgedView, judgeMayAct, judgedLine, JUDGED_LINES_RULE, quoteInNarration, offerMayBeGiven } from '../moves/contracts/checks.js';
 import { OBLIGATION_KINDS } from '../moves/contracts/obligations.js';
 
 const MODULE_ID     = 'starforged-companion';
@@ -79,8 +79,9 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
 
   // The one judged view (issue #399, D1): no fact block, no closing offer
   // line — round 9's audit carded that line five times, four as the move
-  // made and once as a move's name.
-  const view = judgedView(prose, { kind: options.narrationKind ?? null });
+  // made and once as a move's name — where the narration was offered a move
+  // to close on (its lines hold [offer]; the audit's N32).
+  const view = judgedView(prose, { kind: options.narrationKind ?? null, offer: offerMayBeGiven(options.obligations) });
   if (!view.text.trim()) return { contradictions: [], dispatched: false };
 
   const ledger = buildLedgerBlock(campaignState, {
@@ -163,6 +164,9 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     // cards were all wrong. Truths, state, place, retractions and identities
     // card as before.
     if (c.kind === 'obligation' && !judgeMayAct(c.obligationKind, 'audit')) { c.action = 'held'; continue; }
+    // The narration's own check before posting already noted this line to
+    // the GM (postStillBrokenNote; issue #399's audit N16): no second card.
+    if (c.kind === 'obligation' && options.notedKinds?.has?.(c.obligationKind)) { c.action = 'already posted'; continue; }
     // Cross-turn dedup (narrator-consistency audit 2026-07): a standing
     // contradiction — prose that keeps asserting the same violated fact —
     // used to re-post an identical review card every narration. One card per
@@ -512,6 +516,48 @@ function normaliseKind(v) {
   // frame is the narration's own colour now, and no contradiction to audit).
   if (s === 'frame' || s === 'ship') return 'place';
   return ['state', 'place', 'retraction', 'identity', 'obligation'].includes(s) ? s : 'truth';
+}
+
+/**
+ * The GM's note on a narration that still breaks a line after its one re-ask
+ * (issue #399's audit N16: `stillBroken` reached only telemetry): a ◈
+ * Narrative Review card a line, naming it and quoting the narration, with the
+ * obligation kind's remedy — say the correction at the table. Posted by the
+ * narrator once the narration's card is (narrator.js
+ * registerStillBrokenNoteHook), on the GM whose client narrated, and not for a
+ * narration the X-Card removed; the card carries the narration it is about,
+ * so a later X-Card withdraws it. The Contradiction Notifications setting
+ * governs it, as every review card.
+ *
+ * @param {Array<{ tag: string, quote?: string, note?: string, text?: string }>} stillBroken
+ * @param {Object} campaignState
+ * @param {{ narrationId: string }} opts
+ * @returns {Promise<number>} the cards posted
+ */
+export async function postStillBrokenNote(stillBroken, campaignState, { narrationId }) {
+  if (!Array.isArray(stillBroken) || !stillBroken.length || !campaignState) return 0;
+  if (isNarrationXCarded(narrationId)) return 0;
+  // One card a line: its quotes together.
+  const byLine = new Map();
+  for (const v of stillBroken) {
+    if (!v?.tag) continue;
+    const key = `${v.tag}\u0000${v.line ?? ''}`;
+    if (!byLine.has(key)) byLine.set(key, { tag: v.tag, said: v.note || v.text || '', quotes: [] });
+    if (v.quote && !byLine.get(key).quotes.includes(v.quote)) byLine.get(key).quotes.push(v.quote);
+  }
+  let posted = 0;
+  for (const { tag, said, quotes } of byLine.values()) {
+    if (isNarrationXCarded(narrationId)) break;
+    const out = await applyStateTransition({
+      entryType: 'factContinuity', change: 'contradicted', kind: 'obligation',
+      name: `[${tag}]`, subjectLabel: `[${tag}]`,
+      summary: said ? `still broken after the narration was asked again — ${said}` : 'still broken after the narration was asked again',
+      recorded: '', evidence: quotes.join(' … '), truthId: null, matchedEntityIds: [],
+      narrationId: typeof narrationId === 'string' ? narrationId : null,
+    }, campaignState).catch(err => { console.warn(`${MODULE_ID} | consistencyCheck: a still-broken note failed:`, err?.message ?? err); return null; });
+    if (out && out.posted !== false) posted += 1;
+  }
+  return posted;
 }
 
 /**

@@ -18,7 +18,11 @@ ledger, §4 the dispositions.
 
 `applyNarratorSidecar` fires `runConsistencyCheck(prose,
 auditCampaignState(campaignState), {matchedEntityIds, currentLocationId,
-narrationId, obligations, narrationKind})` on the **canonical GM only**, fire-and-forget (never
+narrationId, obligations, narrationKind, notedKinds})` on **the GM whose client narrated**
+(`game.user.isGM` — AA34's gate, as the narration's capture and its judge;
+issue #399's audit N26: it re-checked `isCanonicalGM()` when the reply
+landed, so a narration a lower-id GM joining meanwhile had taken over was
+audited by no one), fire-and-forget (never
 blocks or delays the narration post), for every mode that applies a sidecar
 — all nine narrator paths — and for an `@scene` answer, which applies none
 (`sceneAnswerText`, known-issues SCENE-ANSWER-NOT-A-CAMERA: an answer records
@@ -45,16 +49,24 @@ and oracle follow-ups (`requestOracleNarration`) run on the keyed canonical
 GM whenever one is connected, so their prose is audited. The fallback — no
 keyed GM, so a keyed author narrates with their own key, a sheet roll among
 them — runs off the canonical GM. There `applyNarratorSidecar` relays the
-fact block to the GM (`relayNarratorSidecar`) and fires no audit, and the
+fact block to the GM (`relayNarratorSidecar`) and, on a player's client,
+fires no audit, and the
 pre-post judge (§1b) is not called either, because it runs only on a GM: a
 narration on a player's key gets neither pass, and no telemetry row (issue
 #399's audit N25; the help says so). See `narrator-context-flow.md` →
 "Where each call runs".
 
 What it reads is the narration's **judged view** (`checks.js judgedView`,
-issue #399 D1) — the prose without its fact block and without its closing
-offer line, the one place the rules let a move be named; the pre-post judge
-(§1b) reads the same. Round 9's audit carded that line five times, four as
+issue #399 D1) — the prose without its fact block and, where the narration
+was offered a move, without its closing offer line, the one place the rules
+let a move be named; the pre-post judge (§1b) reads the same. One detector
+finds that line (`narration/closingOfferLine.js splitOfferLine`: the closing
+sentence in emphasis, italic or bold), and only where an offer may be given
+— the narration's lines hold [offer] (`offerMayBeGiven`, issue #399's audit
+N32): a move narration's closing italic comm line is the story's, and is
+read. An inciting incident's prose is read without its proposal block
+("Suggested vow: …", "Situation: …"): its caller hands the narrator the
+view (`ctx.narrationOf` → `narrationIn`, N29). Round 9's audit carded that line five times, four as
 the move made. The narrator says what narration it is (`narrationKind`): a
 **cutaway** — a session's closing vignette or a spotlight
 (`narrateSessionVignette` passes `cutaway` to `applyNarratorSidecar`) — is
@@ -116,13 +128,25 @@ longer special-cases them).
 
 Before a narration posts, `narrateKeepingObligations` (`checks.js`) holds it
 to its obligation lines by class: a certain or floor failure is asked once
-more (YOUR DRAFT — NOT POSTED). Since issue #399 D9 a certain check holds
+more (YOUR DRAFT — NOT POSTED). The redraft is held to the certain and floor
+checks again, and one that adds a certain breach the first draft did not
+have is not posted — the first draft is (`action: "redraft not posted"`;
+issue #399's audit N9). Every narration with lines goes through it: a
+move's, a paced line's, a Batch Mode round's (held to a move's
+beat-of-play lines since N28 — [here], [whereabouts], [dice], [person],
+[quote]), an oracle follow-up's, a session vignette's, and since N29 a clock
+vignette's, the oath scene's and the inciting incident's — those four
+set-pieces certain-only, with no judge, each through a local `ask` the
+playthrough harness looks through. Since issue #399 D9 a certain check holds
 [sheet]'s harm clause: bodily harm said of "you" on a beat whose TELL lines
 name no health lost, or any wound on a refused Heal's character
 (`harmViolations`). A NOT YET / NOT SO judge line whose trip words appear in
 the judged view goes to one Haiku call (`judgeNarration`, label
 `obligationJudge`, 4 s, fail-open), sent the judged view too — it was sent
-the whole prose, and re-asked a70 on its own offer line. It runs only on a
+the whole prose, and re-asked a70 on its own offer line. It reads the draft
+that posts (N10): the first, when the code's checks pass it; after a code
+re-ask, whichever posts, its verdicts then only reported (`stillBroken`) —
+one call a narration, and no second re-ask. It runs only on a
 GM, with this audit's setting on (`narrator.js obligationJudgeOn`); a
 narration on a player's key gets neither pass. **The judge-class kinds are
 the ones that passed its measure** (issue #399 D7, D10): [cost], [fight],
@@ -140,9 +164,18 @@ put as the breach (`BREACH`), never under its NOT SO. When it does not judge
 it says why (`timeout`, `refused`, `cut off at its token cap`, `unparsed`,
 `error: …`, `no key`). It is not called, and writes no row, once the caller's
 `stopped()` — the X-Card watcher's quiet test, or a round taken over — is
-true. At its 4 s cutoff the request is not cancelled: it runs to its own
-deadline and is logged in the API Log (the audit's N7, left alone). The full
-class list is in `narrator-context-flow.md` (the obligations block).
+true. At its 4 s cutoff the request is cancelled (N7): an `AbortSignal`
+through `apiPost` to `fetchWithTimeout`. What a narration still breaks after
+its one re-ask (`stillBroken`) is told to the GM (N16): held by
+`narrationId` on the GM whose client narrated (`noteStillBroken`), it posts
+a GM-only ◈ Narrative Review card a line once the narration's own card is
+created (`registerStillBrokenNoteHook`, on the card's author's client — the
+one that narrated and holds the note — → `consistencyCheck.js
+postStillBrokenNote`) — none for a fallback card or one the X-Card removed —
+and the audit posts no second card for a kind it names (`notedKinds` →
+`action: 'already posted'`). Its rows, like the audit's, reach the Pacing
+Telemetry journal's Consistency Check page through `logConsistencyDecision`.
+The full class list is in `narrator-context-flow.md` (the obligations block).
 
 ## 2. From catch to correction
 
@@ -211,7 +244,10 @@ class list is in `narrator-context-flow.md` (the obligations block).
   instead (issue #321 U38).
 - **Medium/low-confidence** results are telemetry-only — logged to the
   Pacing Telemetry journal's Consistency Check page
-  (`logConsistencyDecision`, GM-gated, fail-open) and never shown to the GM.
+  (`logConsistencyDecision`, fail-open) and never shown to the GM. The page
+  has one writer, the canonical GM: a co-GM's row goes to it by the GM relay
+  (`telemetry.consistency` → `applyRelayedConsistencyDecision`; issue #399's
+  audit N27 — each GM wrote it from its own copy), and a player writes none.
 - **`contradictionNotifications`** (default on) gates the card itself; off
   means even high-confidence catches are telemetry-only.
 - The table-wide text path is **`!truth` / `!state`**

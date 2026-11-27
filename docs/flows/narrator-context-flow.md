@@ -1055,7 +1055,10 @@ ALREADY WORN since round 7 — `beatVariety`'s `wornDetails` over the same six
 cards, names, the scene frame's words and the player's line apart,
 NARRATION-REFRAINS-RISING — and, since round 8, words capitalised mid-sentence,
 more filler and the scene's actors (present, remote, the fight's foe) apart
-too — beside IMAGES ALREADY USED; its shape is
+too; italic words are words, and a card that offered a move is read without
+its closing offer line, the only line left out — issue #399's audit N32:
+every italic span was dropped, a ship's name among them — beside IMAGES
+ALREADY USED; its shape is
 said as the narrator's instruction about the narration, under `BEAT_SHAPE_LABEL`,
 never as a director's "Open on…", which came back as prose — issue #377 item 2:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
@@ -1294,7 +1297,9 @@ block is applied — the prose ends at the first sidecar block, so a note the
 model writes after it, or a corrected block, is never narration: issue #389
 #3, SIDECAR-NOTE-IN-THE-PROSE) and held to its lines by class: **certain** —
 [apparatus] (an outcome's name, a sheet number, a two-word move's name
-outside the closing offer line), [match] (the word) and, on a session
+outside the closing offer line — that line left out only where the narration
+was offered a move: its lines hold [offer], `checks.js offerMayBeGiven`, the
+one detector `narration/closingOfferLine.js`; issue #399's audit N32), [match] (the word) and, on a session
 set-piece (`narrateSessionVignette`, mode `set-piece`), [material] (a rolled
 word written as a label, as a name no record holds, or a result's words
 together — `materialViolations`, issue #388 #11; label
@@ -1330,8 +1335,9 @@ consistency check on). [dice], [offer], [place] and [state] failed the
 judge's measure and are **logged** (issue #399 D10): told to the narrator,
 tripping no call. The trip words and the judge both read the
 narration's judged view (`checks.js judgedView`, issue #399 D1): no fact
-block and no closing offer line — round 9's a29 tripped three lines on its
-offer line's "fire" alone, and a70 was re-asked on its own offer line. Since
+block and, where it was offered a move, no closing offer line (N32) — round
+9's a29 tripped three lines on its offer line's "fire" alone, and a70 was
+re-asked on its own offer line. Since
 slice 3 every check in code reads the body too (the audit's N12), and each
 class is the one its row declares (D4 — `checks.js checkClassOf`, and the
 tables `CERTAIN_CHECKS`, `FLOOR_CHECKS`, `TRIPWIRES`; the scene's [scene],
@@ -1344,12 +1350,37 @@ YOUR DRAFT — NOT POSTED and the line it broke (labels
 `narrateOracleFollowup:reask`); **a judge verdict is asked again** — the
 judge-class kinds are exactly those that passed its measure (`judgeMayAct`,
 `JUDGE_KINDS_THAT_ACT.judge`, issue #399 D7, D10). The second reply is
-held to the certain and floor checks and posted whatever they say (a reply
-with no prose keeps the first draft); its breaches are reported, each row
-marked with the draft it describes (`draft` 1 or 2). At most one
-judge call and one re-ask a narration. Each verdict is a row on the
+held to the certain and floor checks; it is posted unless it adds a certain
+breach the first draft did not have, when the first is (issue #399's audit
+N9; a reply with no prose keeps the first draft too). What the posted draft
+still breaks is reported, each row marked with the draft it describes
+(`draft` 1 or 2), and told to the GM on a GM-only ◈ Narrative Review card a
+line once the narration's card posts (N16). The judge reads the draft that
+posts (N10): after a code re-ask, its verdicts are only reported. At most
+one judge call and one re-ask a narration. Each verdict is a row on the
 Consistency Check telemetry page (`kind: "obligation"`, mode `move` /
-`paced` / `round` / `oracle`). The lines of the kinds that passed the audit's
+`paced` / `round` / `oracle` / `session_vignette` / `clock_vignette` /
+`vow_swearing` / `inciting_incident`), which the canonical GM alone writes
+(a co-GM's rows by the GM relay, N27).
+**The set-pieces** (issue #399's audit N29): the clock vignette
+(`narrateClockAdvancement`), the oath scene (`narrateVowSwearing`) and the
+inciting incident (`narrateIncitingIncident`) are held, as a session vignette
+is, to `obligationsFor({ mode: 'set-piece', person })` — [person] where told
+in the second person (`beatPersonOf`, given the PCs it is about), and
+[apparatus] — with no judge, through a local `ask` (labels
+`narrateClockAdvancement:reask`, `narrateVowSwearing:reask`,
+`narrateIncitingIncident:reask`), so the harness's kinds stay
+`callNarratorAPI>narrateClockAdvancement`, `>call`, `>run`. The inciting
+incident's checks and audit read its prose without its proposal block — its
+"Situation:" line names the character by design: its caller,
+`incitingIncident.js`, gives the view (`narrationOf` → the wrapper's `view`
+and `applyNarratorSidecar`'s `ctx.narrationOf`).
+**A Batch Mode round** (N28) carries a move's beat-of-play lines beside its
+own — [here] and [whereabouts] (none on a round with a journey's move),
+[dice] from its joined lines, [person] for a round of one character in the
+second person, and [quote] — in its message (`buildRoundUserMessage`'s
+`roundLines`) and its check alike (`narrator.js roundLinesOf`,
+`roundObligationsFor`). The lines of the kinds that passed the audit's
 measure — [cost], [fight], [offer], [premise], [price], [state]
 (`JUDGE_KINDS_THAT_ACT.audit`) — go to the post-narration audit
 with it (`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`,

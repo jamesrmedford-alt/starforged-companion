@@ -13,6 +13,7 @@
  */
 
 import { companionJournalFolderId } from "../world/worldJournal.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 const JOURNAL_NAME = "Pacing Telemetry";
@@ -92,8 +93,8 @@ async function writePacingDecision(entry) {
  * Append a fact-continuity consistency-check decision to the
  * "Consistency Check" page on the existing Pacing Telemetry journal.
  * Reuses the journal so all post-narration telemetry sits together
- * (fact-continuity scope §17 Phase E item 32). Writes are GM-gated and
- * best-effort.
+ * (fact-continuity scope §17 Phase E item 32). Written by the canonical GM
+ * alone, a co-GM's row relayed to it (issue #399's audit N27); best-effort.
  *
  * @param {Object} entry
  * @param {string} entry.sceneId
@@ -113,7 +114,27 @@ async function writePacingDecision(entry) {
  * @returns {Promise<void>}
  */
 export function logConsistencyDecision(entry) {
+  if (globalThis.game?.user?.isGM !== true) return Promise.resolve();
+  // One writer, the canonical GM: a co-GM's row goes to it through the GM
+  // relay (issue #399's audit N27). Each GM wrote the page from its own copy,
+  // so two GMs, or a page with a stale copy, could drop each other's rows.
+  if (!isCanonicalGM()) {
+    return import("../multiplayer/gmRelay.js")
+      .then(m => m.requestGmAction("telemetry.consistency", entry))
+      .then(() => {}, err => console.warn(`${MODULE_ID} | consistency telemetry: the relay failed:`, err?.message ?? err));
+  }
   return queueTelemetryWrite(() => writeConsistencyDecision(entry));
+}
+
+/**
+ * A co-GM's Consistency Check row, written by the canonical GM (the GM relay
+ * "telemetry.consistency"; logConsistencyDecision).
+ *
+ * @param {Object} entry — logConsistencyDecision's
+ * @returns {Promise<void>}
+ */
+export function applyRelayedConsistencyDecision(entry) {
+  return queueTelemetryWrite(() => writeConsistencyDecision(entry ?? {}));
 }
 
 async function writeConsistencyDecision(entry) {
@@ -344,6 +365,7 @@ function consistencyRowSummary(e) {
     const parts = [
       ["logged", count(c => c.action === "logged")], ["re-asked", count(c => c.action === "reask")],
       ["dropped", count(c => c.action === "dropped")], ["posted broken", count(c => c.action === "posted-broken")],
+      ["redraft not posted", count(c => c.action === "redraft not posted")],
     ].filter(([, n]) => n).map(([what, n]) => `${n} ${what}`);
     if (unjudged.length) parts.push(`not judged (${unjudged.join(", ")})`);
     return `${e.obligations}: ${parts.join(" · ") || "nothing found"}`;

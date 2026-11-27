@@ -41,7 +41,7 @@ if (missing.length) {
   console.error(`judges: the set names narrations the kept runs do not hold: ${missing.join(", ")}`);
   process.exit(1);
 }
-const judgeCalls = entries.filter(e => trippedLines(judgedView(e.raw).text, e.lines.filter(o => checkClassOf(o.kind) === "judge"), e.ctx).length).length;
+const judgeCalls = entries.filter(e => trippedLines(judgedView(e.raw, { offer: e.offer === true }).text, e.lines.filter(o => checkClassOf(o.kind) === "judge"), e.ctx).length).length;
 const auditCalls = entries.filter(e => auditObligationSection(e.lines).lines.length).length;
 console.log(`judges: ${entries.length} narrations (${entries.filter(e => e.seeded).length} seeded); a live run makes ${judgeCalls} judge calls and ${auditCalls} audit calls.`);
 if (MODE !== "live") process.exit(0);

@@ -61,6 +61,7 @@ import { MOVES } from "../../schemas.js";
 import { moveDisplayName } from "../../system/i18n.js";
 import { personSaidIn } from "../../entities/nameMatch.js";
 import { quotedLinesOf } from "../../narration/proseVariety.js";
+import { splitOfferLine } from "../../narration/closingOfferLine.js";
 import { OBLIGATION_KINDS } from "./obligations.js";
 
 const MODULE_ID = "starforged-companion";
@@ -96,29 +97,49 @@ const TRACK_WORDS = /\b(?:box|boxes|track|progress|milestones?)\b/i;
 // recorded round (the batch-round playthrough, 2026-11-25).
 const SHAPE_ECHO = /\bfirst sentence\b|\bacting character\b/i;
 
-/** The prose without its closing italic offer line (the one place a move may be named). */
-function bodyOf(prose) {
-  return String(prose ?? "").replace(/\s*[*_][^*_\n]{3,}[*_]\s*$/, "").trim();
+/**
+ * Whether a narration may close on an offer line: it was offered a move —
+ * its lines hold [offer] (a paced beat's SUGGESTED MOVE). Only there is its
+ * closing emphasised sentence the rules' own (issue #399's audit N32).
+ *
+ * @param {Array<{ kind: string }>|null} obligations — the narration's lines
+ * @returns {boolean}
+ */
+export function offerMayBeGiven(obligations) {
+  return Array.isArray(obligations) && obligations.some(o => o?.kind === "offer");
+}
+
+/**
+ * The prose's body: without its closing offer line where it may give one
+ * (narration/closingOfferLine.js — the one place a move may be named), else all of
+ * it (issue #399's audit N32: a move narration's closing italic comm line was
+ * taken out of every check, and a bold hint left in).
+ */
+function bodyOf(prose, { offer = false } = {}) {
+  const text = String(prose ?? "").trim();
+  return offer ? splitOfferLine(text).body : text;
 }
 
 /**
  * The one text any judge reads (issue #399, D1): the narration without its
- * fact block and without its closing offer line — the line the rules let
- * name a move, which round 9's judge and audit read as the move made (eleven
- * false findings, none right). `kind` says what narration this is; a
- * `cutaway` (a session's closing vignette, a spotlight) is not about where
- * the characters are, so it is not held to the lines that say so. Both the
- * pre-post judge (judgeNarration) and the audit (consistencyCheck.js) read
- * it; nothing else builds text for a judge. Pure.
+ * fact block and, where it may give one (`offer` — offerMayBeGiven of its
+ * lines), without its closing offer line — the line the rules let name a
+ * move, which round 9's judge and audit read as the move made (eleven false
+ * findings, none right). `kind` says what narration this is; a `cutaway` (a
+ * session's closing vignette, a spotlight) is not about where the characters
+ * are, so it is not held to the lines that say so. Both the pre-post judge
+ * (judgeNarration) and the audit (consistencyCheck.js) read it; nothing else
+ * builds text for a judge. Pure.
  *
  * @param {string} text — a narration, its fact block on or off
- * @param {{ kind?: string|null }} [opts] — the narration's kind: `cutaway`, a mode, or none
+ * @param {{ kind?: string|null, offer?: boolean }} [opts] — the narration's kind: `cutaway`, a mode, or
+ *   none; `offer`: it was offered a move, so it may close on the line inviting it
  * @returns {{ text: string, cutaway: boolean }}
  */
-export function judgedView(text, { kind = null } = {}) {
+export function judgedView(text, { kind = null, offer = false } = {}) {
   const raw = String(text ?? "");
   const prose = extractSidecar(raw).prose ?? raw;
-  return { text: bodyOf(prose), cutaway: kind === "cutaway" };
+  return { text: bodyOf(prose, { offer }), cutaway: kind === "cutaway" };
 }
 
 /**
@@ -298,7 +319,7 @@ export const CERTAIN_CHECKS = Object.freeze({
  */
 export function certainViolations(prose, obligations, { sidecar = null, ctx = {} } = {}) {
   const lines = Array.isArray(obligations) ? obligations : [];
-  const body = bodyOf(String(prose ?? ""));
+  const body = bodyOf(prose, { offer: offerMayBeGiven(lines) });
   const out = [];
   for (const [kind, check] of Object.entries(CERTAIN_CHECKS)) {
     if (checkClassOf(kind) !== "certain") continue;
@@ -525,9 +546,9 @@ const METER_WORDS = Object.freeze({
   supply:   ["stores", "rations", "fuel", "spent", "short", "supplies", "used"],
 });
 
-/** The last `n` sentences of a narration's body (its closing offer line left out). */
-function lastSentences(prose, n) {
-  const sentences = bodyOf(prose).split(/(?<=[.!?…]["”’)]?)\s+/).map(s => s.trim()).filter(Boolean);
+/** The last `n` sentences of a narration's body (its closing offer line already left out). */
+function lastSentences(body, n) {
+  const sentences = String(body ?? "").split(/(?<=[.!?…]["”’)]?)\s+/).map(s => s.trim()).filter(Boolean);
   return sentences.slice(-n).join(" ");
 }
 
@@ -586,7 +607,7 @@ export const FLOOR_CHECKS = Object.freeze({
  * @returns {{ reask: Array<{ tag: string, quote: string }>, logged: Array<{ tag: string, quote: string }> }}
  */
 export function floorViolations(prose, obligations, ctx = {}) {
-  const body = bodyOf(String(prose ?? ""));
+  const body = bodyOf(prose, { offer: offerMayBeGiven(obligations) });
   const reask = [];
   const logged = [];
   for (const o of obligations ?? []) {
@@ -773,11 +794,12 @@ function firstJsonObject(text) {
  *
  * @param {string} prose
  * @param {Array<Object>} tripped
- * @param {{ apiKey: string|null }} opts
+ * @param {{ apiKey: string|null, offer?: boolean }} opts — `offer`: the narration was offered a move
+ *   (offerMayBeGiven of its lines), so its closing offer line is left out (judgedView)
  * @returns {Promise<{ violations: Array<{ tag: string, line: number, quote: string, text: string }>,
  *   dropped: Array<Object>, judged: boolean, error: string|null }>}
  */
-export async function judgeNarration(prose, tripped, { apiKey } = {}) {
+export async function judgeNarration(prose, tripped, { apiKey, offer = false } = {}) {
   if (!tripped?.length) return { violations: [], dropped: [], judged: false, error: null };
   if (!apiKey) return { violations: [], dropped: [], judged: false, error: "no key" };
   const lines = tripped.map((o, i) => { const l = judgedLine(o); return `${i + 1}. [${o.kind}] ${l.mark}: ${l.words}`; }).join("\n");
@@ -785,7 +807,7 @@ export async function judgeNarration(prose, tripped, { apiKey } = {}) {
     + "Answer with JSON only: {\"violations\":[{\"line\":<the line's number>,\"quote\":\"<the narration's words that break it, copied exactly>\"}]} "
     + "— an empty list when nothing breaks.";
   // The judged view (D1): the closing offer line is the rules' own, never a breach.
-  const view = judgedView(prose);
+  const view = judgedView(prose, { offer });
   const body = {
     model: JUDGE_MODEL, max_tokens: JUDGE_MAX_TOKENS, system,
     messages: [{ role: "user", content: `LINES:\n${lines}\n\nNARRATION:\n"""${view.text.slice(0, 4000)}"""` }],
@@ -796,10 +818,13 @@ export async function judgeNarration(prose, tripped, { apiKey } = {}) {
     console.warn(`${MODULE_ID} | obligation judge: no verdict (${error}) — the narration passes as written.`);
     return { violations: [], dropped: [], judged: false, error };
   };
+  // At the cutoff the request is cancelled, not left to run on to the
+  // network's own deadline, billed and in the API Log (issue #399's audit N7).
+  const cancel = typeof globalThis.AbortController === "function" ? new globalThis.AbortController() : null;
   try {
     const data = await Promise.race([
-      apiPost(ANTHROPIC_URL, headers, body, { label: "obligationJudge" }),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("the judge timed out")), JUDGE_TIMEOUT_MS); }),
+      apiPost(ANTHROPIC_URL, headers, body, { label: "obligationJudge", ...(cancel ? { signal: cancel.signal } : {}) }),
+      new Promise((_, reject) => { timer = setTimeout(() => { cancel?.abort(); reject(new Error("the judge timed out")); }, JUDGE_TIMEOUT_MS); }),
     ]);
     const text = (data?.content ?? []).filter(b => b?.type === "text").map(b => b.text).join("");
     const parsed = firstJsonObject(text);
@@ -870,22 +895,33 @@ function codeChecks(prose, sidecar, obligations, ctx, draft) {
  * whose fact block is applied. A re-ask that throws (a rate limit, a dropped
  * connection), or that comes back with no prose — a fact block alone is no
  * narration — keeps the first draft: it was a narration, and only its check
- * failed.
+ * failed. So does a redraft that adds a certain breach the first draft did
+ * not have (issue #399's audit N9). The judge is called once at most, on the
+ * draft that posts (N10): the first when the code's checks pass it, else
+ * after the re-ask, its verdicts then only reported (`stillBroken`).
  *
  * Every verdict is a row of `verdicts`, marked with the draft it describes
  * (`draft` 1 or 2); a judge's call is one summary row and one row a
  * violation or a dropped one. `stopped()` is the caller's own discard test
  * (an X-Card played, a round taken over, a dropped connection — the audit's
  * N14): once it is true no judge is called and `onVerdict` is not told, as
- * the caller posts nothing of this narration.
+ * the caller posts nothing of this narration. `view(prose)` is the part of a
+ * reply's prose the checks and the judge read, when not all of it is
+ * narration (the audit's N29: an inciting incident's proposal block); the
+ * re-ask is shown its draft whole, so a redraft keeps the rest.
  *
  * @param {(addendum: string|null) => Promise<string|null>} call
  * @param {Array<Object>} obligations
- * @param {{ apiKey?: string|null, judge?: boolean, ctx?: Object, onVerdict?: Function, stopped?: Function }} [opts]
+ * @param {{ apiKey?: string|null, judge?: boolean, ctx?: Object, onVerdict?: Function, stopped?: Function, view?: Function }} [opts]
  * @returns {Promise<{ raw: string|null, reasked: boolean, verdicts: Array<Object>, stillBroken: Array<Object> }>}
  */
-export async function narrateKeepingObligations(call, obligations, { apiKey = null, judge = true, ctx = {}, onVerdict = null, stopped = null } = {}) {
+export async function narrateKeepingObligations(call, obligations, { apiKey = null, judge = true, ctx = {}, onVerdict = null, stopped = null, view = null } = {}) {
   const halted = () => { try { return typeof stopped === "function" && stopped() === true; } catch { return false; } };
+  // The text checked of a draft's prose: the caller's view of it, or all of it.
+  const seen = (text) => {
+    if (typeof view !== "function") return text;
+    try { return String(view(text) ?? ""); } catch { return text; }
+  };
   const tell = (v) => { if (!halted() && (v.verdicts.length || v.stillBroken?.length)) onVerdict?.(v); };
   const raw = await call(null);
   const verdicts = [];
@@ -894,27 +930,37 @@ export async function narrateKeepingObligations(call, obligations, { apiKey = nu
   }
   const first = extractSidecar(raw);
   const prose = first.prose ?? raw;
-  const firstChecks = codeChecks(prose, first.sidecar, obligations, ctx, 1);
+  const firstChecks = codeChecks(seen(prose), first.sidecar, obligations, ctx, 1);
   verdicts.push(...firstChecks.logged);
   let broken = firstChecks.broken;
-  if (!broken.length && judge && !halted()) {
-    // The trip words are read in the judged view too (D1): an offer line's
-    // move name ("…would be a Forge a Bond") trips nothing.
-    const tripped = trippedLines(judgedView(prose).text, obligations, ctx);
-    if (tripped.length) {
-      const verdict = await judgeNarration(prose, tripped, { apiKey });
-      verdicts.push({ class: "judge", draft: 1, tripped: tripped.map(o => o.kind), judged: verdict.judged, error: verdict.error ?? null });
-      for (const d of verdict.dropped ?? []) verdicts.push({ ...d, class: "judge", action: "dropped", draft: 1 });
-      // Authority follows the measure (issue #399, D7): a verdict on a kind
-      // that has not passed is logged and counted, and the first draft posts.
-      // Round 9's four re-asks were all on wrong verdicts, and a redraft is
-      // posted unjudged ("…would be a Forge a Bond, if you press it").
-      const acts = (v) => judgeMayAct(v.tag, "judge");
-      for (const v of verdict.violations.filter(x => !acts(x))) {
-        verdicts.push({ class: "judge", draft: 1, tag: v.tag, line: v.line, quote: v.quote, action: "logged" });
-      }
-      broken = verdict.violations.filter(acts).map(v => ({ ...v, class: "judge", draft: 1 }));
+  // The one judge call a narration (D9), on the draft that posts: the first,
+  // when the code's checks pass it; else, after the re-ask, whichever posts
+  // (issue #399's audit N10 — neither draft of a narration the code re-asked
+  // was judged). Its verdicts act only before the re-ask: there is no second.
+  // The trip words are read in the judged view too (D1): an offer line's
+  // move name ("…would be a Forge a Bond") trips nothing. judgeNarration is
+  // called from this function itself, never a helper: the playthrough
+  // harness files a judge call by the narration that made it, looking
+  // through this wrapper (test/ci/playwright/lib/claude.mjs PASS_THROUGH).
+  const offer = offerMayBeGiven(obligations);
+  const tripsOf = (text) => trippedLines(judgedView(seen(text), { offer }).text, obligations, ctx);
+  // A verdict's rows, and the lines it may act on: a verdict on a kind that
+  // has not passed the measure is logged and counted, and acts on nothing
+  // (issue #399, D7).
+  const verdictOn = (verdict, tripped, draft) => {
+    verdicts.push({ class: "judge", draft, tripped: tripped.map(o => o.kind), judged: verdict.judged, error: verdict.error ?? null });
+    for (const d of verdict.dropped ?? []) verdicts.push({ ...d, class: "judge", action: "dropped", draft });
+    const acts = (v) => judgeMayAct(v.tag, "judge");
+    for (const v of verdict.violations.filter(x => !acts(x))) {
+      verdicts.push({ class: "judge", draft, tag: v.tag, line: v.line, quote: v.quote, action: "logged" });
     }
+    return verdict.violations.filter(acts).map(v => ({ ...v, class: "judge", draft }));
+  };
+  let judgedOnce = false;
+  if (!broken.length && judge && !halted()) {
+    judgedOnce = true;
+    const tripped = tripsOf(prose);
+    if (tripped.length) broken = verdictOn(await judgeNarration(seen(prose), tripped, { apiKey, offer }), tripped, 1);
   }
   if (!broken.length) {
     tell({ verdicts, reasked: false });
@@ -929,17 +975,26 @@ export async function narrateKeepingObligations(call, obligations, { apiKey = nu
   }
   const second = typeof again === "string" ? extractSidecar(again) : null;
   const secondProse = second ? String(second.prose ?? again) : "";
-  if (!secondProse.trim()) {
-    // The re-ask failed, or gave no narration: the first draft stands, its breach logged.
-    const stillBroken = broken.map(({ text: _text, ...v }) => v);
-    tell({ verdicts, reasked: true, stillBroken });
-    return { raw, reasked: true, verdicts, stillBroken };
+  const bare = (list) => list.map(({ text: _text, ...v }) => v);
+  // The draft that posts, and what it still breaks. A re-ask that failed, or
+  // gave no narration — a fact block alone is none — keeps the first draft.
+  let posted = { raw, prose, draft: 1, stillBroken: bare(broken) };
+  if (secondProse.trim()) {
+    // The redraft is held to the code's checks — the certain and the floor
+    // (the audit's N9: it was held to the certain alone).
+    const secondChecks = codeChecks(seen(secondProse), second.sidecar, obligations, ctx, 2);
+    verdicts.push(...secondChecks.logged);
+    // A redraft that adds a certain breach the first draft did not have is
+    // not posted: the first draft is (the audit's N9, its posting half).
+    const firstCertain = new Set(broken.filter(v => v.class === "certain").map(v => v.tag));
+    const added = secondChecks.broken.filter(v => v.class === "certain" && !firstCertain.has(v.tag));
+    if (added.length) verdicts.push(...bare(added).map(v => ({ ...v, action: "redraft not posted" })));
+    else posted = { raw: again, prose: secondProse, draft: 2, stillBroken: bare(secondChecks.broken) };
   }
-  // The redraft is held to the code's checks — the certain and the floor
-  // (the audit's N9: it was held to the certain alone) — and posted whatever
-  // they say; what it still breaks is reported, marked draft 2.
-  const secondChecks = codeChecks(secondProse, second.sidecar, obligations, ctx, 2);
-  verdicts.push(...secondChecks.logged);
-  tell({ verdicts, reasked: true, stillBroken: secondChecks.broken });
-  return { raw: again, reasked: true, verdicts, stillBroken: secondChecks.broken };
+  if (!judgedOnce && judge && !halted()) {
+    const tripped = tripsOf(posted.prose);
+    if (tripped.length) posted.stillBroken.push(...bare(verdictOn(await judgeNarration(seen(posted.prose), tripped, { apiKey, offer }), tripped, posted.draft)));
+  }
+  tell({ verdicts, reasked: true, stillBroken: posted.stillBroken });
+  return { raw: posted.raw, reasked: true, verdicts, stillBroken: posted.stillBroken };
 }

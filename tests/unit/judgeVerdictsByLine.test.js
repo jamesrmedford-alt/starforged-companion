@@ -113,7 +113,8 @@ describe('D3 — verdicts by line', () => {
       { line: 1, quote: 'Breaking free would be a Face Danger' },                        // the offer line: not in the judged view
       { line: 1, quote: 'the cutter rams you' },                                         // words the narration never said
     ] }));
-    const v = await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' });
+    // a36 was offered a move: its closing line is the rules' own (the audit's N32).
+    const v = await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test', offer: true });
     expect(v.violations).toEqual([]);
     expect(v.dropped.map(d => d.why)).toEqual(['names no line', 'names no line', 'not in the narration', 'not in the narration']);
     expect(v.judged).toBe(true);
@@ -134,6 +135,17 @@ describe('D3 — verdicts by line', () => {
 });
 
 describe('the judge says why it did not judge', () => {
+  it('N7: at its cutoff the judge\'s request is cancelled, not left to run on', async () => {
+    vi.useFakeTimers();
+    let signal = null;
+    apiPost.mockImplementationOnce((_url, _headers, _body, opts) => { signal = opts?.signal ?? null; return new Promise(() => {}); });
+    const pending = judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' });
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(await pending).toMatchObject({ judged: false, error: 'timeout' });
+    expect(signal?.aborted).toBe(true);
+    vi.useRealTimers();
+  });
+
   it('a timeout, an error, an unparsed reply and a reply cut at its cap each name their cause', async () => {
     replies.push(new Error('Anthropic API error 529: overloaded'));
     expect(await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'error: Anthropic API error 529: overloaded' });
@@ -196,6 +208,53 @@ describe('the rows a narration\'s check writes', () => {
   });
 });
 
+describe('the audit\'s N9 and N10: which draft posts, and the one judge call on it', () => {
+  const HEAL_REFUSAL = { moveId: 'heal', code: 'recoverable-health', hard: false, why: 'nothing to heal: Mira Kestrel\'s health is 5 of 5 and no wound is marked',
+    premise: { claim: 'a wound to treat', never: 'a cut, a gash, blood or a dressing on them' }, offer: null };
+
+  it('N9: a redraft that adds a certain breach the first draft did not have is not posted — the first draft is', async () => {
+    const lines = [...obligationsFor({ mode: 'move', resolution: { moveId: 'face_danger', outcome: 'strong_hit' } }), { kind: 'vow', list: 'TELL', text: '' }];
+    const FIRST = `She waits by the hatch.${SIDECAR}`;
+    const SECOND = `It is a strong hit, and the lock gives.${SIDECAR}`;
+    const call = vi.fn(async (addendum) => (addendum ? SECOND : FIRST));
+    const kept = await narrateKeepingObligations(call, lines, { apiKey: 'sk-test', judge: false, ctx: { vowName: 'Find who is raiding the Cinder lanes' } });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(kept).toMatchObject({ raw: FIRST, reasked: true });
+    expect(kept.stillBroken.map(v => [v.tag, v.class, v.draft])).toEqual([['vow', 'floor', 1]]);
+    expect(kept.verdicts).toContainEqual(expect.objectContaining({ tag: 'apparatus', class: 'certain', draft: 2, action: 'redraft not posted' }));
+  });
+
+  it('N9, control: a redraft that keeps the first draft\'s certain breach still posts — the one re-ask was spent', async () => {
+    const BAD = `It is a strong hit, and the lock gives.${SIDECAR}`;
+    const kept = await narrateKeepingObligations(async () => BAD, obligationsFor({ mode: 'move', resolution: { moveId: 'face_danger', outcome: 'strong_hit' } }), { apiKey: 'sk-test' });
+    expect(kept.stillBroken.map(v => [v.tag, v.draft])).toEqual([['apparatus', 2]]);
+    expect(kept.verdicts.some(v => v.action === 'redraft not posted')).toBe(false);
+  });
+
+  it('N10: a narration the code re-asked has the draft that posts judged — once, its verdict reported, with no second re-ask', async () => {
+    const lines = obligationsFor({ mode: 'paced', refusal: HEAL_REFUSAL });
+    const FIRST = `It is a strong hit: the medkit opens.${SIDECAR}`;
+    const SECOND = `She thumbs the medkit open and lays the binding out on the bench.${SIDECAR}`;
+    replies.push('{"violations":[{"line":1,"quote":"lays the binding out on the bench"}]}');
+    const call = vi.fn(async (addendum) => (addendum ? SECOND : FIRST));
+    const kept = await narrateKeepingObligations(call, lines, { apiKey: 'sk-test', ctx: { refusalCode: 'recoverable-health' } });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(kept.raw).toBe(SECOND);
+    expect(kept.verdicts).toContainEqual({ class: 'judge', draft: 2, tripped: ['premise'], judged: true, error: null });
+    expect(kept.stillBroken).toContainEqual(expect.objectContaining({ tag: 'premise', class: 'judge', draft: 2 }));
+  });
+
+  it('N10: a narration judged before its re-ask is not judged again (D9: one judge call a narration)', async () => {
+    const lines = obligationsFor({ mode: 'paced', refusal: HEAL_REFUSAL });
+    const JUDGED = `She thumbs the medkit open and lays the binding out on the bench.${SIDECAR}`;
+    replies.push('{"violations":[{"line":1,"quote":"lays the binding out on the bench"}]}');
+    const kept = await narrateKeepingObligations(async () => JUDGED, lines, { apiKey: 'sk-test', ctx: { refusalCode: 'recoverable-health' } });
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(kept.reasked).toBe(true);
+  });
+});
+
 describe('a redraft with no prose', () => {
   it('keeps the first draft: a reply that is only a fact block is no narration', async () => {
     const BAD = `It is a strong hit, and the lock gives.${SIDECAR}`;
@@ -226,18 +285,30 @@ describe('the re-ask names every line broken, each in its own words', () => {
   });
 });
 
-describe('the offer line is no breach of any check', () => {
+describe('the offer line is no breach of any check — where the narration was offered a move', () => {
+  // Its lines hold [offer] (checks.js offerMayBeGiven): only there is the closing line the rules' own (the audit's N32).
+  const OFFER = { kind: 'offer', list: 'NOT YET', text: 'Set a Course is only offered.' };
   const OFFERED = 'Tamsin shrugs and goes back to her ledger. The berth is quiet.\n\n*Flying your skiff to Hollow Spire is a Set a Course.*';
   it('[here]: an offer to fly there moves no one', () => {
     const here = { kind: 'here', list: 'NOT SO', text: 't', here: 'Bleakhold Station', places: [{ id: 'p2', name: 'Hollow Spire' }], people: [], markers: [] };
-    expect(certainViolations(OFFERED, [here])).toEqual([]);
+    expect(certainViolations(OFFERED, [here, OFFER])).toEqual([]);
     // Control: the same words told as done do.
-    expect(certainViolations('You fly your skiff to Hollow Spire and dock at noon.', [here]).map(v => v.tag)).toEqual(['here']);
+    expect(certainViolations('You fly your skiff to Hollow Spire and dock at noon.', [here, OFFER]).map(v => v.tag)).toEqual(['here']);
   });
   it('[match], [quote] and the floors read the body', () => {
-    expect(certainViolations('She waits.\n\n*Seeing whether her story matches the manifest would be a Gather Information.*', [{ kind: 'match' }])).toEqual([]);
-    expect(floorViolations('She waits by the hatch.\n\n*Asking about the raiders would be Gather Information.*', [{ kind: 'vow' }],
+    expect(certainViolations('She waits.\n\n*Seeing whether her story matches the manifest would be a Gather Information.*', [{ kind: 'match' }, OFFER])).toEqual([]);
+    expect(floorViolations('She waits by the hatch.\n\n*Asking about the raiders would be Gather Information.*', [{ kind: 'vow' }, OFFER],
       { vowName: 'Find who is raiding the Cinder Expanse lanes' }).reask).toEqual([{ tag: 'vow', quote: '' }]);
+  });
+  it('N32: a narration offered no move closes on narration — its closing italic line is read; a bold offer line is one', () => {
+    // A move narration's closing comm line, in italics: the story's, so the checks read it.
+    const comm = 'The lock gives.\n\n*"A strong hit, if ever I saw one," the dockmaster says over the comm.*';
+    expect(certainViolations(comm, [{ kind: 'apparatus' }]).map(v => v.tag)).toEqual(['apparatus']);
+    expect(certainViolations(comm, [{ kind: 'apparatus' }, OFFER])).toEqual([]);
+    // The line in bold is the offer line too, where one was offered.
+    const bold = 'She waits by the hatch.\n\n**Asking about the raiders would be a Gather Information.**';
+    expect(certainViolations(bold, [{ kind: 'apparatus' }, OFFER])).toEqual([]);
+    expect(certainViolations(bold, [{ kind: 'apparatus' }]).map(v => v.tag)).toEqual(['apparatus']);
   });
 });
 

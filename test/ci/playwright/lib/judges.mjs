@@ -216,6 +216,21 @@ export function contextOf(lines) {
   return { refusalCode, offer: offerName ? (MOVE_ID_BY_NAME.get(offerName) ?? null) : null, question };
 }
 
+/**
+ * Whether a narrator request offered a move — its SUGGESTED MOVE section
+ * (narratorPrompt.js buildPacedNarrativeUserMessage), which the module gives
+ * exactly where the narration's lines hold [offer] (checks.js
+ * offerMayBeGiven). An entry's lines are the labelled ones, often without
+ * [offer]: the request says it. Where it did, the narration's closing offer
+ * line is left out of what the judges read (issue #399's audit N32).
+ *
+ * @param {string} user — the recorded request's user message
+ * @returns {boolean}
+ */
+export function offeredIn(user) {
+  return /^## SUGGESTED MOVE$/m.test(String(user ?? ""));
+}
+
 /** The move a narrator request tells (its MOVE OUTCOME's "[MOVE: Clash +edge]"), by id, or null. */
 function moveIdOf(user) {
   const name = /\[MOVE: ([^\]]+?)(?: \+\w+)?\]/.exec(String(user ?? ""))?.[1]?.toLowerCase() ?? "";
@@ -243,7 +258,8 @@ function handLine(spec, ctx = {}) {
  * The labelled set: every narration the runs recorded with its lines, the
  * reviews' labels, the hand-written lines of runs that predate them, and the
  * seeded breaches. Each entry: `{ id, run, step, kind, nth, raw, lines, ctx,
- * labels: { [kind]: true|false }, seeded, source }`.
+ * offer, labels: { [kind]: true|false }, seeded, source }` — `offer`: its
+ * request offered a move (offeredIn; a seed's, its narration's).
  *
  * @param {{ explorations: string, set: Object }} opts — the explorations folder, set.json's content
  * @returns {{ entries: Array<Object>, missing: string[] }} — `missing`: labels and seeds whose narration the runs do not hold
@@ -259,7 +275,7 @@ export function buildSet({ explorations, set }) {
       const recorded = recordedLines(n.user);
       const ctx = { ...contextOf(recorded), moveId: moveIdOf(n.user) };
       entries.set(n.id, { id: n.id, run: n.run, step: n.step, kind: n.kind, nth: n.nth, raw: n.raw, lines: recorded.map(o => asBuiltNow(o, ctx)),
-        ctx, labels: {}, seeded: false, source: null });
+        ctx, offer: offeredIn(n.user), labels: {}, seeded: false, source: null });
     }
     return entries.get(n.id);
   };
@@ -287,7 +303,7 @@ export function buildSet({ explorations, set }) {
     const lines = seed.lines === "recorded" ? recorded.filter(o => o.kind === seed.line)
       : (seed.lines ?? []).map(spec => handLine(spec, contextOf(seed.lines ?? [])));
     const ctx = { ...contextOf(seed.lines === "recorded" ? recorded : lines), moveId: moveIdOf(n.user), ...(seed.ctx ?? {}) };
-    entries.set(`seed:${seed.id}`, { id: `seed:${seed.id}`, run: n.run, step: n.step, kind: n.kind, nth: n.nth, raw: seed.narration,
+    entries.set(`seed:${seed.id}`, { id: `seed:${seed.id}`, run: n.run, step: n.step, kind: n.kind, nth: n.nth, raw: seed.narration, offer: offeredIn(n.user),
       // `also`: another line the edit breaks, by its own label ([premise]'s cut at full health is harm too).
       lines, ctx, labels: { [seed.line]: true, ...(seed.also ?? {}) }, seeded: true, source: "seeded", edit: seed.edit ?? "" });
   }
@@ -310,9 +326,11 @@ export const requestHash = (body) => crypto.createHash("sha256").update(JSON.str
  */
 export async function judgePass(entry, { apiKey }) {
   const judgeLines = entry.lines.filter(o => checkClassOf(o.kind) === "judge");
-  const tripped = trippedLines(judgedView(entry.raw).text, judgeLines, entry.ctx);
+  // Its closing offer line left out where it was offered a move, as the module does (the audit's N32).
+  const offer = entry.offer === true;
+  const tripped = trippedLines(judgedView(entry.raw, { offer }).text, judgeLines, entry.ctx);
   if (!tripped.length) return { tripped: [], judged: false, error: null, flagged: [], violations: [], dropped: [] };
-  const verdict = await judgeNarration(entry.raw, tripped, { apiKey });
+  const verdict = await judgeNarration(entry.raw, tripped, { apiKey, offer });
   return { tripped: tripped.map(o => o.kind), judged: verdict.judged, error: verdict.error ?? null,
     flagged: [...new Set(verdict.violations.map(v => v.tag))], violations: verdict.violations, dropped: verdict.dropped ?? [] };
 }
@@ -328,7 +346,7 @@ export async function judgePass(entry, { apiKey }) {
 export async function auditPass(entry, { apiKey }) {
   const section = auditObligationSection(entry.lines);
   if (!section.lines.length) return { audited: false, error: null, flagged: [], findings: [] };
-  const view = judgedView(entry.raw);
+  const view = judgedView(entry.raw, { offer: entry.offer === true });
   const body = auditRequestBody(buildAuditPrompt("", "", view.text, { obligations: section.text }));
   const headers = { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
   try {
@@ -394,7 +412,7 @@ export function codeScore(entries) {
     if (e.labels.harm === null) continue;
     row.lines += 1;
     const breach = e.labels.harm === true;
-    const flagged = harmViolations(judgedView(e.raw).text, e.lines, e.ctx).length > 0;
+    const flagged = harmViolations(judgedView(e.raw, { offer: e.offer === true }).text, e.lines, e.ctx).length > 0;
     if (breach) row.breaches += 1;
     if (flagged) { row.flags += 1; row.flagged.push(e.id); }
     if (flagged && breach) { row.right += 1; row.caught += 1; }

@@ -75,6 +75,7 @@ import {
   getCampaignRecap,
   registerRollingSummaryRefreshHook,
   registerXCardRedirectHook,
+  registerStillBrokenNoteHook,
   registerDeletedChatHook,
   registerPublishedReflectionHook,
   narratorMemoryCard,
@@ -10894,6 +10895,7 @@ Hooks.once("ready", () => {
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
   registerXCardRedirectHook();             // #321 U07: the X-Card's redirect is cleared once the first narration after it posts
+  registerStillBrokenNoteHook();           // #399 N16: a narration still broken after its re-ask gets a GM note with its card
   registerXCardLatePostHook();             // XCARD-POST-RACE: a narration whose card posts after the pause is removed with it
   registerDeletedChatHook();               // #347 AB22: the X-Card's pick reads chat as it was, a deleted narration included
   registerConnectionWatch();               // #347 AB19: a narration in flight across a dropped connection is discarded

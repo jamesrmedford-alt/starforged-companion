@@ -154,3 +154,44 @@ describe('fetchWithTimeout — the deadline covers the body', () => {
     await call;
   });
 });
+
+// Issue #399's audit N7: the narration's judge gives up at 4 s, and its
+// request ran on to this deadline, billed and in the API Log. A caller's own
+// signal cancels the request, and the cancel is never reported as a timeout.
+describe('fetchWithTimeout — the caller cancels', () => {
+  const stalled = () => vi.fn((_url, init) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener('abort', () => {
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      reject(err);
+    });
+  }));
+
+  it('the caller\'s signal aborts the request: an AbortError saying it was cancelled, not a timeout', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = stalled();
+    const cancel = new AbortController();
+    const pending = fetchWithTimeout('https://api.example.com/x', { method: 'POST', signal: cancel.signal }, { timeoutMs: 60_000, label: 'Judge' });
+    cancel.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError', message: 'Judge cancelled by its caller' });
+    const [, init] = globalThis.fetch.mock.calls[0];
+    expect(init.signal.aborted).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a signal already aborted cancels before any wait', async () => {
+    globalThis.fetch = stalled();
+    const cancel = new AbortController();
+    cancel.abort();
+    await expect(fetchWithTimeout('https://api.example.com/x', { signal: cancel.signal }, { timeoutMs: 60_000, label: 'Judge' }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('a request that completes leaves the caller\'s signal alone', async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: 1 }) }));
+    const cancel = new AbortController();
+    const res = await fetchWithTimeout('https://api.example.com/x', { signal: cancel.signal }, { timeoutMs: 60_000 });
+    expect(await res.json()).toEqual({ ok: 1 });
+    cancel.abort();   // after the fact: nothing left to cancel, nothing thrown
+  });
+});

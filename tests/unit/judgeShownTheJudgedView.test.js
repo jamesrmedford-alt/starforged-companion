@@ -12,7 +12,8 @@
  * against the characters' place. Measured here with no key, over the run's
  * own recorded narrations and requests:
  *   - D1, one judged view: every narration reaches a judge with no fact block
- *     and no closing offer line. The pre-post judge, asked again on each of
+ *     and, where it was offered a move, no closing offer line (issue #399's
+ *     audit N32: one detector, read only there). The pre-post judge, asked again on each of
  *     its nineteen recorded requests, is sent none (seven held one), and its
  *     trip words are read without it. The audit, built for each narration
  *     the run gave lines, is sent none, nor a line the code already held the
@@ -52,7 +53,7 @@ vi.mock('../../src/factContinuity/correctionDialog.js', async (importOriginal) =
 }));
 
 import { apiPost } from '../../src/api-proxy.js';
-import { judgedView, judgeNarration, trippedLines, checkClassOf, judgeMayAct } from '../../src/moves/contracts/checks.js';
+import { judgedView, judgeNarration, trippedLines, checkClassOf, judgeMayAct, offerMayBeGiven } from '../../src/moves/contracts/checks.js';
 import { obligationsFor, OBLIGATION_KINDS } from '../../src/moves/contracts/obligations.js';
 import { runConsistencyCheck } from '../../src/factContinuity/consistencyCheck.js';
 import { openCorrectionDialog } from '../../src/factContinuity/correctionDialog.js';
@@ -70,9 +71,11 @@ const reply = (text) => ({ content: [{ type: 'text', text }], usage: {}, stop_re
 /** Every narration the run recorded that a judge reads: a beat's, a set-piece's, an oracle's, an @scene answer. */
 const NARRATIONS = EX.filter(x => /^callNarratorAPI>(narratePacedInput|narrateResolution|narrateSessionVignette|narrateOracleFollowup|interrogateScene)$/.test(x.kind));
 
-/** A narration's closing offer line — the rules' own, the one place a move may be named (checks.js bodyOf). */
+/** A narration's closing offer line — the rules' own, the one place a move may be named (narration/closingOfferLine.js). */
 const OFFER_LINE = /\s*[*_][^*_\n]{3,}[*_]\s*$/;
 const offerLineOf = (text) => OFFER_LINE.exec(extractSidecar(text).prose ?? text)?.[0].trim() ?? null;
+/** Whether a recorded narrator request offered a move: its SUGGESTED MOVE section. */
+const offeredIn = (user) => /^## SUGGESTED MOVE$/m.test(String(user ?? ''));
 
 /** The lines a narrator request was given (formatObligationsBlock), read back: `{ kind, list, text }`. */
 function linesOf(user) {
@@ -89,6 +92,9 @@ function linesOf(user) {
   }
   return out;
 }
+
+/** The steps whose narration was offered a move. */
+const OFFERED_STEPS = new Set(NARRATIONS.filter(x => offeredIn(x.user)).map(x => x.step));
 
 /** The pre-post judge's recorded requests: its tripped lines and the narration it was sent. */
 const JUDGED = EX.filter(x => x.kind.startsWith('judgeNarration>')).map((x) => {
@@ -129,21 +135,25 @@ beforeEach(() => {
 describe('D1 — the one judged view', () => {
   it('is the narration without its fact block and its closing offer line, and nothing else; and says whether it is a cutaway', () => {
     const raw = 'The clerk has backed against a berth lamp.\n\n*Meeting her fire in the berth would be an Enter the Fray.*\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
-    expect(judgedView(raw)).toEqual({ text: 'The clerk has backed against a berth lamp.', cutaway: false });
+    expect(judgedView(raw, { offer: true })).toEqual({ text: 'The clerk has backed against a berth lamp.', cutaway: false });
     expect(judgedView('The lounge is empty.', { kind: 'cutaway' })).toEqual({ text: 'The lounge is empty.', cutaway: true });
     expect(judgedView('She *does* answer.', { kind: 'session_vignette' })).toMatchObject({ text: 'She *does* answer.', cutaway: false });
     expect(judgedView(null).text).toBe('');
   });
 
-  it('round 9\'s every narration reaches a judge with no fact block and no offer line — twenty of its 86 ended on one', () => {
+  it('round 9\'s every narration reaches a judge with no fact block and no offer line — twenty of its 86 ended on one, each offered a move', () => {
     expect(NARRATIONS).toHaveLength(86);
     const offered = NARRATIONS.filter(x => offerLineOf(replyOf(x)));
     expect(offered.map(x => x.step)).toEqual(['a5', 'a12', 'a13', 'a29', 'a29', 'a57', 'a60', 'a62', 'a64', 'a66', 'a66', 'a68',
       'a70', 'a70', 'a72', 'a74', 'a76', 'a77', 'a79', 'a81']);
+    // Each was offered a move, and every narration offered one closed on its line: the request says
+    // it, as its lines do (offerMayBeGiven — what the module reads).
+    expect(NARRATIONS.filter(x => offeredIn(x.user))).toEqual(offered);
+    for (const x of NARRATIONS) expect(offerMayBeGiven(linesOf(x.user)), x.step).toBe(offeredIn(x.user));
     for (const x of NARRATIONS) {
       const raw = replyOf(x);
       const prose = (extractSidecar(raw).prose ?? raw).trim();
-      const { text } = judgedView(raw);
+      const { text } = judgedView(raw, { offer: offeredIn(x.user) });
       expect(text, x.step).not.toMatch(/```|"newTruths"|"sceneFrame"/);
       expect(offerLineOf(text), x.step).toBeNull();
       const offer = offerLineOf(raw);
@@ -159,13 +169,15 @@ describe('the pre-post judge is sent the judged view (D1)', () => {
     expect(JUDGED.filter(j => offerLineOf(j.narration)).map(j => j.step)).toEqual(['a29', 'a60', 'a70', 'a72', 'a74', 'a76', 'a77']);
     for (const j of JUDGED) {
       apiPost.mockClear();
-      await judgeNarration(j.narration, j.lines, { apiKey: 'sk-test' });
+      const offered = OFFERED_STEPS.has(j.step);
+      await judgeNarration(j.narration, j.lines, { apiKey: 'sk-test', offer: offered });
       const sent = apiPost.mock.calls[0][2].messages[0].content;
       const told = /NARRATION:\n"""([\s\S]*)"""$/.exec(sent)[1];
       expect(offerLineOf(told), j.step).toBeNull();
       const offer = offerLineOf(j.narration);
+      if (offer) expect(offered, j.step).toBe(true);
       if (offer) expect(sent, j.step).not.toContain(offer);
-      expect(told, j.step).toBe(judgedView(j.narration).text);
+      expect(told, j.step).toBe(judgedView(j.narration, { offer: offered }).text);
     }
   });
 
@@ -177,7 +189,7 @@ describe('the pre-post judge is sent the judged view (D1)', () => {
     expect(offerLineOf(a29.narration)).toBe('*Meeting her fire in the berth would be an Enter the Fray.*');
     expect(a29.lines.map(o => o.kind)).toEqual(expect.arrayContaining(['premise', 'offer', 'state']));
     expect(trippedLines(a29.narration, a29.lines, ctx).map(o => o.kind)).toEqual(['premise']);
-    expect(trippedLines(judgedView(a29.narration).text, a29.lines, ctx)).toEqual([]);
+    expect(trippedLines(judgedView(a29.narration, { offer: true }).text, a29.lines, ctx)).toEqual([]);
   });
 
   it('a70: re-asked on its own offer line — [offer] is no longer judged before posting, and a judge is never shown that line', async () => {
@@ -186,8 +198,8 @@ describe('the pre-post judge is sent the judged view (D1)', () => {
     expect(verdict.violations).toEqual([{ tag: 'offer', quote: '*Binding her to you for good would be a Forge a Bond.*' }]);
     const offer = a70.lines.filter(o => o.kind === 'offer');
     expect(checkClassOf('offer')).toBe('logged');
-    expect(trippedLines(judgedView(a70.narration).text, offer, {})).toEqual([]);
-    await judgeNarration(a70.narration, offer, { apiKey: 'sk-test' });
+    expect(trippedLines(judgedView(a70.narration, { offer: true }).text, offer, {})).toEqual([]);
+    await judgeNarration(a70.narration, offer, { apiKey: 'sk-test', offer: true });
     expect(apiPost.mock.calls.at(-1)[2].messages[0].content).not.toContain('Binding her to you for good');
   });
 });
@@ -225,7 +237,7 @@ describe('the audit is sent the judged view, and no line the code already held t
       certainGiven += lines.filter(o => CERTAIN.includes(o.kind)).length;
       await runConsistencyCheck(replyOf(x), sceneState(), { obligations: lines });
       const system = auditPrompt();
-      expect(system, x.step).toContain(judgedView(replyOf(x)).text);
+      expect(system, x.step).toContain(judgedView(replyOf(x), { offer: offeredIn(x.user) }).text);
       const offer = offerLineOf(replyOf(x));
       if (offer) expect(system, x.step).not.toContain(offer);
       for (const kind of CERTAIN) expect(system, `${x.step} [${kind}]`).not.toContain(`[${kind}]`);

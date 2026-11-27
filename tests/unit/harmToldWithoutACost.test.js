@@ -26,6 +26,7 @@ import { apiPost } from '../../src/api-proxy.js';
 import { harmViolations, certainViolations, checkClassOf, judgeMayAct } from '../../src/moves/contracts/checks.js';
 import { obligationsFor } from '../../src/moves/contracts/obligations.js';
 import { narrateRound } from '../../src/narration/narrator.js';
+import { quotedLinesOf } from '../../src/narration/proseVariety.js';
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
@@ -36,9 +37,10 @@ const clash = (missSuffer) => obligationsFor({ mode: 'move', resolution: { moveI
   stakes: { hit: 'Your shots tear into the drifting cutter.', miss: 'The cutter answers, and the berth\'s seam worsens.', missSuffer, priceStated: true } } });
 const SHIP_PRICE = clash({ move: 'withstand_damage', amount: 1 });
 const HEALTH_PRICE = clash({ move: 'endure_harm', amount: 1 });
-const HEAL_REFUSED = obligationsFor({ mode: 'paced', refusal: { moveId: 'heal', code: 'recoverable-health', hard: false,
+const HEAL_REFUSAL = { moveId: 'heal', code: 'recoverable-health', hard: false,
   why: "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
-  premise: { claim: 'a wound to treat', never: 'a cut, a gash, blood or a dressing on them' }, offer: null } });
+  premise: { claim: 'a wound to treat', never: 'a cut, a gash, blood or a dressing on them' }, offer: null };
+const HEAL_REFUSED = obligationsFor({ mode: 'paced', refusal: HEAL_REFUSAL });
 
 describe('[sheet] is certain, and its harm clause is the check', () => {
   it('declared certain, held in code, and asked of no judge', () => {
@@ -98,8 +100,12 @@ describe('a refused Heal\'s character, whom the sheet holds unhurt: any wound to
     expect(harmViolations('You check your arms and find nothing that needs it.', HEAL_REFUSED)).toEqual([]);
   });
 
-  it('through the certain checks, on the body: the closing offer line is never read', () => {
-    expect(certainViolations('You check your arms and find nothing that needs it.\n\n*Tending a real wound would be a Heal.*', HEAL_REFUSED)).toEqual([]);
+  it('through the certain checks, on the body: a closing offer line is not read where a move was offered, and is where none was (N32)', () => {
+    const offered = obligationsFor({ mode: 'paced', offer: 'gather_information', refusal: HEAL_REFUSAL });
+    const told = 'You check your arms and find nothing that needs it.\n\n*Asking after the cuts on the others would be a Gather Information.*';
+    expect(certainViolations(told, offered)).toEqual([]);
+    // Offered nothing, its closing line is narration: "the cuts" there is a wound told, and the move it names a move's name.
+    expect(certainViolations(told, HEAL_REFUSED).map(v => v.tag)).toEqual(['apparatus', 'sheet']);
     expect(certainViolations('You start on the cuts.', HEAL_REFUSED).map(v => v.tag)).toEqual(['sheet']);
   });
 });
@@ -141,9 +147,42 @@ describe('a Batch Mode round: its moves are the check\'s (narrator.js roundCheck
     expect(String(apiPost.mock.calls[1][2].messages[0].content)).toContain('the sheet took no health on this beat: tell no harm done to you');
   });
 
+  it('its message tells the round the lines its check holds it to — [person] for its one character among them (N28)', async () => {
+    await narrateRound({ round: roundOf('face_danger', 'Face Danger'), campaignState: game.settings.get(MODULE_ID, 'campaignState') });
+    const asked = String(apiPost.mock.calls[0][2].messages[0].content);
+    expect(asked).toContain('- [person] The player\'s character is "you"');
+    expect(asked).toContain('- [sheet] ');
+  });
+
   it('the same words on a round that holds an Endure Harm post as written', async () => {
     await narrateRound({ round: roundOf('endure_harm', 'Endure Harm'), campaignState: game.settings.get(MODULE_ID, 'campaignState') });
     expect(labels()).not.toContain('narrator:narrateRound:reask');
     expect(ChatMessage._created.some(m => (m.content ?? '').includes('heat rakes your ribs'))).toBe(true);
+  });
+});
+
+// Issue #399's audit N28: a Batch Mode round was held to fewer lines than a
+// move. Its own lines now carry a move's beat-of-play ones, in its message and
+// its check alike (narrator.js roundLinesOf).
+describe('a Batch Mode round is held to a move\'s beat-of-play lines (N28)', () => {
+  const HERE = { here: 'Bleakhold Station', underway: null, places: [{ id: 'p2', name: 'Hollow Spire' }], people: [], markers: [] };
+  const lines = (over = {}) => obligationsFor({ mode: 'round', here: HERE, whereabouts: { here: 'Bleakhold Station', places: [{ name: 'Hollow Spire' }], people: [], words: ['hollow', 'spire'] },
+    dice: [{ subject: 'Ashen Wake', fact: 'has the better angle' }], person: { names: ['Kira Vale', 'Kira'] },
+    quotes: quotedLinesOf('"Then you are in it as deep as I am," Tamsin said.'), ...over });
+
+  it('[here], [whereabouts], [dice], [person] and [quote], beside the round\'s own [sheet] and [apparatus]', () => {
+    expect(lines().map(o => o.kind)).toEqual(['here', 'whereabouts', 'dice', 'sheet', 'apparatus', 'person', 'quote']);
+  });
+
+  it('the certain checks hold a round to them: the characters moved, the character named, a line said again', () => {
+    const held = (prose) => certainViolations(prose, lines()).map(v => v.tag);
+    expect(held('Kira flies the skiff to Hollow Spire and docks at noon.')).toEqual(expect.arrayContaining(['here', 'person']));
+    expect(held('"Then you are in it as deep as I am," Tamsin says again.')).toEqual(['quote']);
+    expect(held('You hold the lock while the cutter circles.')).toEqual([]);
+  });
+
+  it('none of them without their inputs: the caller leaves a journey\'s round its [here] and [whereabouts] off', () => {
+    expect(obligationsFor({ mode: 'round' }).map(o => o.kind)).toEqual(['sheet', 'apparatus']);
+    expect(lines({ here: null, whereabouts: null }).map(o => o.kind)).not.toContain('here');
   });
 });

@@ -433,7 +433,10 @@ export async function runIncitingIncident(campaignState, { authorId = null } = {
     const { narrateIncitingIncident } = await import("../narration/narrator.js");
     const userMessage = buildIncitingIncidentUserMessage(spark);
     narrationId = newNarrationId();
-    text = await narrateIncitingIncident({ userMessage, campaignState: campaignState ?? {}, narrationId });
+    // Its checks and its audit read the narration alone, not the proposal
+    // block after it (issue #399's audit N29).
+    text = await narrateIncitingIncident({ userMessage, campaignState: campaignState ?? {}, narrationId,
+      narrationOf: (reply) => splitIncitingMeta(reply).prose });
   } catch (err) {
     console.warn(`${MODULE_ID} | runIncitingIncident: narration failed:`, err?.message ?? err);
   }

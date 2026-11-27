@@ -1075,10 +1075,20 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     if (resolution && resolution.kind === "move") out.push(...resultObligations(resolution, { speaker, entry: true }));
     else if (refusal?.premise) out.push(line("premise", { refusal }));
   } else if (mode === "round") {
+    // A Batch Mode round is a beat of play, held to a move's lines (issue
+    // #399's audit N28): where the characters are, what the lines name
+    // elsewhere, what the dice decided of what they name, "you" in a
+    // second-person game, and no line of speech said again. The caller leaves
+    // `here` and `whereabouts` out of a round that holds a journey's move.
     out.push(...since());
     out.push(...state());
+    out.push(...where());
+    out.push(...elsewhere());
+    out.push(...decided());
     out.push(line("sheet", { mode }));
     out.push(line("apparatus", {}));
+    out.push(...you());
+    out.push(...repeated());
   } else if (mode === "oracle") {
     // A journey's complication, told at the arrival (narrator.js
     // narrateOracleFollowup): held to the place, as a beat of play is
