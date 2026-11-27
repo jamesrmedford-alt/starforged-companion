@@ -13,10 +13,10 @@
  * (narration/closingOfferLine.js), read only where an offer may be given: a
  * narration offered a move — its lines hold [offer], its card a move.
  *
- * The kept runs bear it out: every one of the 186 recorded narrations offered
- * a move closed on its line, as a sentence in italics, and none of the rest
- * closed on emphasis — so the kept measure's requests are unchanged
- * (judgeMeasure.test.js).
+ * The kept runs bear it out: every one of their 93 narrations offered a move
+ * closed on its line, as a sentence in italics, and none of the other 763
+ * closed on emphasis (over every recorded run, kept or not: 186 and 3,126) —
+ * so the kept measure's requests are unchanged (judgeMeasure.test.js).
  */
 
 /* global makeTestActor */
