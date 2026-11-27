@@ -16,6 +16,12 @@ rejected.
 - Rejected: *keep the entry and retire it when a later frame's location differs.* It keeps a place the player's line set as binding, but the retirement must be undone when the X-Card or a burn takes the later narration back. One store needs no undo.
 - Left: a player character not present in a split party keeps her place entry, which can still go stale. The GM's own `!state set` is never filtered.
 
+**The long haul's player acts where Mira is** (Code fix 6; test material only):
+- A player note: before she does anything in person, look at the last narration for where she is and who is with her; reach someone elsewhere over the comm, or go there first in a line of play. The relationship beats say Tamsin keeps her stall at Hollow Spire. The vow beat searches what is at hand where she is. The oracle question names the Cinder Wren instead of "the wreck".
+- The reason: several "wrong place" findings began with the scripted player, not the narrator — r1's meal and r2's minded counter with Tamsin at another station, r5's climb to a lounge, and the vow beat's "search the cutter's wreck" in r6, r7 and r8 when the wreck lay elsewhere. The one oracle question was answered about different wrecks in r4, r5 and r6.
+- b1 tells the player to answer the reward card when it shows buttons: no run had played the reward path. It is a tell alone; no `check` changed, because kept runs are compared with the charter on checks, facts, baits, dice and beat ids, and none of those changed.
+- The scripted progress dice stay as decided (the section below).
+
 ---
 
 ## After the eighth live round: a fight ends only by its move, a complication is the place's, the culprit is someone met, a quiet thread comes back, and the long haul's caps (2026-11-26)

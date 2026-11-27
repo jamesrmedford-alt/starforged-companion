@@ -14,9 +14,10 @@ against source — full traces in `docs/flows/*.md`._
 ### The long haul (issue #373 — #302 slice E, part 1) — built and rehearsed 2026-11-23; two live rounds the same day, each reviewed — the first round's findings fixed (issue #377), the second's fix-ready ones fixed and its runner faults with them; a third round 2026-11-24 with a player that names no move (issue #380), its module findings fixed and the readers moved to Sonnet 5.5; a fourth round the same day (issue #383), its runner and charter faults fixed and its module findings fixed by overhauls 1, 2 and 4 (issues #384–#386) on 2026-11-25; a fifth round the same day on those overhauls (issue #388) — every beat reached, its findings open
 
 `charters/long-haul.json`: one three-session playthrough by the exploration
-runner's AI player — 26 beats the observer checks, a ledger of seven facts
-and the hidden plans' leaks, 22 mechanical checks after every action, six
-scripted rolls, four interruptions, a GM by fixed rules (rules/ci-e2e.md →
+runner's AI player — 27 beats the observer checks (26 when it was built), a
+ledger of seven facts and the hidden plans' leaks, 22 mechanical checks after
+every action, seven scripted rolls (six when it was built), four
+interruptions, a GM by fixed rules (rules/ci-e2e.md →
 "A long run"; decisions.md → "The long haul, built"). What building and
 rehearsing it found, before any run was paid for:
 
