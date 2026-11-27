@@ -1,0 +1,287 @@
+{
+  "schema": 1,
+  "charter": "long-haul",
+  "mode": "live",
+  "questions": [
+    "Review cards (#399's measure): how many ◈ Narrative Review cards does the audit post, on which kinds, and is any of them false — a closing offer line read as the move made, a cutaway held to where the characters are, a line the code already held, a kind outside the audit's measured set?",
+    "The judge's re-asks (#399's measure): how many judge calls run, on which kinds, and how many re-asks do they cause? Is every re-ask on a kind the measure passed ([cost], [fight], [foe], [oracle], [premise], [price], [unsaid], [whereabouts]), and was each right?",
+    "Answered once (#399's measure): does the runner's answered-once check stay clean — no line narrated twice, no review card counted as a narration?",
+    "The judge's cutoff (N7): does any judge call time out at 4 s, and does its request stop there rather than run on in the API Log?",
+    "Redrafts (N9, N10): when a narration is written again, is the redraft ever not posted because it broke a line the first draft kept? After a code re-ask, is the posted draft judged, and what did that verdict find?",
+    "The GM's note (N16): does any narration still break a line after its re-ask, and is a GM-only Narrative Review note posted for it, once, after its card? Was each note right?",
+    "Set-pieces (N29): do the oath scene, any clock vignette and the opening call Mira \"you\" and use no table words; is any asked again, and what for?",
+    "The offer line (N32): is every closing move suggestion recognised (the Roll button names the move it invites), and is any narration not offered a move read with its closing italic line?",
+    "Harm with no cost (D9): does any narration tell harm, a wound or a spent resource the sheet never took, and was each caught in code or left?",
+    "The fight: between Enter the Fray and Take Decisive Action, is the foe ever told destroyed, dead, fled or beaten, and what did the [foe] judge rule?",
+    "Where Mira is: does a frame, a recap or STANDING NOW ever place her somewhere a later frame had moved her from, and does anyone appear in person where the record has them elsewhere?",
+    "Repetition: is any line of speech of six words or more said twice, and how does the refrain count compare with round 9's?",
+    "What it cost: calls, dollars and seconds a line against round 9 (469 calls, $3.26), with the judge and the audit on; beats done and checks violated against round 9."
+  ],
+  "startedAt": "2026-11-27T20:25:57.754Z",
+  "finishedAt": "2026-11-27T21:01:20.272Z",
+  "commit": "4a49c93fdf6c8933d9dfef15d567699e54949765",
+  "versions": {
+    "foundry": "13.351",
+    "system": "foundry-ironsworn 1.28.4",
+    "module": "1.1.1",
+    "browser": "chromium 157.0.8103.78"
+  },
+  "models": {
+    "player": {
+      "model": "claude-sonnet-5-5",
+      "effort": "low",
+      "maxTokens": 6000
+    },
+    "module": [
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5"
+    ]
+  },
+  "prices": {
+    "asOf": "2026-11-23",
+    "notes": "Standard rates, read from Anthropic's price list on the date above. A cache write is charged at 1.25 times input when it is kept five minutes and twice input when it is kept an hour, by the split the response reports (lib/budget.mjs); a write that does not say is priced as an hour's. Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "usdPerMillionTokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01
+      }
+    }
+  },
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": true,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "gm": {
+    "draftHolder": "none"
+  },
+  "classification": "suspected-quality-issue",
+  "because": "the ledger: 0 fact(s) refused, 1 lost — each excerpt is to be read",
+  "playerStopped": "every beat has been walked",
+  "goal": {
+    "status": "walked",
+    "reason": "27 of 27 beats done, 0 failed, 0 not exercised",
+    "beats": {
+      "beats": 27,
+      "done": 27,
+      "failed": 0,
+      "notExercised": 0
+    },
+    "checks": {
+      "made": 1389,
+      "violated": 0
+    },
+    "ledger": {
+      "facts": 8,
+      "recalled": 4,
+      "carriedUnasked": 2,
+      "lost": 1,
+      "refused": 0,
+      "notProbed": 1,
+      "notPlanted": 0,
+      "probesAsked": 18,
+      "probesCounted": 10,
+      "probesRecalled": 9,
+      "bands": {
+        "near": 4,
+        "mid": 5,
+        "far": 1
+      },
+      "refusals": 0
+    },
+    "scripted": [
+      {
+        "step": "a6",
+        "beat": 2,
+        "move": "make_a_connection",
+        "faces": [
+          1,
+          2,
+          6
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a25",
+        "beat": 8,
+        "move": "finish_an_expedition",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a33",
+        "beat": 11,
+        "move": "strike",
+        "faces": [
+          10,
+          9,
+          1
+        ],
+        "price": 78,
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a34",
+        "beat": 12,
+        "move": "clash",
+        "faces": [
+          1,
+          5,
+          1
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a36",
+        "beat": 14,
+        "move": "take_decisive_action",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a68",
+        "beat": 23,
+        "move": "forge_a_bond",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      },
+      {
+        "step": "a75",
+        "beat": 25,
+        "move": "fulfill_your_vow",
+        "faces": [
+          1,
+          2
+        ],
+        "rehearsalOnly": false
+      }
+    ],
+    "interruptions": [
+      {
+        "step": "x13",
+        "beat": 13,
+        "did": "the GM's page reloaded",
+        "result": "the page came back and the world went quiet"
+      },
+      {
+        "step": "x15",
+        "beat": 15,
+        "did": "End a Session was opened on the player's screen and closed unanswered",
+        "result": "closed by its close control"
+      },
+      {
+        "step": "x16",
+        "beat": 16,
+        "did": "the X-Card was played from the player's client (!x); the GM resumed (!x clear)",
+        "result": "the X-Card went up and came down"
+      },
+      {
+        "step": "x19",
+        "beat": 19,
+        "did": "the GM renamed Tamsin Vey's card to Tamsin Okoro",
+        "result": "renamed"
+      }
+    ]
+  },
+  "health": {
+    "failures": [],
+    "waitingOnGm": [],
+    "costsOwed": [],
+    "knownFailures": [
+      "PLAYER-CLIENT-ITEM-CREATE-REFUSED"
+    ],
+    "errors": 2,
+    "uncaught": [
+      {
+        "client": "player",
+        "message": "User Playthrough Player lacks permission to create Item [NeCH1QQcEbnvYWU6] in parent Actor [cw6P5XIGKrpvTqKg]",
+        "stack": "Error: User Playthrough Player lacks permission to create Item [NeCH1QQcEbnvYWU6] in parent Actor [cw6P5XIGKrpvTqKg]\n    at ServerDatabaseBackend._createDocuments (file:///home/node/resources/app/dist/database/backend/server-backend.mjs:1:3810)\n    at async #try (file:///home/node/resources/app/common/utils/semaphore.mjs:98:17)"
+      }
+    ],
+    "refused": [
+      {
+        "client": "player",
+        "method": "createDocuments",
+        "document": "Item",
+        "message": "User Playthrough Player lacks permission to create Item [NeCH1QQcEbnvYWU6] in parent Actor [cw6P5XIGKrpvTqKg]",
+        "parent": null,
+        "data": [
+          {
+            "type": "bondset",
+            "name": "bonds",
+            "id": null,
+            "keys": [
+              "type",
+              "name"
+            ]
+          }
+        ],
+        "stack": "    at Object.fn (http://localhost:30000/systems/foundry-ironsworn/ironsworn.js:240846:18)\n    at #call (http://localhost:30000/scripts/foundry.mjs:23832:20)\n    at Hooks.callAll (http://localhost:30000/scripts/foundry.mjs:23791:17)\n    at http://localhost:30000/scripts/foundry.mjs:58663:17\n    at http://localhost:30000/scripts/foundry.mjs:58668:41\n    at Array.map (<anonymous>)\n    at #handleCreateDocuments (http://localhost:30000/scripts/foundry.mjs:58668:31)"
+      }
+    ]
+  },
+  "budget": {
+    "caps": {
+      "actions": 400,
+      "calls": 1600,
+      "minutes": 240,
+      "usd": 15
+    },
+    "stopped": null,
+    "actions": 91,
+    "calls": 418,
+    "minutes": 35.31,
+    "usd": 2.981,
+    "inFlightUsd": 0,
+    "byRole": {
+      "player": {
+        "calls": 91,
+        "usd": 0.9169,
+        "input": 289353,
+        "output": 25602,
+        "cacheRead": 643320,
+        "cacheWrite": 7148
+      },
+      "module": {
+        "calls": 327,
+        "usd": 2.064,
+        "input": 812752,
+        "output": 61030,
+        "cacheRead": 933751,
+        "cacheWrite": 142647
+      }
+    }
+  },
+  "replay": "EXPLORE_MODE=replay EXPLORE_REPLAY=artifacts/explore/long-haul-live-20261127-202557 node explore.mjs"
+}

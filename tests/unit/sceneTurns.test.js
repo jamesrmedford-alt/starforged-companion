@@ -163,6 +163,7 @@ describe('overhaul 2 §4.2 — TIME_SKIP: phrases, never a bare word', () => {
       'long-haul-live-20261126-030646: I rest aboard until the next morning.',
       'long-haul-live-20261126-184225: I rest aboard until the next morning.',
       'long-haul-live-20261127-041734: I rest aboard until the next morning.',
+      'long-haul-live-20261127-202557: I rest aboard until the next morning.',
     ]);
   });
 });
