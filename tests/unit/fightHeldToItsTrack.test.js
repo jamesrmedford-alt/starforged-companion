@@ -60,6 +60,17 @@ describe('a blow in an open fight does not end it', () => {
     for (const step of ['a36', 'a37']) expect(trippedLines(prose(step), foe), step).toEqual([]);
   });
 
+  // Issue #397, Code fix 4: a possessive hid a tripwire word ("hulk's"), and
+  // the list lacked forms of its own words.
+  it('a possessive or another form of a foe-down word trips it too', () => {
+    const foe = [foeOf('clash', { label: 'the Ashen Wake cutter', full: false })];
+    for (const told of ['The hulk\'s guns are cold.', 'The wreck\'s lights gutter out.', 'Her reactor destroys itself in a white flare.',
+      'Wreckage tumbles past the canopy.', 'She will flee before the next pass.', 'They retreat behind the ice.', 'The cutter\'s crew are dying.']) {
+      expect(trippedLines(told, foe).map(o => o.kind), told).toEqual(['foe']);
+    }
+    expect(trippedLines('Her guns swing round to find you again.', foe)).toEqual([]);
+  });
+
   it('the reader is told the track is full', () => {
     const text = buildReaderSituationBlock({ speaker: { name: 'Mira Kestrel' }, fights: [
       { id: 'f1', label: 'the Ashen Wake cutter', rank: 'dangerous', ticks: 40, position: 'bad_spot' },

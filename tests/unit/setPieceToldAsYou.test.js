@@ -56,7 +56,8 @@ describe('the opening\'s MATERIAL in second person', () => {
 describe('[person]: a second-person set-piece never names its character outside speech', () => {
   it('the sixth live round\'s third-person openings break it; its second-person ones do not', () => {
     const person = obligationsFor({ mode: 'set-piece', person: MIRA });
-    expect(person.map(o => [o.kind, o.list])).toEqual([['person', 'NOT SO']]);
+    // …beside the table's words, which every set-piece is held to (issue #397, Code fix 4).
+    expect(person.map(o => [o.kind, o.list])).toEqual([['person', 'NOT SO'], ['apparatus', 'NOT SO']]);
     expect(person[0].text).toBe('The player\'s character is "you", for the whole narration: never "Mira Kestrel" or "Mira" outside quoted speech, and never "she" or "he" for them.');
     expect(certainViolations(opening('a52'), person)).toEqual([{ tag: 'person', quote: expect.stringContaining('Mira is counting the water ration') }]);
     expect(certainViolations(opening('a98'), person)).toEqual([{ tag: 'person', quote: expect.stringContaining('Mira is holding out') }]);
@@ -75,8 +76,8 @@ describe('[person]: a second-person set-piece never names its character outside 
   });
 
   it('is no obligation without names, and none of any other mode', () => {
-    expect(obligationsFor({ mode: 'set-piece', person: null })).toEqual([]);
-    expect(obligationsFor({ mode: 'set-piece', person: { names: [] } })).toEqual([]);
+    expect(obligationsFor({ mode: 'set-piece', person: null }).some(o => o.kind === 'person')).toBe(false);
+    expect(obligationsFor({ mode: 'set-piece', person: { names: [] } }).some(o => o.kind === 'person')).toBe(false);
     expect(obligationsFor({ mode: 'round', person: MIRA }).some(o => o.kind === 'person')).toBe(false);
   });
 });

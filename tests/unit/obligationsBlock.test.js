@@ -139,10 +139,11 @@ describe("every kind, from what calls for it", () => {
 
   it("[oracle] — the answer told, its opposite not so; nothing for a table roll", () => {
     const list = obligationsFor({ mode: "oracle", oracle: { kind: "oracle_yes_no", question: "Is the hatch sealed?", rolledLine: "d100 = 97 → NO" } });
-    expect(list.map(o => [o.kind, o.list])).toEqual([["oracle", "TELL"], ["oracle", "NOT SO"]]);
+    // …and the table's words, as every oracle follow-up is (issue #397, Code fix 4).
+    expect(list.map(o => [o.kind, o.list])).toEqual([["oracle", "TELL"], ["oracle", "NOT SO"], ["apparatus", "NOT SO"]]);
     expect(list[0].text).toMatch(/^The answer is NO: to "Is the hatch sealed\?", the oracle says no\. It is the table's answer/);
     expect(list[1].text).toBe("Nothing in the prose may say, show or imply yes, or leave it open.");
-    expect(obligationsFor({ mode: "oracle", oracle: { kind: "oracle_table", question: "", rolledLine: "d100 = 12 → Ruins" } })).toEqual([]);
+    expect(obligationsFor({ mode: "oracle", oracle: { kind: "oracle_table", question: "", rolledLine: "d100 = 12 → Ruins" } }).map(o => o.kind)).toEqual(["apparatus"]);
   });
 
   it("[premise] and [offer] for a paced line (slice 1), [state] for what the line touches", () => {

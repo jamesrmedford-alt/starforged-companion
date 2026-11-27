@@ -6931,7 +6931,7 @@ function roundCheckContext(entries) {
  * @returns {Array<Object>}
  */
 function oracleObligationsFor({ kind, question = null, rolledLine = null, here = null }) {
-  if (kind === 'complication') return here ? obligationsFor({ mode: 'oracle', here }) : [];
+  if (kind === 'complication') return obligationsFor({ mode: 'oracle', here: here ?? null });
   return obligationsFor({ mode: 'oracle', oracle: { kind, question: sanitizePlayerText(question ?? ''), rolledLine } });
 }
 

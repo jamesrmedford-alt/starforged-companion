@@ -120,11 +120,12 @@ describe('a set-piece\'s rolled words, as the fifth live long haul wrote them (i
   it('is a certain line of a set-piece\'s obligations, and of no other narration\'s', () => {
     const material = rolledWordsOf([{ from: 'oracle', tables: [{ result: 'Fortify' }, { result: 'History' }], result: 'Fortify History' }]);
     const obligations = obligationsFor({ mode: 'set-piece', material });
-    expect(obligations.map(o => [o.kind, o.list])).toEqual([['material', 'NOT SO']]);
+    // …beside the table's words, which every set-piece is held to (issue #397, Code fix 4).
+    expect(obligations.map(o => [o.kind, o.list])).toEqual([['material', 'NOT SO'], ['apparatus', 'NOT SO']]);
     expect(certainViolations('Fortify, in the plainest sense: you press each edge flat.', obligations)).toEqual([
       { tag: 'material', quote: expect.stringContaining('Fortify, in the plainest sense') },
     ]);
-    expect(obligationsFor({ mode: 'set-piece', material: rolledWordsOf([]) })).toEqual([]);
+    expect(obligationsFor({ mode: 'set-piece', material: rolledWordsOf([]) }).some(o => o.kind === 'material')).toBe(false);
     expect(certainViolations('Fortify, in the plainest sense.', obligationsFor({ mode: 'round' }))).toEqual([]);
   });
 });

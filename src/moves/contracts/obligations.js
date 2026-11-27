@@ -928,6 +928,9 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
       out.push(line("oracle", { oracle: answer, part: "tell" }));
       out.push(line("oracle", { oracle: answer, part: "not" }));
     }
+    // The table's words are no more the story's here than in a beat of play
+    // (issue #397, Code fix 4: TABLE-WORDS-IN-THE-FICTION).
+    out.push(line("apparatus", {}));
   } else if (mode === "set-piece") {
     const words = Array.isArray(material?.words) ? material.words.filter(w => typeof w === "string" && w) : [];
     if (words.length) {
@@ -936,6 +939,9 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
         onRecord: Array.isArray(material.onRecord) ? material.onRecord : [] });
     }
     out.push(...you());
+    // A session's opening, closing and spotlight too (issue #397, Code fix 4:
+    // round 1's a15 opening said "because Wits 3 is a lot of thinking").
+    out.push(line("apparatus", {}));
   }
   return out;
 }

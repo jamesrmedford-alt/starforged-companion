@@ -1337,7 +1337,14 @@ to ([outcome], [stakes], [sheet], …) go to the post-narration audit with it
   `beatVariety` returns `extras.saidLines`, which is `obligationsFor`'s `quotes`
   on the move and paced beats.
 - **[apparatus]** also catches a meter named mid-sentence ("…and Momentum
-  drains").
+  drains"), and since issue #397's Code fix 4 a stat with its number
+  ("Wits 3"), time counted in boxes ("Four boxes ago"), and a track read out
+  ("Two of ten") beside a word of the track's (box, track, progress,
+  milestone). It is told and checked on every beat of play, every oracle
+  follow-up (a complication's too) and every session set-piece. An `@scene`
+  answer is still not checked.
+- **A tripwire's word counts in its possessive** ("the hulk's guns" says
+  "hulk"; `trippedLines`, issue #397 Code fix 4).
 - **judge [foe]** (`FOE_DOWN_WORDS`), on Gain Ground, Strike, Clash and React
   Under Fire. `narrator.js fightStandingOf` reads the open combat track after the
   move marked it: the only one, else the roller's. `{ label, full }` rides on the

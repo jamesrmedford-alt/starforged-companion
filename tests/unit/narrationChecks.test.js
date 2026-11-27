@@ -57,6 +57,23 @@ describe("the certain checks", () => {
     expect(certainViolations("Vance keeps his arms folded and watches Ren read the log.", apparatus)).toEqual([]);
     expect(certainViolations("The first light of the station's day crawls across the hull.", apparatus)).toEqual([]);
   });
+  // Issue #397, Code fix 4 (TABLE-WORDS-IN-THE-FICTION): r1 a15, r5 a58 and
+  // r5 a78 said a stat with its number, a track read out and time counted in
+  // boxes in the story's own voice, and nothing caught them.
+  it("a stat with its number, time counted in boxes, a track read out — and no ordinary prose with the same words", () => {
+    for (const told of ["because Wits 3 is a lot of thinking to do on bland food",
+      "Four boxes ago this was only a rumor on a dock.",
+      "Still counting your boxes? Two of ten.",
+      "The track holds 4 of 10 now.",
+      "Iron 2, and the bar still bends."]) {
+      expect(certainViolations(told, apparatus).map(v => v.tag), told).toEqual(["apparatus"]);
+    }
+    for (const prose of ["her heart was in it", "cold iron under your palm", "Two of ten ships made it through the lane.",
+      "You count four boxes of rations.", "The boxes in the hold shift as the ship banks.", "Her wits were three steps ahead of his.",
+      "Two of the ten crates are empty, and the rest are spoken for."]) {
+      expect(certainViolations(prose, apparatus), prose).toEqual([]);
+    }
+  });
   it("[match]: the word, only for a roll that matched", () => {
     expect(certainViolations("The match flares on the scope.", [{ kind: "match" }])).toHaveLength(1);
     expect(certainViolations("The match flares on the scope.", apparatus)).toEqual([]);

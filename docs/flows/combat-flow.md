@@ -409,7 +409,10 @@ places:
   decided, and on a full track the foe is beaten in all but the deciding blow,
   which is the player's. `narrator.js` `fightStandingOf` reads the track after
   the marks. "destroyed", "dead", "fled", "beaten" or "hulk" in the prose trips
-  the judge, and a breach is asked again.
+  the judge, and a breach is asked again — and their other forms ("destroys",
+  "wreckage", "kills", "dying", "flee", "retreat", "retreated", "explode") and
+  possessives ("the hulk's guns") since issue #397's Code fix 4. "Guns silent"
+  and "goes dark" are no trip words: harm short of the end is allowed.
 A move's marks never begin a fight (overhaul 4, D6 — "Combat is offered, not
 forced"): only Enter the Fray's commit, ⚔ Begin the fight on its threshold
 card, makes a combat track (`createCombatTrackFromThreshold` →

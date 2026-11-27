@@ -32,7 +32,8 @@ const tags = (prose, lines, sidecar) => certainViolations(prose, lines, { sideca
 describe('a journey\'s complication is held to the place it arrived at', () => {
   it('the oracle mode carries [here] when given the place — and a plain oracle none', () => {
     const lines = obligationsFor({ mode: 'oracle', here: HERE });
-    expect(lines.map(l => l.kind)).toEqual(['here']);
+    // …and the table's words, as every oracle follow-up is (issue #397, Code fix 4).
+    expect(lines.map(l => l.kind)).toEqual(['here', 'apparatus']);
     expect(lines[0].text).toContain('The characters are at Hollow Spire');
     expect(obligationsFor({ mode: 'oracle', oracle: { kind: 'oracle_yes_no', question: 'Is anyone aboard?', rolledLine: 'd100 = 99 → NO' } })
       .map(l => l.kind)).not.toContain('here');

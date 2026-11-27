@@ -8,23 +8,33 @@
  *
  *   certain   a regular expression in code: [apparatus] (an outcome's name;
  *             a move's display name of two words or more outside the closing
- *             offer line; a sheet number), [match] (the word, for a roll that
- *             matched), [material] (a set-piece's rolled word as a label, a
- *             name or its pair — materialViolations), [person] (a second-
- *             person narration's character by name — personViolations), and
- *             [here] (the fact block's frame, its present or the prose
- *             putting the characters at another place than the record's —
- *             hereViolations, which reads the fact block too) — a failure is
- *             re-asked once
+ *             offer line; a sheet number; a meter named as the game names
+ *             it; a stat with its number; time counted in boxes; a track
+ *             read out beside a word of the track's; the narration speaking
+ *             of its own build), [match] (the word, for a roll that matched),
+ *             [material] (a set-piece's rolled word as a label, a name or its
+ *             pair — materialViolations), [person] (a second-person
+ *             narration's character by name — personViolations), [here] (the
+ *             fact block's frame, its present or the prose putting the
+ *             characters at another place than the record's —
+ *             hereViolations, which reads the fact block too), [arrival] (a
+ *             journey's arrival: its fact block's present holding someone the
+ *             record has elsewhere), and [quote] (a quoted line of six words
+ *             or more an earlier narration of the session gave) — a failure
+ *             is re-asked once
  *   floor     a lexical minimum: [vow] (the prose shares a word with the
  *             vow's name, or says what is still not known — re-asked once);
  *             [chosen] (a word of the cost's meter — logged); [letgo] (a stem
  *             of the let-go question in the prose's last two sentences that
  *             the beat's player words do not hold — logged; overhaul 2 §10.3)
  *   judge     a NOT YET / NOT SO line whose tripwire words appear in the prose
+ *             (a word's possessive counts as the word)
  *             ([premise], [cost], [price], [fight], [offer], [oracle],
  *             [state], [unsaid] (speech words, on a move pressed on a card),
- *             and overhaul 2's [place]: "docked", "berth", "clamps"
+ *             [foe] (the fight told over before Take Decisive Action), [dice]
+ *             (what the dice decided about what the line names),
+ *             [whereabouts] (someone the record has elsewhere), and overhaul
+ *             2's [place]: "docked", "berth", "clamps"
  *             on the beat that opens a fight's scene while the ship's record
  *             has her docked): one small model call (Haiku, through
  *             api-proxy.js, label `obligationJudge`) asks whether the prose
@@ -67,6 +77,18 @@ const OUTCOME_NAME = /\b(?:strong|weak)[ -]hit\b/i;
 const SHEET_NUMBER = /\b\d+\s+(?:health|spirit|supply|momentum|integrity)\b|[+−-]\d+\s+momentum\b/i;
 // A meter named as the game names it, in the middle of a sentence: round 8's a71, "and Momentum drains out of you".
 const METER_TERM = /(?<=[a-z,;:] )(?:Health|Spirit|Supply|Momentum)\b/;
+// Issue #397, Code fix 4 (TABLE-WORDS-IN-THE-FICTION). Narrow on purpose: each
+// match re-asks the narrator. A stat with its number — the capital and the digit
+// together keep "her heart" and "cold iron" out (r1 a15, "because Wits 3 is a lot
+// of thinking").
+const STAT_NUMBER = /\b(?:Edge|Heart|Iron|Shadow|Wits)\s+\d\b/;
+const COUNT_WORD = String.raw`(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)`;
+// Time counted in boxes (r5 a78, "Four boxes ago this was only a rumor on a dock").
+const BOXES_AGO = new RegExp(String.raw`\b${COUNT_WORD}\s+(?:box(?:es)?|ticks?)\s+ago\b`, "i");
+// A track read out — only beside a word of the track's (r5 a58, "Still counting your
+// boxes? … Two of ten."): alone, "two of ten ships" is ordinary prose.
+const OF_TEN = new RegExp(String.raw`\b${COUNT_WORD}\s+of\s+(?:ten|10)\b`, "i");
+const TRACK_WORDS = /\b(?:box|boxes|track|progress|milestones?)\b/i;
 // The narration speaking of its own build — the beat-shape hint read back as prose
 // (proseVariety.js BEAT_SHAPES; NARRATION-WRITES-ITS-SHAPE-DIRECTIVE): "The first
 // sentence should be about someone other than Ren: Vance, or Mira." opened a
@@ -114,6 +136,9 @@ export function certainViolations(prose, obligations, { sidecar = null } = {}) {
     if (shape) out.push({ tag: "apparatus", quote: quoteAround(body, shape.index, shape[0].length) });
     const meter = METER_TERM.exec(body);
     if (meter) out.push({ tag: "apparatus", quote: quoteAround(body, meter.index, meter[0].length) });
+    for (const found of [STAT_NUMBER.exec(body), BOXES_AGO.exec(body), TRACK_WORDS.test(body) ? OF_TEN.exec(body) : null]) {
+      if (found) { out.push({ tag: "apparatus", quote: quoteAround(body, found.index, found[0].length) }); break; }
+    }
     for (const name of MULTIWORD_MOVE_NAMES) {
       const at = body.indexOf(name);
       if (at >= 0) { out.push({ tag: "apparatus", quote: quoteAround(body, at, name.length) }); break; }
@@ -409,8 +434,9 @@ export function floorViolations(prose, obligations, { vowName = null, line = "" 
 const FIGHT_WORDS = ["fire", "fires", "fired", "shot", "shoots", "salvo", "strike", "strikes", "struck", "blow", "lance", "rake", "slash", "lands", "hit", "hits"];
 // A fight told as over before Take Decisive Action ([foe] — FIGHT-PAST-ITS-END: "drifting dead and hurt", "a dead thing
 // with no guns left", the cutter's "hulk", round 8's a38–a43).
-const FOE_DOWN_WORDS = ["dead", "dies", "died", "killed", "destroyed", "destroy", "wreck", "wrecked", "hulk", "fled", "flees", "retreats",
-  "surrender", "surrenders", "surrendered", "beaten", "defeated", "finished", "explodes", "exploded", "explosion", "crippled"];
+const FOE_DOWN_WORDS = ["dead", "dies", "died", "dying", "killed", "kills", "destroyed", "destroy", "destroys", "wreck", "wrecked", "wreckage",
+  "hulk", "fled", "flee", "flees", "retreat", "retreats", "retreated", "surrender", "surrenders", "surrendered", "beaten", "defeated",
+  "finished", "explode", "explodes", "exploded", "explosion", "crippled"];
 /** A ship told as still docked (overhaul 2 §6.2's [place]). */
 const DOCKED_WORDS = ["docked", "berth", "berthed", "clamps", "clamped", "moored"];
 const HEAL_WORDS  = ["cut", "cuts", "gash", "wound", "wounds", "blood", "bandage", "dressing", "stitch", "antiseptic", "medkit", "sealant", "binding"];
@@ -467,7 +493,9 @@ function tripWords(o, { refusalCode = null, offer = null, question = "", person 
  */
 export function trippedLines(prose, obligations, ctx = {}) {
   const words = String(prose ?? "").toLowerCase().split(/[^a-z0-9'’-]+/).filter(Boolean);
-  const said = new Set(words);
+  // A possessive's word is said too: "the hulk's guns" says "hulk" (issue #397,
+  // Code fix 4). [dice] still lists its possessive forms by hand.
+  const said = new Set(words.flatMap(w => { const bare = w.replace(/['’]s$/, ""); return bare && bare !== w ? [w, bare] : [w]; }));
   return (obligations ?? []).filter((o) => {
     if (o?.list !== "NOT YET" && o?.list !== "NOT SO") return false;
     const person = o.kind === "state" ? (/^(.+?) is .*connection/.exec(o.text)?.[1] ?? null) : null;

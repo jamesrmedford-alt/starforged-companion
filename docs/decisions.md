@@ -16,6 +16,13 @@ rejected.
 - Rejected: *keep the entry and retire it when a later frame's location differs.* It keeps a place the player's line set as binding, but the retirement must be undone when the X-Card or a burn takes the later narration back. One store needs no undo.
 - Left: a player character not present in a split party keeps her place entry, which can still go stale. The GM's own `!state set` is never filtered.
 
+**The table's words are caught in every narration of the story** (TABLE-WORDS-IN-THE-FICTION; Code fix 4):
+- [apparatus] gains three narrow certain patterns: a capitalised stat with a digit ("Wits 3"), a count then "boxes ago" or "ticks ago", and "N of ten" only beside a word of the track's. A bare "boxes" or "marks" is no pattern: cargo fiction is full of boxes. Each match re-asks, so a false one costs a call and can spoil a good line. Over the eight kept runs they tag the three intended narrations and nothing else.
+- Session set-pieces and oracle follow-ups carry [apparatus] too, told and checked: they already ran through the re-ask.
+- A tripwire's word counts in its possessive ("hulk's"), and [foe]'s list gains its words' other forms. [foe] stays a judge line.
+- The row said "Enough data: not yet". Five rounds now have samples.
+- Left: `@scene` answers stay unchecked; they are the table answering plainly. "Guns silent" and "goes dark" are no [foe] words.
+
 **The long haul's player acts where Mira is** (Code fix 6; test material only):
 - A player note: before she does anything in person, look at the last narration for where she is and who is with her; reach someone elsewhere over the comm, or go there first in a line of play. The relationship beats say Tamsin keeps her stall at Hollow Spire. The vow beat searches what is at hand where she is. The oracle question names the Cinder Wren instead of "the wreck".
 - The reason: several "wrong place" findings began with the scripted player, not the narrator — r1's meal and r2's minded counter with Tamsin at another station, r5's climb to a lounge, and the vow beat's "search the cutter's wreck" in r6, r7 and r8 when the wreck lay elsewhere. The one oracle question was answered about different wrecks in r4, r5 and r6.
