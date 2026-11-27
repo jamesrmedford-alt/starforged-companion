@@ -17,6 +17,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { applyNarratorSidecar } from '../../src/narration/narrator.js';
+import { buildCombinedDetectionPrompt } from '../../src/entities/entityExtractor.js';
 
 const MODULE_ID = 'starforged-companion';
 const RUN = JSON.parse(fs.readFileSync(path.resolve(__dirname,
@@ -56,5 +57,22 @@ describe('a beat of play\'s frame holds who is here', () => {
     const cs = seat([['pc-mira', 'Mira Kestrel'], ['pc-ren', 'Ren Ashe']]);
     applyNarratorSidecar(A72, cs, { mode: 'oracle_followup', narrationId: 'nar-a72' });
     expect(cs.sceneFrame.present).toEqual(['Tamsin Okoro']);
+  });
+});
+
+// Issue #397, Code fix 5 (c), composed from the real writer (rules/reachability.md
+// §3): the frame a narration's fact block stores carries that narration's id,
+// and its detection pass is told who the block has here.
+describe('the detector is told who the narration\'s own fact block has here', () => {
+  beforeEach(() => game.settings._store.clear());
+
+  it('from the frame a72\'s reply stored, by its narration id — and not for another narration', () => {
+    const cs = seat([['pc-mira', 'Mira Kestrel']]);
+    applyNarratorSidecar(A72, cs, { mode: 'oracle_followup', narrationId: 'nar-a72' });
+    expect(cs.sceneFrame.narrationId).toBe('nar-a72');
+    const told = buildCombinedDetectionPrompt('A hand lands on the counter beside your credits.', 'paced_narrative', 'n/a', cs, { narrationId: 'nar-a72' });
+    expect(told).toContain('WHO THIS NARRATION\'S FACT BLOCK HAS HERE: present — Mira Kestrel, Tamsin Okoro.');
+    const other = buildCombinedDetectionPrompt('A hand lands on the counter beside your credits.', 'paced_narrative', 'n/a', cs, { narrationId: 'nar-a71' });
+    expect(other).not.toContain('WHO THIS NARRATION\'S FACT BLOCK HAS HERE');
   });
 });
