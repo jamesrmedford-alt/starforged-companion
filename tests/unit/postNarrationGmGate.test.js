@@ -113,8 +113,9 @@ describe('runPostNarrationPasses — GM gate', () => {
       );
       expect(runCombinedDetectionPass).not.toHaveBeenCalled();
       await vi.runAllTimersAsync();
-      // …with the player's line for the detector — none here (PLAYER-NAMED-PERSON-GETS-NO-CARD).
-      expect(runCombinedDetectionPass).toHaveBeenCalledWith('Some prose.', 'compel', 'strong_hit', { currentSessionId: 's' }, { playerLines: [] });
+      // …with the player's line for the detector — none here (PLAYER-NAMED-PERSON-GETS-NO-CARD) —
+      // and the narration's id, for who its fact block has here (issue #397, Code fix 5): none given.
+      expect(runCombinedDetectionPass).toHaveBeenCalledWith('Some prose.', 'compel', 'strong_hit', { currentSessionId: 's' }, { playerLines: [], narrationId: null });
     } finally {
       vi.useRealTimers();
     }
