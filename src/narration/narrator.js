@@ -132,7 +132,16 @@ const DICE_FACTS_MAX = 4;
 const DICE_FACTS_PER_SUBJECT = 2;
 const DICE_STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'into', 'their', 'there', 'where', 'what', 'have',
   'been', 'were', 'they', 'them', 'your', 'about', 'over', 'down', 'back', 'still', 'then', 'than', 'just', 'some']);
-const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
+/**
+ * The words of a [dice] fact's subject that trip its line: lowercased, the
+ * possessive off, four letters or more, none of the stop words. Exported for
+ * the judges' measure (test/ci/playwright/lib/judges.mjs, issue #399 D6),
+ * which rebuilds a recorded line's trip words as this file builds them.
+ *
+ * @param {string} s
+ * @returns {string[]}
+ */
+export const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
   .filter(w => w.length >= 4 && !DICE_STOP.has(w));
 
 /**

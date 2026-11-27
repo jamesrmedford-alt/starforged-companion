@@ -1,0 +1,1479 @@
+{
+ "schema": 1,
+ "about": "The labelled set the narration judges are measured on (issue #399, D6). runs: the kept long hauls read. labels: a line a review found broken (breach true), kept (false) or disputes (null: not scored); add: a line written by hand where the run predates it. seeded: a real narration edited by hand to break one line, three a judge-class kind. An unlabelled line is counted kept.",
+ "runs": [
+  "long-haul-live-20261123",
+  "long-haul-live-20261124-0321",
+  "long-haul-live-20261124-213912",
+  "long-haul-live-20261125-164201",
+  "long-haul-live-20261125-225635",
+  "long-haul-live-20261125-232143",
+  "long-haul-live-20261126-030646",
+  "long-haul-live-20261126-184225",
+  "long-haul-live-20261127-041734"
+ ],
+ "labels": [
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a38",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "foe",
+   "breach": true,
+   "why": "review-notes:43 — \"drifting dead and hurt\", the first of four deaths",
+   "add": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a39",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "foe",
+   "breach": true,
+   "why": "cold-read:13 — \"the cutter's silent hulk drifting past it\"",
+   "add": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a42",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "foe",
+   "breach": true,
+   "why": "review-notes:45 — \"goes up in a white flash. The hulk lurches\"",
+   "add": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a43",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "foe",
+   "breach": true,
+   "why": "review-notes:46 — \"a dead thing with no guns left\"",
+   "add": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a41",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "foe",
+   "breach": null,
+   "why": "disputed: review-notes:44 counts it a death; decisions.md says \"goes dark\" is no [foe] word — not scored",
+   "add": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a36",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "foe",
+   "breach": false,
+   "why": "fightHeldToItsTrack.test.js — a blow that leaves the fight going",
+   "add": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a37",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "foe",
+   "breach": false,
+   "why": "decisions.md — \"guns fall silent\" is no [foe] word; the fight goes on",
+   "add": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a40",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "foe",
+   "breach": false,
+   "why": "no review counts it a death",
+   "add": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261124-0321",
+   "step": "a46",
+   "kind": "narrateOracleFollowup",
+   "nth": 0,
+   "line": "oracle",
+   "breach": true,
+   "why": "review-notes:66 — \"The oracle's NO is not honoured\"",
+   "add": [
+    {
+     "kind": "oracle",
+     "input": {
+      "oracle": {
+       "answer": "NO",
+       "asked": "Is anyone left alive aboard the wreck?"
+      }
+     }
+    },
+    {
+     "kind": "oracle",
+     "input": {
+      "oracle": {
+       "answer": "NO",
+       "asked": "Is anyone left alive aboard the wreck?"
+      },
+      "part": "not"
+     }
+    }
+   ],
+   "ctx": {
+    "question": "Is anyone left alive aboard the wreck?"
+   }
+  },
+  {
+   "run": "long-haul-live-20261125-164201",
+   "step": "a44",
+   "kind": "narrateOracleFollowup",
+   "nth": 0,
+   "line": "oracle",
+   "breach": false,
+   "why": "known-issues ORACLE-NO-NARRATED-AS-YES — the YES honoured"
+  },
+  {
+   "run": "long-haul-live-20261125-232143",
+   "step": "a48",
+   "kind": "narrateOracleFollowup",
+   "nth": 0,
+   "line": "oracle",
+   "breach": false,
+   "why": "annotated-transcript:1037 — the NO honoured"
+  },
+  {
+   "run": "long-haul-live-20261126-030646",
+   "step": "a42",
+   "kind": "narrateOracleFollowup",
+   "nth": 0,
+   "line": "oracle",
+   "breach": false,
+   "why": "review-notes:146 — the NO honoured"
+  },
+  {
+   "run": "long-haul-live-20261125-232143",
+   "step": "a77",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "dice",
+   "breach": true,
+   "why": "review-notes:50 — the wreck where the dice had the cutter driven off",
+   "add": [
+    {
+     "kind": "dice",
+     "input": {
+      "subject": "Cinder Wren",
+      "fact": "engines hit and burning; driven off the docking ring with her guns silent"
+     },
+     "words": [
+      "cinder",
+      "wren",
+      "raider",
+      "cutter"
+     ]
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-030646",
+   "step": "a71",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "dice",
+   "breach": false,
+   "why": "review-notes:59 — true to what the dice decided"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a34",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "dice",
+   "breach": false,
+   "why": "issue #399 — the judge read the line backwards; the narration tells what the dice decided"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a36",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "dice",
+   "breach": false,
+   "why": "issue #399 — the same"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a54",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "dice",
+   "breach": false,
+   "why": "issue #399 — the same"
+  },
+  {
+   "run": "long-haul-live-20261124-0321",
+   "step": "a4",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "offer",
+   "breach": true,
+   "why": "cold-read:72 — the journey told, then offered",
+   "add": [
+    {
+     "kind": "offer",
+     "input": {
+      "offer": "set_a_course"
+     }
+    }
+   ],
+   "ctx": {
+    "offer": "set_a_course"
+   }
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a5",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "offer",
+   "breach": false,
+   "why": "issue #399 — the audit carded the closing offer line"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a12",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "offer",
+   "breach": false,
+   "why": "issue #399 — the same"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a62",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "offer",
+   "breach": false,
+   "why": "issue #399 — the same"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a70",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "offer",
+   "breach": false,
+   "why": "issue #399 — the judge re-asked it on its own offer line"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a77",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "offer",
+   "breach": false,
+   "why": "issue #399 — the audit carded the closing offer line"
+  },
+  {
+   "run": "long-haul-live-20261123",
+   "step": "a56",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "premise",
+   "breach": true,
+   "why": "annotated-transcript:1081 — a wound treated at full health",
+   "add": [
+    {
+     "kind": "premise",
+     "input": {
+      "refusal": {
+       "code": "recoverable-health",
+       "why": "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
+       "premise": {
+        "claim": "a wound to treat",
+        "never": "a cut, a gash, blood or a dressing on them"
+       }
+      }
+     }
+    }
+   ],
+   "ctx": {
+    "refusalCode": "recoverable-health"
+   }
+  },
+  {
+   "run": "long-haul-live-20261123",
+   "step": "a57",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "premise",
+   "breach": true,
+   "why": "annotated-transcript:1098 — healed again",
+   "add": [
+    {
+     "kind": "premise",
+     "input": {
+      "refusal": {
+       "code": "recoverable-health",
+       "why": "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
+       "premise": {
+        "claim": "a wound to treat",
+        "never": "a cut, a gash, blood or a dressing on them"
+       }
+      }
+     }
+    }
+   ],
+   "ctx": {
+    "refusalCode": "recoverable-health"
+   }
+  },
+  {
+   "run": "long-haul-live-20261124-0321",
+   "step": "a58",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "premise",
+   "breach": true,
+   "why": "review-notes:64 — a cut on a character at 5 of 5",
+   "add": [
+    {
+     "kind": "premise",
+     "input": {
+      "refusal": {
+       "code": "recoverable-health",
+       "why": "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
+       "premise": {
+        "claim": "a wound to treat",
+        "never": "a cut, a gash, blood or a dressing on them"
+       }
+      }
+     }
+    }
+   ],
+   "ctx": {
+    "refusalCode": "recoverable-health"
+   }
+  },
+  {
+   "run": "long-haul-live-20261124-213912",
+   "step": "a62",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "premise",
+   "breach": true,
+   "why": "review-notes:26 — \"starts on the cuts\"",
+   "add": [
+    {
+     "kind": "premise",
+     "input": {
+      "refusal": {
+       "code": "recoverable-health",
+       "why": "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
+       "premise": {
+        "claim": "a wound to treat",
+        "never": "a cut, a gash, blood or a dressing on them"
+       }
+      }
+     }
+    }
+   ],
+   "ctx": {
+    "refusalCode": "recoverable-health"
+   }
+  },
+  {
+   "run": "long-haul-live-20261124-213912",
+   "step": "a63",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "premise",
+   "breach": true,
+   "why": "review-notes:27 — \"the gash throbs against it\"",
+   "add": [
+    {
+     "kind": "premise",
+     "input": {
+      "refusal": {
+       "code": "recoverable-health",
+       "why": "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
+       "premise": {
+        "claim": "a wound to treat",
+        "never": "a cut, a gash, blood or a dressing on them"
+       }
+      }
+     }
+    }
+   ],
+   "ctx": {
+    "refusalCode": "recoverable-health"
+   }
+  },
+  {
+   "run": "long-haul-live-20261124-213912",
+   "step": "a69",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "premise",
+   "breach": true,
+   "why": "review-notes:28 — \"The wound has stiffened since the last pass\"",
+   "add": [
+    {
+     "kind": "premise",
+     "input": {
+      "refusal": {
+       "code": "recoverable-health",
+       "why": "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
+       "premise": {
+        "claim": "a wound to treat",
+        "never": "a cut, a gash, blood or a dressing on them"
+       }
+      }
+     }
+    }
+   ],
+   "ctx": {
+    "refusalCode": "recoverable-health"
+   }
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a29",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "premise",
+   "breach": false,
+   "why": "issue #399 — no blow is struck; its three lines tripped on the offer line"
+  },
+  {
+   "run": "long-haul-live-20261124-0321",
+   "step": "a27",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "fight",
+   "breach": true,
+   "why": "cold-read:99 — \"Your first salvo takes her forward plating\" before Begin the fight",
+   "add": [
+    {
+     "kind": "fight",
+     "input": {
+      "resolution": {
+       "fightOffer": {
+        "status": "offered",
+        "position": "in_control"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261125-164201",
+   "step": "a31",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "fight",
+   "breach": false,
+   "why": "known-issues FIGHT-NARRATED-BEFORE-IT-IS-BEGUN — nothing is fired"
+  },
+  {
+   "run": "long-haul-live-20261124-0321",
+   "step": "a59",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "cost",
+   "breach": true,
+   "why": "review-notes:81 — \"It costs you, though\" before the cost was chosen",
+   "add": [
+    {
+     "kind": "cost",
+     "input": {
+      "resolution": {
+       "openChoice": {
+        "kind": "any",
+        "amount": 1,
+        "count": 1
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261125-164201",
+   "step": "a82",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "unsaid",
+   "breach": true,
+   "why": "review-notes:146 — \"You tell Tamsin plainly…\" on a move from a button",
+   "add": [
+    {
+     "kind": "unsaid",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261125-232143",
+   "step": "a27",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "unsaid",
+   "breach": false,
+   "why": "review-notes:248 — no words on a button's move"
+  },
+  {
+   "run": "long-haul-live-20261125-232143",
+   "step": "a41",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "unsaid",
+   "breach": false,
+   "why": "review-notes:248 — the same"
+  },
+  {
+   "run": "long-haul-live-20261125-232143",
+   "step": "a64",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": true,
+   "why": "review-notes:26 — \"The walk to the Hollow Spire docks\"",
+   "add": [
+    {
+     "kind": "whereabouts",
+     "input": {
+      "here": "Bleakhold Station",
+      "places": [
+       {
+        "name": "Hollow Spire"
+       }
+      ],
+      "people": []
+     },
+     "words": [
+      "hollow",
+      "hollow's",
+      "spire",
+      "spire's"
+     ]
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-030646",
+   "step": "a60",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": true,
+   "why": "review-notes:34 — \"noses down toward Hollow Spire's docks\"",
+   "add": [
+    {
+     "kind": "whereabouts",
+     "input": {
+      "here": "Bleakhold Station",
+      "places": [
+       {
+        "name": "Hollow Spire"
+       }
+      ],
+      "people": []
+     },
+     "words": [
+      "hollow",
+      "hollow's",
+      "spire",
+      "spire's"
+     ]
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-030646",
+   "step": "a86",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": true,
+   "why": "review-notes:38 — Tamsin at her stall at Bleakhold"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a65",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": true,
+   "why": "issue #399 — Tamsin passes the log through a wall shelf at Bleakhold",
+   "add": [
+    {
+     "kind": "whereabouts",
+     "input": {
+      "here": "Bleakhold Station",
+      "places": [
+       {
+        "name": "Hollow Spire"
+       }
+      ],
+      "people": [
+       {
+        "name": "Tamsin Okoro",
+        "where": "at Hollow Spire"
+       }
+      ]
+     },
+     "words": [
+      "hollow",
+      "hollow's",
+      "spire",
+      "spire's",
+      "tamsin",
+      "tamsin's",
+      "okoro",
+      "okoro's"
+     ]
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a91",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": true,
+   "why": "issue #399 — \"Beyond the seal, Tamsin's pen scratches once.\""
+  },
+  {
+   "run": "long-haul-live-20261126-030646",
+   "step": "a52",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": false,
+   "why": "narrationHeldToThePlace.test.js — a control",
+   "add": [
+    {
+     "kind": "whereabouts",
+     "input": {
+      "here": "Bleakhold Station",
+      "places": [
+       {
+        "name": "Hollow Spire"
+       }
+      ],
+      "people": []
+     },
+     "words": [
+      "hollow",
+      "hollow's",
+      "spire",
+      "spire's"
+     ]
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261126-030646",
+   "step": "a71",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": false,
+   "why": "narrationHeldToThePlace.test.js — a control",
+   "add": [
+    {
+     "kind": "whereabouts",
+     "input": {
+      "here": "Bleakhold Station",
+      "places": [
+       {
+        "name": "Hollow Spire"
+       }
+      ],
+      "people": []
+     },
+     "words": [
+      "hollow",
+      "hollow's",
+      "spire",
+      "spire's"
+     ]
+    }
+   ]
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a67",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": null,
+   "why": "issue #399 names the nine [whereabouts] calls a65–a91 passed, a65 and a91 by their words — the rest not scored"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a70",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": null,
+   "why": "issue #399 names the nine [whereabouts] calls a65–a91 passed, a65 and a91 by their words — the rest not scored"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a71",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": null,
+   "why": "issue #399 names the nine [whereabouts] calls a65–a91 passed, a65 and a91 by their words — the rest not scored"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a72",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": null,
+   "why": "issue #399 names the nine [whereabouts] calls a65–a91 passed, a65 and a91 by their words — the rest not scored"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a73",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": null,
+   "why": "issue #399 names the nine [whereabouts] calls a65–a91 passed, a65 and a91 by their words — the rest not scored"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a74",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": null,
+   "why": "issue #399 names the nine [whereabouts] calls a65–a91 passed, a65 and a91 by their words — the rest not scored"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a75",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": null,
+   "why": "issue #399 names the nine [whereabouts] calls a65–a91 passed, a65 and a91 by their words — the rest not scored"
+  },
+  {
+   "run": "long-haul-live-20261127-041734",
+   "step": "a76",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "whereabouts",
+   "breach": null,
+   "why": "issue #399 names the nine [whereabouts] calls a65–a91 passed, a65 and a91 by their words — the rest not scored"
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a40",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "review-notes:91 — \"Something hot rakes your shoulder\""
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a44",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "review-notes:92 — \"heat rakes your ribs\"; the price fell on the ship"
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a46",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "review-notes:93 — \"spits scalding vapor across your forearm\""
+  },
+  {
+   "run": "long-haul-live-20261124-0321",
+   "step": "a58",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "review-notes:64 — a cut on a character at 5 of 5"
+  },
+  {
+   "run": "long-haul-live-20261124-213912",
+   "step": "a62",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "review-notes:26 — \"starts on the cuts\""
+  },
+  {
+   "run": "long-haul-live-20261124-213912",
+   "step": "a63",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "review-notes:27 — \"the gash throbs\""
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a41",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "harm",
+   "breach": false,
+   "why": "annotated-transcript:919 — told, and health 5 → 4"
+  },
+  {
+   "run": "long-haul-live-20261126-184225",
+   "step": "a45",
+   "kind": "narrateResolution",
+   "nth": 0,
+   "line": "harm",
+   "breach": false,
+   "why": "annotated-transcript:1036 — told, and health 4 → 3"
+  }
+ ],
+ "seeded": [
+  {
+   "id": "dice-1",
+   "line": "dice",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a34",
+    "kind": "narrateResolution",
+    "nth": 1
+   },
+   "narration": "The guns answer your fire and the berth fills with light. Your shots score the cutter's flank, and the clamps hold you square to her, but the *Ashen Wake* has no angle on you at all: every shot of hers goes wide of your pinned hull. Her gun ports stay open along the ring, and the humming on your comm does not stop.",
+   "edit": "the dice gave the Ashen Wake the better angle; the edit has her with none",
+   "lines": "recorded"
+  },
+  {
+   "id": "dice-2",
+   "line": "dice",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a54",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "The cutter's name is the *Cinder Wren*. It shows in pale paint along her flank, below the one stubborn emergency light. You read it aloud once, to hear how it sounds. The open channel stays dead. No one aboard the *Cinder Wren* is left alive to answer it, and no voice comes.",
+   "edit": "the dice left a survivor aboard who opened a comm channel; the edit has no one alive and no voice",
+   "lines": "recorded"
+  },
+  {
+   "id": "dice-3",
+   "line": "dice",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a70",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "The pen goes still. Behind the grille, a chair creaks, and for a long moment the berth is quiet. \"I never agreed to be your contact at the Spire,\" Tamsin says, dry as ever. \"No berth, no fair price. Find someone else.\" Down the corridor, the open hatch holds a shape that does not move.\n\n*Binding her to you for good would be a Forge a Bond.*",
+   "edit": "the dice had Tamsin agree to be Mira's dock contact at Hollow Spire; the edit has her deny it",
+   "lines": "recorded"
+  },
+  {
+   "id": "where-1",
+   "line": "whereabouts",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a73",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "\"I ate with a man once who kept a tab on the salt,\" Tamsin says, sitting down across from you at the berth's fold-out table. She eats with you, close enough to pass the salt by hand. She talks a little: ledgers, a bad winter at the Spire, nothing that costs her. Down the corridor, the figure in the hatch shifts its weight and stays.",
+   "edit": "Tamsin is at Hollow Spire by the record; the edit has her eating at the berth's table with Mira, in person",
+   "lines": "recorded"
+  },
+  {
+   "id": "where-2",
+   "line": "whereabouts",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a74",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "The pen stops. Tamsin steps out of the hatch and stands beside you in the berth, close enough to smell the ink on her hands. \"The cutter's hire would sit in the Spire's dock records,\" she says, \"and I keep a key to those.\" You set your berth fee in her palm, coins squared in a row.\n\n*Whether she gives you straight answers or only the pieces that suit her would be a Develop Your Relationship.*",
+   "edit": "the edit has Tamsin stand beside Mira in the berth, in person",
+   "lines": "recorded"
+  },
+  {
+   "id": "where-3",
+   "line": "whereabouts",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a70",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "The pen goes still. Tamsin comes round the grille and into the berth, and for a long moment she stands there with you. \"A bond,\" she says, dry as ever, at your shoulder. \"I have written your promises down twice each. I have never written that word.\" Down the corridor, the open hatch holds a shape that does not move.\n\n*Binding her to you for good would be a Forge a Bond.*",
+   "edit": "the edit brings Tamsin into the berth with Mira, in person",
+   "lines": "recorded"
+  },
+  {
+   "id": "offer-1",
+   "line": "offer",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a5",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "\"Ask me why,\" Tamsin says again, and finally looks up from the tally. You put your name in her ledger and mean it, and she writes you down as one of hers: from tonight you are her connection on these docks. Her eyes go past you, toward the man in the ration line. He is still watching your ship.",
+   "edit": "Make a Connection was only offered; the edit makes the connection",
+   "lines": "recorded"
+  },
+  {
+   "id": "offer-2",
+   "line": "offer",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a12",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "\"Safekeeping costs extra,\" Tamsin says, taking the manifest between two fingers. You ask her to hold more than paper for you, and she does: what is between you grows tonight, and she trusts you further for it. She slides the manifest under the tally stone. The stranger two places back has stopped pretending to wait in line.",
+   "edit": "Develop Your Relationship was only offered; the edit develops it",
+   "lines": "recorded"
+  },
+  {
+   "id": "offer-3",
+   "line": "offer",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a70",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "The pen goes still. Behind the grille, a chair creaks. \"A bond,\" Tamsin says, dry as ever. \"Then we have one.\" She writes it once in the ledger, and it is done: she is bound to you for good. Down the corridor, the open hatch holds a shape that does not move.",
+   "edit": "Forge a Bond was only offered; the edit forges the bond",
+   "lines": "recorded"
+  },
+  {
+   "id": "state-1",
+   "line": "state",
+   "from": {
+    "run": "long-haul-live-20261125-164201",
+    "step": "a12",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "\"Berth nine, forty credits a shift, and the water's extra,\" Tamsin says, watching you read it. She is your bonded friend of many years, and she does not hide it. You set the slip back on her counter, square to the edge of the ledger, and she does not touch it. Her eyes go to the crate and stay there a moment too long.",
+   "edit": "Tamsin Vey is a connection, not a bond; the edit calls her bonded",
+   "lines": "recorded"
+  },
+  {
+   "id": "state-2",
+   "line": "state",
+   "from": {
+    "run": "long-haul-live-20261125-164201",
+    "step": "a13",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "Ilse's compass is warm from your pocket and scarred along the rim. Tamsin watches the brass catch the dock light — Tamsin, bound to you by the bond you two forged long ago. Her eyes narrow, and for once they leave the crate. \"That's old make,\" she says. \"Colony-ship make.\"",
+   "edit": "the edit tells a bond forged",
+   "lines": "recorded"
+  },
+  {
+   "id": "state-3",
+   "line": "state",
+   "from": {
+    "run": "long-haul-live-20261125-164201",
+    "step": "a29",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "\"Hold your fire, that's company property!\" the dockhand shouts, dropping his clipboard. The fight is already raging: the Ashen Wake's guns hammer your hull, and yours answer shot for shot. The station's white lights stay steady, and no alarm sounds.\n\n*Opening fire from a berth with the enemy this close would be an Enter the Fray.*",
+   "edit": "no fight is under way by the sheet; the edit has one raging",
+   "lines": "recorded"
+  },
+  {
+   "id": "unsaid-1",
+   "line": "unsaid",
+   "from": {
+    "run": "long-haul-live-20261125-225635",
+    "step": "a25",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "The Kobayashi IV slides in among the ribs and holds, and the field falls quiet around you. Every seam on the nearest rib is chalked white, with no scar of any weapon. Then the console picks up a second signal, a voice, thin and broken. \"Hold on,\" you tell it. \"I'm coming for you.\"",
+   "edit": "the move was made from a button; the edit gives the character speech",
+   "lines": "recorded"
+  },
+  {
+   "id": "unsaid-2",
+   "line": "unsaid",
+   "from": {
+    "run": "long-haul-live-20261125-232143",
+    "step": "a27",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "The sweet taint has thinned a little, or you have stopped noticing it. The Kobayashi IV drifts into the wreck's shadow, and the hauler's hull fills the viewport, scored and blackened. You tell the empty cockpit that whoever is in there is not dying alone. A low pulse thumps from the dark of its open cargo bay.",
+   "edit": "the edit tells the character speaking",
+   "lines": "recorded"
+  },
+  {
+   "id": "unsaid-3",
+   "line": "unsaid",
+   "from": {
+    "run": "long-haul-live-20261125-232143",
+    "step": "a41",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "The cutter is gone from the ring, a smear of orange sliding off into the dark. The berth falls quiet except for the alarm winding down. Behind you, boots scrape the deck as the customs officer comes out from the crates. You promise her the damage is nothing, and that you will pay the berth for it.",
+   "edit": "the edit has the character promise something",
+   "lines": "recorded"
+  },
+  {
+   "id": "premise-1",
+   "line": "premise",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a29",
+    "kind": "narratePacedInput",
+    "nth": 1
+   },
+   "narration": "The clerk has backed against a berth lamp, tablet clutched to his chest. Out along the ring, the cutter's silhouette slides clear of the shadow. You open fire, and your first shot strikes her flank and tears a seam along it. The alarm keeps climbing.\n\n*Answering her in the berth would be an Enter the Fray.*",
+   "edit": "a fight under way is not so; the edit has a shot fired and a hit",
+   "lines": "recorded"
+  },
+  {
+   "id": "premise-2",
+   "line": "premise",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a56",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "Morning at Bleakhold Station comes as a change in the corridor lights. The knock on the outer lock eases the fear you have carried all night; your nerve steadies at last, and the dread drains out of you. The comm light is lit.",
+   "edit": "a strain to ease is not so — spirit 5 of 5; the edit eases fear and steadies the nerve",
+   "lines": "recorded"
+  },
+  {
+   "id": "premise-3",
+   "line": "premise",
+   "from": {
+    "run": "long-haul-live-20261125-232143",
+    "step": "a27",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "The sweet taint has thinned a little, or you have stopped noticing it. You stop to clean the cut along your forearm, dab the blood away and bind it with a dressing from the kit. The Kobayashi IV drifts into the wreck's shadow, and the hauler's hull fills the viewport.",
+   "edit": "a wound to treat is not so — health 5 of 5; the edit treats a cut",
+   "lines": [
+    {
+     "kind": "premise",
+     "input": {
+      "refusal": {
+       "code": "recoverable-health",
+       "why": "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
+       "premise": {
+        "claim": "a wound to treat",
+        "never": "a cut, a gash, blood or a dressing on them"
+       }
+      }
+     }
+    }
+   ],
+   "ctx": {
+    "refusalCode": "recoverable-health"
+   }
+  },
+  {
+   "id": "oracle-1",
+   "line": "oracle",
+   "from": {
+    "run": "long-haul-live-20261125-164201",
+    "step": "a44",
+    "kind": "narrateOracleFollowup",
+    "nth": 0
+   },
+   "narration": "The cutter's jammed hatch gives a thin rasp, then nothing. Through the cracked seal you see the crew spaces dark and still. No one aboard the Cinder Wren is alive; whoever flew her is long dead.",
+   "edit": "the oracle said YES, someone is alive; the edit says no one is",
+   "lines": "recorded"
+  },
+  {
+   "id": "oracle-2",
+   "line": "oracle",
+   "from": {
+    "run": "long-haul-live-20261125-225635",
+    "step": "a44",
+    "kind": "narrateOracleFollowup",
+    "nth": 0
+   },
+   "narration": "The hatch on the Cinder Wren's flank finishes its cycle and stays open, venting a thin pale haze. Past the lip of it, nothing moves. The wreck is empty of the living; not a soul is left alive aboard.",
+   "edit": "the oracle said YES; the edit says no one is alive",
+   "lines": "recorded"
+  },
+  {
+   "id": "oracle-3",
+   "line": "oracle",
+   "from": {
+    "run": "long-haul-live-20261125-232143",
+    "step": "a48",
+    "kind": "narrateOracleFollowup",
+    "nth": 0
+   },
+   "narration": "The wreck's answer comes back at once: a voice, alive and frightened, begging you to open the lock. Someone is still aboard, and still breathing. You hold the channel open, and the voice keeps talking.",
+   "edit": "the oracle said NO; the edit has someone alive aboard",
+   "lines": "recorded"
+  },
+  {
+   "id": "place-1",
+   "line": "place",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a39",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "The clerk's boot appears first, then the rest of him, easing out of the service hatch with a dock wrench held like a prayer. Still in the clamps, the Kobayashi IV swings her guns onto the cutter and fires; the split hull bucks under the hits. Then the comm crackles with a low, even voice.",
+   "edit": "the ship is docked by the record; the edit has her fight as a ship while still in the clamps",
+   "lines": "recorded"
+  },
+  {
+   "id": "place-2",
+   "line": "place",
+   "from": {
+    "run": "long-haul-live-20261125-225635",
+    "step": "a39",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "The station's ring lights are steady along the cutter's dead flank. Still docked at the ring, the Kobayashi IV turns her bow and fires again on the Ashen Wake, and the shots walk along her hull. A hatch hangs open, and a thin figure in a scavenged suit grips its rim.",
+   "edit": "the edit has the docked ship turn and fire as a ship",
+   "lines": "recorded"
+  },
+  {
+   "id": "place-3",
+   "line": "place",
+   "from": {
+    "run": "long-haul-live-20261126-030646",
+    "step": "a37",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "\"She's dead in the ring, drive's gone.\" The dock hand's voice cracks. Still berthed at the gantry, the Kobayashi IV runs out her guns and fires another salvo into the Ashen Wake's split flank. Along the gantry, people are coming out of cover.",
+   "edit": "the edit has the berthed ship fire a salvo",
+   "lines": "recorded"
+  },
+  {
+   "id": "foe-1",
+   "line": "foe",
+   "from": {
+    "run": "long-haul-live-20261126-184225",
+    "step": "a36",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "You haul on the turret by hand and it comes round at last. Your shots tear the cutter open from bow to stern, and the Ashen Wake breaks apart, dead in the ring. The second raider drifts into the gap beside the wreck, and neither one hurries.",
+   "edit": "the fight is not decided; the edit destroys the foe",
+   "lines": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "id": "foe-2",
+   "line": "foe",
+   "from": {
+    "run": "long-haul-live-20261126-184225",
+    "step": "a37",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "Your boot finds the release and the turret drops loose with a bang. You fire into the cutter's open flank hatch, and the Ashen Wake explodes; what is left of her crew flees into the dark in a pod. Beside the wreck, the second raider stops its advance and holds off, wary.",
+   "edit": "the edit has the foe explode and its crew flee",
+   "lines": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "id": "foe-3",
+   "line": "foe",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a34",
+    "kind": "narrateResolution",
+    "nth": 1
+   },
+   "narration": "The guns answer your fire and the berth fills with light. Your shots open the cutter from end to end, and the *Ashen Wake* is finished: she slews off the ring, her guns dead, a wreck turning in the dark. The humming on your comm stops.",
+   "edit": "the edit tells the fight as over",
+   "lines": [
+    {
+     "kind": "foe",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "id": "fight-1",
+   "line": "fight",
+   "from": {
+    "run": "long-haul-live-20261125-164201",
+    "step": "a31",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "The Ashen Wake slides along the docking ring. In the berth, your guns swing the last few degrees and settle on her flank, and you fire: the first salvo takes her forward plating and the second rakes her gun ports. The dockhand dives for the hatch.",
+   "edit": "the fight is only offered; the edit fires the first salvo and hits",
+   "lines": "recorded"
+  },
+  {
+   "id": "fight-2",
+   "line": "fight",
+   "from": {
+    "run": "long-haul-live-20261125-164201",
+    "step": "a29",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "\"Hold your fire, that's company property!\" the dockhand shouts. Your guns fire before he finishes; the first shots strike the Ashen Wake's hull plating and she answers with a burst that rakes the berth.",
+   "edit": "the edit begins the fight with shots fired",
+   "lines": [
+    {
+     "kind": "fight",
+     "input": {
+      "resolution": {
+       "fightOffer": {
+        "status": "offered",
+        "position": "in_control"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "fight-3",
+   "line": "fight",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a29",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "The clerk has backed against a berth lamp. Out along the ring, the cutter's silhouette slides clear of the shadow. You fire first, and your shot strikes the cutter's flank; her guns answer and a blow lands on your hull.",
+   "edit": "the edit begins the fight",
+   "lines": [
+    {
+     "kind": "fight",
+     "input": {
+      "resolution": {
+       "fightOffer": {
+        "status": "offered",
+        "position": "in_control"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "cost-1",
+   "line": "cost",
+   "from": {
+    "run": "long-haul-live-20261124-213912",
+    "step": "a25",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "\"Still clipped,\" you say to the empty cockpit. The run past the last charted beacon costs you: your supplies run short and a wound opens along your arm where the console bit you. Ahead, a dead hauler hangs against the black.",
+   "edit": "the cost is the player's to choose; the edit tells it paid in supply and health",
+   "lines": [
+    {
+     "kind": "cost",
+     "input": {
+      "resolution": {
+       "openChoice": {
+        "kind": "any",
+        "amount": 1,
+        "count": 1
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "cost-2",
+   "line": "cost",
+   "from": {
+    "run": "long-haul-live-20261124-213912",
+    "step": "a34",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "The Kobayashi IV noses into Bleakhold's docking ring, and the station takes hold of her with a hard clunk. The docking costs you: a gash opens on your hand as the clamps take her, and the blood runs down your wrist. A dockmaster's runner is already waiting at the lock.",
+   "edit": "the edit tells the cost paid in blood",
+   "lines": [
+    {
+     "kind": "cost",
+     "input": {
+      "resolution": {
+       "openChoice": {
+        "kind": "any",
+        "amount": 1,
+        "count": 1
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "cost-3",
+   "line": "cost",
+   "from": {
+    "run": "long-haul-live-20261125-232143",
+    "step": "a27",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "The sweet taint has thinned a little. The long approach has cost you: your stores are spent down to the last ration, and your nerve is shaking. The Kobayashi IV drifts into the wreck's shadow.",
+   "edit": "the edit tells the cost paid in supply and spirit",
+   "lines": [
+    {
+     "kind": "cost",
+     "input": {
+      "resolution": {
+       "openChoice": {
+        "kind": "any",
+        "amount": 1,
+        "count": 1
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "price-1",
+   "line": "price",
+   "from": {
+    "run": "long-haul-live-20261126-184225",
+    "step": "a36",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "You haul on the turret by hand and it will not come. The cutter's guns rake the hull, and the price is paid: plating tears open under your boots and the berth vents to the dark. An alarm keeps counting off a berth that is no longer safe.",
+   "edit": "the price is the player's choice; the edit tells it paid",
+   "lines": [
+    {
+     "kind": "price",
+     "list": "NOT YET",
+     "text": "THE PRICE IS THE PLAYER'S CHOICE. A miss's price is offered on a card: the player pays it, or burns momentum to turn the miss. The price it offers: the cutter's guns rake the hull and something is torn open. Show the moment the price falls due, and stop before it is paid."
+    }
+   ]
+  },
+  {
+   "id": "price-2",
+   "line": "price",
+   "from": {
+    "run": "long-haul-live-20261127-041734",
+    "step": "a34",
+    "kind": "narrateResolution",
+    "nth": 0
+   },
+   "narration": "You throw power to the guns and the berth fills with light. Her guns rake the hull along your port side and the price falls on you: something is torn open, a panel bursts beside your knee, and the cockpit goes cold.",
+   "edit": "the edit tells the price paid",
+   "lines": [
+    {
+     "kind": "price",
+     "list": "NOT YET",
+     "text": "THE PRICE IS THE PLAYER'S CHOICE. A miss's price is offered on a card: the player pays it, or burns momentum to turn the miss. The price it offers: the cutter's guns rake the hull and something is torn open. Show the moment the price falls due, and stop before it is paid."
+    }
+   ]
+  },
+  {
+   "id": "price-3",
+   "line": "price",
+   "from": {
+    "run": "long-haul-live-20261126-030646",
+    "step": "a37",
+    "kind": "narratePacedInput",
+    "nth": 0
+   },
+   "narration": "\"She's dead in the ring, drive's gone.\" Then the cutter's last gun speaks: her guns rake the hull and tear it open, and you pay for the berth in plating and blood. Along the gantry, people are coming out of cover.",
+   "edit": "the edit tells the price paid",
+   "lines": [
+    {
+     "kind": "price",
+     "list": "NOT YET",
+     "text": "THE PRICE IS THE PLAYER'S CHOICE. A miss's price is offered on a card: the player pays it, or burns momentum to turn the miss. The price it offers: the cutter's guns rake the hull and something is torn open. Show the moment the price falls due, and stop before it is paid."
+    }
+   ]
+  }
+ ]
+}

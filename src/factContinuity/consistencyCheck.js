@@ -101,8 +101,7 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // outcome, the stakes, the sheet — are audited here, kind `obligation`.
   // They ride an audit the ledger already calls for; they make no call of
   // their own (an empty ledger is still not audited).
-  const auditLines = auditObligationLines(options.obligations);
-  const obligations = formatAuditObligations(auditLines);
+  const { lines: auditLines, text: obligations } = auditObligationSection(options.obligations);
 
   // A cutaway is somewhere else by design: not held to the characters' place
   // (D1 — round 9's a93 closing cutaway to Tamsin was carded against it).
@@ -144,7 +143,7 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   }
   // A finding on an obligation line is one by its line, whatever kind the
   // model gave it (N19, N20): by its number, else by its subject's tag.
-  contradictions = contradictions.map(c => withObligationLine(c, auditLines, view.text));
+  contradictions = classifyAuditFindings(contradictions, auditLines, view.text);
 
   // The X-Card may have removed the narration while the call was out: the
   // review card and the telemetry line both quote its prose, so neither is
@@ -459,13 +458,25 @@ function truthSubjectLabel(subject) {
 // Internal
 // ---------------------------------------------------------------------------
 
-async function callHaiku(apiKey, systemPrompt) {
-  const body = {
+/**
+ * The audit's request body for a system prompt — the model, its cap and the
+ * one user turn. Its one maker: the audit's call and the judges' measure
+ * (test/ci/playwright/lib/judges.mjs, issue #399 D6) send the same request.
+ *
+ * @param {string} systemPrompt
+ * @returns {Object}
+ */
+export function auditRequestBody(systemPrompt) {
+  return {
     model:      HAIKU_MODEL,
     max_tokens: MAX_TOKENS,
     system:     systemPrompt,
     messages:   [{ role: 'user', content: 'Audit the narration above against the scene ledger.' }],
   };
+}
+
+async function callHaiku(apiKey, systemPrompt) {
+  const body = auditRequestBody(systemPrompt);
   const headers = {
     'Content-Type':      'application/json',
     'x-api-key':         apiKey,
@@ -517,6 +528,32 @@ function auditObligationLines(obligations) {
   return obligations
     .filter(o => o && typeof o.text === 'string' && o.text.trim())
     .filter(o => OBLIGATION_KINDS[o.kind]?.check !== 'certain');
+}
+
+/**
+ * The audit's obligation section: the lines it is given (auditObligationLines)
+ * and how its prompt shows them (formatAuditObligations). Its one maker: the
+ * audit and the judges' measure (issue #399 D6) build the same section.
+ *
+ * @param {Array<Object>|undefined} obligations — a narration's obligation lines
+ * @returns {{ lines: Array<Object>, text: string }}
+ */
+export function auditObligationSection(obligations) {
+  const lines = auditObligationLines(obligations);
+  return { lines, text: formatAuditObligations(lines) };
+}
+
+/**
+ * The audit's findings, each classed by the obligation line it names
+ * (withObligationLine). For the audit and the judges' measure alike.
+ *
+ * @param {Array<Object>} contradictions — parseAuditResponse's
+ * @param {Array<Object>} lines — the obligation lines the audit was given, numbered in order
+ * @param {string} text — the judged view
+ * @returns {Array<Object>}
+ */
+export function classifyAuditFindings(contradictions, lines, text) {
+  return (contradictions ?? []).map(c => withObligationLine(c, lines, text));
 }
 
 /**

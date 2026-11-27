@@ -1,0 +1,281 @@
+{
+ "meta": {
+  "runId": "judges-live-20261127-153509",
+  "commit": "952ba3e4 (with the measure's own files)",
+  "entries": 327,
+  "seeded": 36,
+  "labelled": 52,
+  "calls": 458,
+  "usd": 0.06102129999999997
+ },
+ "score": {
+  "judge": {
+   "cost": {
+    "lines": 12,
+    "flags": 4,
+    "right": 4,
+    "breaches": 4,
+    "caught": 4,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "dice": {
+    "lines": 77,
+    "flags": 21,
+    "right": 3,
+    "breaches": 4,
+    "caught": 3,
+    "wrongOnLabelled": 1,
+    "rightOk": false,
+    "caughtOk": true,
+    "passed": false
+   },
+   "fight": {
+    "lines": 10,
+    "flags": 4,
+    "right": 4,
+    "breaches": 4,
+    "caught": 4,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "foe": {
+    "lines": 14,
+    "flags": 7,
+    "right": 7,
+    "breaches": 7,
+    "caught": 7,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "offer": {
+    "lines": 66,
+    "flags": 1,
+    "right": 1,
+    "breaches": 4,
+    "caught": 1,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": false,
+    "passed": false
+   },
+   "oracle": {
+    "lines": 10,
+    "flags": 7,
+    "right": 3,
+    "breaches": 4,
+    "caught": 3,
+    "wrongOnLabelled": 3,
+    "rightOk": false,
+    "caughtOk": true,
+    "passed": false
+   },
+   "place": {
+    "lines": 16,
+    "flags": 7,
+    "right": 3,
+    "breaches": 3,
+    "caught": 3,
+    "wrongOnLabelled": 0,
+    "rightOk": false,
+    "caughtOk": true,
+    "passed": false
+   },
+   "premise": {
+    "lines": 12,
+    "flags": 9,
+    "right": 9,
+    "breaches": 9,
+    "caught": 9,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "price": {
+    "lines": 4,
+    "flags": 3,
+    "right": 2,
+    "breaches": 3,
+    "caught": 2,
+    "wrongOnLabelled": 0,
+    "rightOk": false,
+    "caughtOk": true,
+    "passed": false
+   },
+   "state": {
+    "lines": 112,
+    "flags": 8,
+    "right": 3,
+    "breaches": 3,
+    "caught": 3,
+    "wrongOnLabelled": 0,
+    "rightOk": false,
+    "caughtOk": true,
+    "passed": false
+   },
+   "unsaid": {
+    "lines": 20,
+    "flags": 4,
+    "right": 4,
+    "breaches": 4,
+    "caught": 4,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "whereabouts": {
+    "lines": 16,
+    "flags": 6,
+    "right": 6,
+    "breaches": 8,
+    "caught": 6,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   }
+  },
+  "audit": {
+   "cost": {
+    "lines": 12,
+    "flags": 4,
+    "right": 4,
+    "breaches": 4,
+    "caught": 4,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "dice": {
+    "lines": 77,
+    "flags": 2,
+    "right": 2,
+    "breaches": 4,
+    "caught": 2,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": false,
+    "passed": false
+   },
+   "fight": {
+    "lines": 10,
+    "flags": 5,
+    "right": 4,
+    "breaches": 4,
+    "caught": 4,
+    "wrongOnLabelled": 0,
+    "rightOk": false,
+    "caughtOk": true,
+    "passed": false
+   },
+   "foe": {
+    "lines": 14,
+    "flags": 3,
+    "right": 3,
+    "breaches": 7,
+    "caught": 3,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": false,
+    "passed": false
+   },
+   "offer": {
+    "lines": 66,
+    "flags": 2,
+    "right": 2,
+    "breaches": 4,
+    "caught": 2,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": false,
+    "passed": false
+   },
+   "oracle": {
+    "lines": 10,
+    "flags": 5,
+    "right": 4,
+    "breaches": 4,
+    "caught": 4,
+    "wrongOnLabelled": 0,
+    "rightOk": false,
+    "caughtOk": true,
+    "passed": false
+   },
+   "place": {
+    "lines": 16,
+    "flags": 3,
+    "right": 3,
+    "breaches": 3,
+    "caught": 3,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "premise": {
+    "lines": 12,
+    "flags": 9,
+    "right": 9,
+    "breaches": 9,
+    "caught": 9,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "price": {
+    "lines": 4,
+    "flags": 3,
+    "right": 3,
+    "breaches": 3,
+    "caught": 3,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "state": {
+    "lines": 112,
+    "flags": 3,
+    "right": 3,
+    "breaches": 3,
+    "caught": 3,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "unsaid": {
+    "lines": 20,
+    "flags": 4,
+    "right": 4,
+    "breaches": 4,
+    "caught": 4,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": true,
+    "passed": true
+   },
+   "whereabouts": {
+    "lines": 16,
+    "flags": 0,
+    "right": 0,
+    "breaches": 8,
+    "caught": 0,
+    "wrongOnLabelled": 0,
+    "rightOk": true,
+    "caughtOk": false,
+    "passed": false
+   }
+  }
+ }
+}

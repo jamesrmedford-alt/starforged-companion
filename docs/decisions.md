@@ -60,6 +60,21 @@ rejected.
 - Removed as written and never read (N24): the card's `contradictedSubject`, the audit's `newValue`, a model's own `truthId` (the resolver finds the truth), the mode passed as `narrationKind`, and the `JUDGE_TIMEOUT_MS` export.
 - The paced rate-limit retry keeps its offer (N31). It is outside the judge, but listed on the issue.
 
+**The measure** (D6, slice 4):
+- The labelled set is every narration the kept long hauls recorded with the lines it was given — 281 from rounds 5 to 9, whose requests carry the obligations block (`test/ci/playwright/lib/judges.mjs recordedLines`) — plus the reviews' labels, and three seeded breaches a judge-class kind (`judges/set.json`). 327 narrations in all.
+- A recorded line's judge sentence and trip words are rebuilt as the module builds them now (`asBuiltNow`). A line for a run that predates it is written by hand on its label (`add`). A breach the reviews dispute is labelled `null` and not scored.
+- The labels came from an independent read of every kept review (`review-notes.md`, `cold-read.md`, the annotated transcripts) and the known-issues rows, each checked against the replay's prose.
+- Two kinds of breach are left out on purpose:
+  - a person the narration brings in without naming them (round 9's a56): the judge cannot see it (UNNAMED-ARRIVAL-UNCHECKED);
+  - round 9's [whereabouts] beats between a65 and a91 that the issue does not name one by one.
+- `judges.mjs` runs both passes as the module asks them: the judge on the lines its trip words trip, and the audit on its obligation section alone, with no ledger beside it. It needs a key and is not part of `npm test`. Its verdicts are kept under `judges/runs/`. `tests/unit/judgeMeasure.test.js` replays the newest kept run with no key and fails on any request the run never answered (a prompt changed since), so a prompt is never changed unmeasured.
+- An unlabelled line is counted kept: the report says so.
+- The first run (`judges-live-20261127-153509`, on slice 3's prompts: 458 calls, $0.06):
+  - The judge passed [cost], [fight], [foe], [premise], [unsaid] and [whereabouts].
+  - The audit passed [cost], [place], [premise], [price], [state] and [unsaid].
+  - [dice] failed the judge: 21 flags, 3 right.
+  - The judge read the [oracle] NOT SO line backwards on three of the five kept answers. That line had no judge sentence yet.
+
 ---
 
 ## Issue #397's code review: what the round-8 fixes missed, before round 9 (2026-11-27)
