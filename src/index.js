@@ -11075,7 +11075,10 @@ onChatMessageRender((message, root) => wireCombatTrackCardButtons(message, root)
  * postPacedNarrativeCard; click handlers are attached here at render time.
  */
 onChatMessageRender((message, root) => {
-  if (!message.flags?.[MODULE_ID]?.narratorCard) return;
+  // A narration, or a ◈ Narrative Review card — no narration since issue
+  // #399 (D5), whose Retract button opens the same dialog.
+  const flags = message.flags?.[MODULE_ID];
+  if (!flags?.narratorCard && !flags?.factContinuityReview) return;
   if (!factContinuityEnabledFromSettings()) return;
 
   const btn = root.querySelector('[data-action="openCorrectionDialog"]');

@@ -476,7 +476,10 @@ export const OBLIGATION_KINDS = Object.freeze({
     list: "NOT SO", check: "judge",
     text: ({ subject, fact }) => `What the dice decided stands — ${subject}: ${fact}. A line that takes otherwise for granted `
       + "does not make it so: tell what is there.",
-    judge: ({ subject, fact }) => `The narration tells as true something this result of the dice denies — ${subject}: ${fact}.`,
+    // Issue #399, D2: it read "…something this result of the dice denies —
+    // Ashen Wake: has the better angle", and the judge read the fact as the
+    // thing denied — round 9's a34, a36 and a54 flagged narrations that told it.
+    judge: ({ subject, fact }) => `The dice decided this: ${subject} — ${fact}. It is broken only if the narration says the opposite.`,
   }),
   // A second-person set-piece's character is "you" (issue #389 #4,
   // OPENING-IN-THE-THIRD-PERSON: three of the sixth live round's six openings

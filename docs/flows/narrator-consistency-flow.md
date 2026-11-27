@@ -18,7 +18,7 @@ ledger, §4 the dispositions.
 
 `applyNarratorSidecar` fires `runConsistencyCheck(prose,
 auditCampaignState(campaignState), {matchedEntityIds, currentLocationId,
-playerNarration})` on the **canonical GM only**, fire-and-forget (never
+narrationId, obligations, narrationKind})` on the **canonical GM only**, fire-and-forget (never
 blocks or delays the narration post), for every mode that applies a sidecar
 — all nine narrator paths — and for an `@scene` answer, which applies none
 (`sceneAnswerText`, known-issues SCENE-ANSWER-NOT-A-CAMERA: an answer records
@@ -48,7 +48,18 @@ their own key — runs off the canonical GM; there `applyNarratorSidecar`
 applies no side-data and fires no audit (the skip is debug-logged), and the
 prose is unaudited. See `narrator-context-flow.md` → "Where each call runs".
 
-The audit prompt (`buildAuditPrompt`) compares prose against what binds in
+What it reads is the narration's **judged view** (`checks.js judgedView`,
+issue #399 D1) — the prose without its fact block and without its closing
+offer line, the one place the rules let a move be named; the pre-post judge
+(§1b) reads the same. Round 9's audit carded that line five times, four as
+the move made. The narrator says what narration it is (`narrationKind`): a
+**cutaway** — a session's closing vignette or a spotlight
+(`narrateSessionVignette` passes `cutaway` to `applyNarratorSidecar`) — is
+not held to THE PLACE, and with nothing else in its ledger it is not audited
+(round 9's a93, a closing cutaway to Tamsin, was carded against the
+characters' place).
+
+The audit prompt (`buildAuditPrompt`) compares that view against what binds in
 the ledger block (`buildLedgerBlock` at `maxTokens: Infinity`; overhaul 2
 §5.8, D15) — THE PLACE (THE SCENE's Place and Ship lines: where the
 characters and their ship are by the table's record), RECORDED IDENTITIES
@@ -62,9 +73,12 @@ D9's logged class — the narration's obligation lines, one a line with its
 list and tag, handed in by the narrator through `applyNarratorSidecar`'s
 `obligations`: the move's, the paced line's, the round's, the oracle
 follow-up's; they ride an audit the ledger calls for and make no call of
-their own) —
-via one Haiku call (`claude-haiku-4-5`, `max_tokens: 1000` since 2026-07,
-with a `stop_reason` truncation warning, through `api-proxy.js`). What the
+their own; `formatAuditObligations` sends each in its judge sentence where
+its kind has one, and never a certain-class line — the code held the
+narration to those before it posted, and eleven of round 9's audit findings
+were on them, issue #399 D2) —
+via one Haiku call (the model `consistencyCheck.js` names, `MAX_TOKENS`
+1300, with a `stop_reason` truncation warning, through `api-proxy.js`). What the
 narration described — its colour, and the frame's Where and Now — is not
 audited: a narration that changes it is no contradiction. Response kinds:
 `truth | state | place | retraction | identity | obligation` (a `frame` or
@@ -80,6 +94,21 @@ three main prose paths. Since 2026-07 **every** apply site passes
 `extras.matchedEntityIds` uniformly — oracle follow-ups included (the
 vignette / vow / inciting modes still match nothing, but the plumbing no
 longer special-cases them).
+
+## 1b. The pre-post judge (overhaul 4 D9; issue #399)
+
+Before a narration posts, `narrateKeepingObligations` (`checks.js`) holds it
+to its obligation lines by class: a certain or floor failure is asked once
+more (YOUR DRAFT — NOT POSTED). A NOT YET / NOT SO judge line whose trip
+words appear in the judged view goes to one Haiku call (`judgeNarration`,
+label `obligationJudge`, 4 s, fail-open), sent the judged view too — it was
+sent the whole prose, and re-asked a70 on its own offer line. It runs only on
+a GM, with this audit's setting on (`narrator.js obligationJudgeOn`). **A
+judge verdict acts only for a kind that has passed the measure**
+(`judgeMayAct`; none has yet, issue #399 D7): until then it is logged —
+`action: "logged"` on the telemetry row — and the first draft posts. Round
+9's four re-asks were all on wrong verdicts. The full class list is in
+`narrator-context-flow.md` (the obligations block).
 
 ## 2. From catch to correction
 
@@ -102,10 +131,16 @@ longer special-cases them).
   `contradictedTruthId` (the scene truth the catch names, matched from its
   violated text — `resolveContradictedTruthId`; the audit returns no id, so
   it was always null until issue #326 W63; the Retract dialog lists that
-  truth first, marked) + `matchedEntityIds` flags and co-marks
-  `narratorCard` purely to surface the render hook — the ring's defensive
-  excludes (`worldJournalContradiction`) keep it out of narrator memory.
-  The card also carries `factContinuityReview`: the World Journal panel
+  truth first, marked) + `matchedEntityIds` flags. It carries no
+  `narratorCard` (issue #399 D5): it co-marked it to surface the render hook,
+  and every reader of the flag took it for a narration — the long haul's
+  runner counted each card as its line narrated twice. The correction hook
+  (`index.js`) reads `factContinuityReview`; the ring's defensive exclude
+  (`worldJournalContradiction`) stays.
+  **An obligation finding posts no card** until its kind has passed the
+  measure (issue #399 D7, `judgeMayAct`): it is returned and logged, as
+  every finding is. Round 9's six obligation cards were all wrong.
+  The card's `factContinuityReview` also lists it in the World Journal panel
   lists it under Contradictions with **Correct…** (the same dialog, when the
   card has the button) and Dismiss — never the lore actions. Override
   promoted "lore" by the subject's name, which changed nothing, and deleted
@@ -260,7 +295,7 @@ canonical-GM single-emitter gating; the audit compares against the full
 ledger block including every 2026-07 addition (frame, retractions, ship,
 identities); parsing is tolerant and never blocks; every audit — including
 clean ones — lands in telemetry with elapsed-ms for tuning; the review card
-stays out of narrator memory despite co-marking `narratorCard`; the
+stays out of narrator memory (it carries no `narratorCard` since issue #399); the
 correction dialog scopes to the card's matched entities and re-renders in
 place; and all API traffic rides `api-proxy.js` per the architecture
 constraint.

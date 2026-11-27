@@ -1014,9 +1014,11 @@ function registerNarratorTests(quench) {
           assert.isAbove(newMessages.length, 0,
             "A narration card should have been posted to chat");
 
-          const last = game.messages.contents.at(-1);
+          // The narration's card, not merely the newest: the audit's ◈
+          // Narrative Review card can follow it, and is no narration (issue
+          // #399, D5).
           assert.isTrue(
-            !!last.flags?.["starforged-companion"]?.narratorCard,
+            newMessages.some(m => !!m.flags?.["starforged-companion"]?.narratorCard),
             "Narrator card should have narratorCard flag"
           );
           // Accept both real narration and fallback cards — the test
@@ -1028,8 +1030,8 @@ function registerNarratorTests(quench) {
           const apiKey = game.settings.get("starforged-companion", "claudeApiKey");
           if (!apiKey) { this.skip(); return; }
 
-          const last = game.messages.contents.at(-1);
-          if (!last?.flags?.["starforged-companion"]?.narratorCard) { this.skip(); return; }
+          const last = game.messages.contents.filter(m => m.flags?.["starforged-companion"]?.narratorCard).at(-1);
+          if (!last) { this.skip(); return; }
 
           assert.isString(
             last.flags["starforged-companion"].sessionId,

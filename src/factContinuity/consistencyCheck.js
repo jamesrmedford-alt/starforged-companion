@@ -32,6 +32,8 @@ import { getConnection } from '../entities/connection.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { generatedName } from '../entities/nameMatch.js';
+import { judgedView, judgeMayAct } from '../moves/contracts/checks.js';
+import { OBLIGATION_KINDS } from '../moves/contracts/obligations.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -59,6 +61,10 @@ const MAX_TOKENS    = 1300;   // was 1000 — Haiku 5.5 counts the same text as 
  *   X-Card that removed it while the audit's call was out gets no review card
  *   and no telemetry line, both of which quote the removed prose
  *   (XCARD-LATE-REVIEW)
+ * @param {string|null} [options.narrationKind] — what narration this is
+ *   (checks.js judgedView): a `cutaway` is not held to where the characters
+ *   are (issue #399, D1 — round 9's a93 closing cutaway to Tamsin was carded
+ *   against the characters' place)
  * @returns {Promise<{ contradictions: Array<Object>, dispatched: boolean }>}
  */
 export async function runConsistencyCheck(prose, campaignState, options = {}) {
@@ -70,6 +76,12 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
 
   const apiKey = readApiKey();
   if (!apiKey) return { contradictions: [], dispatched: false };
+
+  // The one judged view (issue #399, D1): no fact block, no closing offer
+  // line — round 9's audit carded that line five times, four as the move
+  // made and once as a move's name.
+  const view = judgedView(prose, { kind: options.narrationKind ?? null });
+  if (!view.text.trim()) return { contradictions: [], dispatched: false };
 
   const ledger = buildLedgerBlock(campaignState, {
     matchedEntityIds:  options.matchedEntityIds ?? [],
@@ -91,18 +103,22 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // their own (an empty ledger is still not audited).
   const obligations = formatAuditObligations(options.obligations);
 
+  // A cutaway is somewhere else by design: not held to the characters' place
+  // (D1 — round 9's a93 closing cutaway to Tamsin was carded against it).
+  const place = view.cutaway ? '' : ledger.place;
+
   // Nothing to audit against — an empty ledger means nothing can be
   // contradicted. What binds alone (overhaul 2 §5.8, D15): the scene's place
   // and ship by the table's record, what binds, the table's strikes, the
   // standing state and the recorded identities. What the narration described
   // is its own, and a narration that changes it is no contradiction; the
   // frame's Where is colour too (FRAME-REASONING-IN-PROSE).
-  if (!ledger.binds && !ledger.standing && !ledger.place && !ledger.corrections && !identities) {
+  if (!ledger.binds && !ledger.standing && !place && !ledger.corrections && !identities) {
     return { contradictions: [], dispatched: false };
   }
 
-  const systemPrompt = buildAuditPrompt(ledger.binds, ledger.standing, prose, {
-    place:        ledger.place,
+  const systemPrompt = buildAuditPrompt(ledger.binds, ledger.standing, view.text, {
+    place,
     corrections:  ledger.corrections,
     identities,
     obligations,
@@ -130,6 +146,11 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   let dispatched = false;
   for (const c of contradictions) {
     if (c.confidence !== 'high') continue;
+    // An obligation line's finding posts a card only for a kind that has
+    // passed the measure (issue #399, D7; checks.js judgeMayAct): logged
+    // below, as every finding is, and no card. Round 9's six cards were all
+    // wrong. Truths, state, place, retractions and identities card as before.
+    if (c.kind === 'obligation' && !judgeMayAct(obligationKindOf(c))) continue;
     // Cross-turn dedup (narrator-consistency audit 2026-07): a standing
     // contradiction — prose that keeps asserting the same violated fact —
     // used to re-post an identical review card every narration. One card per
@@ -449,8 +470,26 @@ function formatAuditObligations(obligations) {
   if (!Array.isArray(obligations)) return '';
   return obligations
     .filter(o => o && typeof o.text === 'string' && o.text.trim())
-    .map(o => `${o.list ?? 'TELL'} [${o.kind ?? '?'}] ${o.text.trim()}`)
+    // A certain-class line was enforced in code before the narration posted
+    // (issue #399, D2): round 9's audit re-judged [apparatus], [person],
+    // [here] and [arrival] eleven times.
+    .filter(o => OBLIGATION_KINDS[o.kind]?.check !== 'certain')
+    // Written for the judge where the kind has a sentence for it, else the
+    // narrator's own instruction (D2).
+    .map(o => `${o.list ?? 'TELL'} [${o.kind ?? '?'}] ${String(o.judge ?? o.text).trim()}`)
     .join('\n');
+}
+
+/**
+ * The obligation kind an audit finding names — its `[kind]` tag, in the
+ * subject or the line it says was broken — or ''. Never throws.
+ *
+ * @param {{ subject?: string, violated?: string }} c
+ * @returns {string}
+ */
+function obligationKindOf(c) {
+  const m = /\[([a-z-]+)\]/i.exec(`${c?.subject ?? ''} ${c?.violated ?? ''}`);
+  return m ? m[1].toLowerCase() : '';
 }
 
 // Review cards already posted, keyed by scene + subject + violated fact.

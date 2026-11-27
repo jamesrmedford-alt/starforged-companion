@@ -141,8 +141,9 @@ describe('NOT SO [dice]: the line does not make otherwise so', () => {
     for (const mode of ['paced', 'move']) {
       const lines = obligationsFor({ mode, resolution: mode === 'move' ? { moveId: 'gather_information', outcome: 'strong_hit' } : null, line: A77_LINE, dice: FACTS });
       const dice = lines.find(o => o.kind === 'dice');
+      // Issue #399, D2: the fact is what the dice decided, never the thing denied.
       expect(dice, mode).toMatchObject({ list: 'NOT SO', words: FACTS[0].words,
-        judge: `The narration tells as true something this result of the dice denies — Cinder Wren: ${A41_FACT}.` });
+        judge: `The dice decided this: Cinder Wren — ${A41_FACT}. It is broken only if the narration says the opposite.` });
       expect(formatObligationsBlock(lines), mode).toContain(`- [dice] What the dice decided stands — Cinder Wren: ${A41_FACT}. `
         + 'A line that takes otherwise for granted does not make it so: tell what is there.');
     }
@@ -164,7 +165,7 @@ describe('NOT SO [dice]: the line does not make otherwise so', () => {
     const lines = obligationsFor({ mode: 'paced', line: A77_LINE, dice: FACTS });
     const verdict = await judgeNarration(A77_TOLD, trippedLines(A77_TOLD, lines), { apiKey: 'sk-test' });
     expect(apiPost.mock.calls.at(-1)[2].messages[0].content)
-      .toContain(`- [dice] (NOT SO) The narration tells as true something this result of the dice denies — Cinder Wren: ${A41_FACT}.`);
+      .toContain(`- [dice] (NOT SO) The dice decided this: Cinder Wren — ${A41_FACT}. It is broken only if the narration says the opposite.`);
     expect(verdict).toEqual({ violations: [{ tag: 'dice', quote: 'The wreck of the Cinder Wren' }], judged: true });
   });
 });
@@ -210,7 +211,10 @@ describe('a77, through the paced narration', () => {
     expect(narration.messages[0].content).toContain(`- [dice] What the dice decided stands — Cinder Wren: ${A41_FACT}.`);
   });
 
-  it('a77\'s narration is judged, and re-asked: the draft that found her wreck is not posted', async () => {
+  // Issue #399, D7: authority follows the measure. a77 is one of the
+  // measure's real [dice] breaches (D6); until [dice] passes, the judge's
+  // verdict on it is logged and counted, and the first draft posts.
+  it('a77\'s narration is judged; the verdict is logged and the draft posts — no re-ask until [dice] passes the measure', async () => {
     const KEPT = 'Where the cutter fought, the ring holds only scorched plating and a drifting cargo tag.';
     replies({
       narrations: [`${A77_TOLD}${SIDECAR}`, `${KEPT}${SIDECAR}`],
@@ -220,12 +224,9 @@ describe('a77, through the paced narration', () => {
     const judged = apiPost.mock.calls.filter(c => c[3]?.label === 'obligationJudge');
     expect(judged.length, 'the judge was asked once').toBe(1);
     expect(judged[0][2].messages[0].content).toContain('- [dice] (NOT SO)');
-    const asks = narrationCalls();
-    expect(asks.length, 'the narration was re-asked').toBe(2);
-    expect(asks[1].messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n'))
-      .toContain('The wreck of the Cinder Wren');
-    expect(JSON.stringify(out ?? '')).not.toContain('The wreck of the Cinder Wren');
-    expect(JSON.stringify(out ?? '')).toContain(KEPT);
+    expect(narrationCalls().length, 'no re-ask').toBe(1);
+    expect(JSON.stringify(out ?? '')).toContain('The wreck of the Cinder Wren');
+    expect(JSON.stringify(out ?? '')).not.toContain(KEPT);
   });
 });
 

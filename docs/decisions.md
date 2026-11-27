@@ -6,6 +6,36 @@ rejected.
 
 ---
 
+## Issue #399: the judge, reworked (2026-11-27)
+
+**Decision** (the maintainer: "Please address issue 399"). The scope's recommended decisions D1–D10 are taken. Round 9 was the judge's first live run: its two passes acted on eleven findings and none was right, and they missed every real fault in the run. The entries below are built; the rest of the scope's decisions are recorded here as each slice builds them.
+
+**One judged view of a narration** (D1):
+- `checks.js judgedView` prepares the text any judge reads: the narration without its fact block and without its closing offer line (the same `bodyOf` the code checks use). The pre-post judge (`judgeNarration`), its trip words (`narrateKeepingObligations` → `trippedLines`) and the audit (`consistencyCheck.js`) all read it. Nothing else builds text for a judge.
+- It carries the narration's kind. A cutaway — a session's closing vignette or a spotlight (`narrateSessionVignette`, any but the opening; the scene's `cause: 'cutaway'` reads the same test) — is not held to THE PLACE, and a cutaway with nothing else in its ledger is not audited.
+- The reason: round 9's audit carded the offer line five times — as the move made (a5, a12, a62, a77) and as a move's name (a29) — 13 of its 44 findings quoted one, and the pre-post judge re-asked a70 on its own offer line. a29's three lines were tripped only by its offer line's "fire". a93's closing cutaway to Tamsin was carded against the characters' place.
+- Rejected: *strip the offer line in the audit alone.* Two passes building their own text is how they came to differ.
+
+**Lines written for the judge, and no certain line in the audit** (D2, its first part):
+- [dice]'s judge sentence reads "The dice decided this: *subject* — *fact*. It is broken only if the narration says the opposite." It read "…something this result of the dice denies — *subject*: *fact*", and the judge took the fact for the thing denied (a34, a36, a54).
+- The audit is sent each line in its judge sentence where its kind has one, else the narrator's instruction, and never a certain-class line: the code held the narration to those before it posted. Eleven of round 9's audit findings were on [apparatus], [person], [here] and [arrival].
+- Still to build: sentences for the seven judge kinds that have none (slice 5).
+
+**The review card is not a narration** (D5):
+- The ◈ Narrative Review card no longer carries `narratorCard`. The correction hook (`index.js`, the Retract button) reads `factContinuityReview`, which the card already had.
+- Every reader of `narratorCard` was read for what the card did there (rules/narrator-memory.md, invariant 1). It made the long haul's runner count each card as a second narration of its line — round 9's five "answered-once" failures — and `explore.mjs`'s `answeredSince` and the observer's `narrator` count it as the table answering. It also had the scene-stamp hook stamp it, the audio hook look it over, and a deleted card kept as a narration's record. Narrator memory already excluded it (`worldJournalContradiction`). The Quench narrator-card test now finds the narration's card instead of the newest message. The rest of the readers need a field the card never had (`sessionId`, `resolutionId`, `roundId`, `narrationText`).
+- The runner needs no special case.
+
+**Authority follows the measure — the holding half** (D7; amends overhaul 4's D9 below):
+- A judge-class kind may act — re-ask before posting, or post the audit's card — only once it has passed the measure on the kept runs (`checks.js judgeMayAct`; the set it reads, `JUDGE_KINDS_THAT_ACT`, is empty). Until then its verdicts are logged and counted (`action: "logged"` on the telemetry row), and the first draft posts.
+- The audit's findings on an obligation line are logged and post no card, whatever the kind. Its cards for truths, state, place, retractions and identities are as before.
+- The bar, as recommended: at least nine in ten of a kind's flags right (all of them, with fewer than ten), and at least two of every three breaches caught, real and seeded together. The measure is slice 4; a kind that fails is retired to "logged" (D10).
+- D9's "one judge and one re-ask a narration" stands. A certain or floor failure is re-asked as before.
+- The reason: in its only live sample the judge was wrong in five verdicts of five and the audit in six cards of six, and a wrong verdict is not free — it re-asks, and the redraft posts unjudged ("…would be a Forge a Bond, if you press it").
+- Rejected: *switch the judge off until it is measured.* Its logged verdicts are part of what is counted. The judge's calls and their delay before a narration posts are the cost of that while no kind acts.
+
+---
+
 ## Issue #397's code review: what the round-8 fixes missed, before round 9 (2026-11-27)
 
 **Decision** (the maintainer: "Issue 397 now has additional comments. Please read them all, then apply the code fixes, then open a PR, then kick off long haul 9"). The six code fixes of the review comments on issue #397, each on its plan's defaults. Fixes 1, 2 and 5 amend entries of the section below; the rest are recorded here.
@@ -221,7 +251,7 @@ Left, as not small:
 - **D6 — a move never makes another move's track:** a combat move needs a fight (only Enter the Fray's commit makes one), Explore a Waypoint an expedition or a site (known-issues PHANTOM-FIGHT-FROM-A-MARK, PHANTOM-EXPEDITION-FROM-A-WAYPOINT).
 - **D7 — the table's own hand is never blocked**, recorded `by: "hand"`, never told as a deed; the panel's Add of a scene challenge is Begin the Scene.
 - **D8 — one obligations block**, TELL / NOT YET / NOT SO, a tag a line, last before the instruction, in user messages only, the tuned wordings kept.
-- **D9 — checks by class:** certain → re-ask once; floor → re-ask ([vow]) or log; tripwire → one small judge call before posting → re-ask once, fail-open; the rest logged by the audit. One judge and one re-ask a narration.
+- **D9 — checks by class:** certain → re-ask once; floor → re-ask ([vow]) or log; tripwire → one small judge call before posting → re-ask once, fail-open; the rest logged by the audit. One judge and one re-ask a narration. *(Amended by issue #399 D7, above: a judge verdict re-asks, and an audit's obligation finding posts a card, only for a kind that has passed the measure; until then both are logged.)*
 - **D10 — a cost chosen after its narration** is told by the next narration that is a beat of play, once, carried on the choice card.
 - **D11 — a press on a card the held roll itself posted keeps the held result first**; Begin the fight keeps, then makes the track. Amends issue #362 D5.
 - **D12 — a refused move records nothing;** every move-only state event names what made it (`by`); `connection.made` is written where the bond is made.

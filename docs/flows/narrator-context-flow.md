@@ -1320,17 +1320,26 @@ from a button or the map; the player wrote no line", issue #388 #10; [dice]
 by a word of its subject's name, or of what a name change says it is, the
 possessive too) sends one Haiku call (`api-proxy.js`, label
 `obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
-consistency check on). A failure is asked once more — the same prompt plus
+consistency check on). The trip words and the judge both read the
+narration's judged view (`checks.js judgedView`, issue #399 D1): no fact
+block and no closing offer line — round 9's a29 tripped three lines on its
+offer line's "fire" alone, and a70 was re-asked on its own offer line. A
+certain or floor failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels
 `narrateResolution:reask`, `narratePacedInput:reask`, `narrateRound:reask`,
-`narrateOracleFollowup:reask`); the second reply is
+`narrateOracleFollowup:reask`); **a judge verdict is asked again only for a
+kind that has passed the measure** (`judgeMayAct`, issue #399 D7 — none has
+yet): until then it is logged, `action: "logged"`, and the first draft
+posts. The second reply is
 held to the certain checks only and posted whatever it says. At most one
 judge call and one re-ask a narration. Each verdict is a row on the
 Consistency Check telemetry page (`kind: "obligation"`, mode `move` /
 `paced` / `round` / `oracle`). The lines the check does not hold a narration
 to ([outcome], [stakes], [sheet], …) go to the post-narration audit with it
 (`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`, kind
-`obligation`).
+`obligation`) — every line but a certain-class one, each in its judge
+sentence where its kind has one (issue #399 D2); a finding there is logged
+and posts no card until its kind passes the measure (D7).
 **After round 8** (issue #396; decisions.md → "After the eighth live round"):
 - **certain [quote]:** a quoted sentence of six words or more that an earlier
   narration of the session gave. `proseVariety.js linesAlreadySaid` reads every

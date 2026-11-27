@@ -2972,7 +2972,10 @@ async function postContradictionNotification(transition) {
       flags:    {
         [MODULE_ID]: {
           worldJournalContradiction: true,
-          narratorCard:              isFactContinuity,             // surfaces the correction renderChatMessage hook
+          // No `narratorCard` (issue #399, D5): a review card is no narration.
+          // It made every reader of that flag count the card as one — the
+          // long haul's runner saw round 9's five lines "narrated twice". The
+          // correction hook reads `factContinuityReview` instead.
           factContinuityReview:      isFactContinuity,
           contradictedSubject:       transition.name ?? null,
           // What the World Journal panel's row shows (issue #354 P2-19).

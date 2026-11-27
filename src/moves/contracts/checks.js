@@ -38,8 +38,8 @@
  *             on the beat that opens a fight's scene while the ship's record
  *             has her docked): one small model call (Haiku, through
  *             api-proxy.js, label `obligationJudge`) asks whether the prose
- *             tells any tripped line as true — it reads a line's `judge` words
- *             where it has them — and a violation is re-asked once
+ *             tells any tripped line as true (its `judge` words where it has
+ *             them); a violation re-asks only for a kind judgeMayAct allows
  *   logged    everything else ([scene] among them), left to the
  *             post-narration audit
  *
@@ -98,6 +98,47 @@ const SHAPE_ECHO = /\bfirst sentence\b|\bacting character\b/i;
 /** The prose without its closing italic offer line (the one place a move may be named). */
 function bodyOf(prose) {
   return String(prose ?? "").replace(/\s*[*_][^*_\n]{3,}[*_]\s*$/, "").trim();
+}
+
+/**
+ * The one text any judge reads (issue #399, D1): the narration without its
+ * fact block and without its closing offer line — the line the rules let
+ * name a move, which round 9's judge and audit read as the move made (eleven
+ * false findings, none right). `kind` says what narration this is; a
+ * `cutaway` (a session's closing vignette, a spotlight) is not about where
+ * the characters are, so it is not held to the lines that say so. Both the
+ * pre-post judge (judgeNarration) and the audit (consistencyCheck.js) read
+ * it; nothing else builds text for a judge. Pure.
+ *
+ * @param {string} text — a narration, its fact block on or off
+ * @param {{ kind?: string|null }} [opts] — the narration's kind: `cutaway`, a mode, or none
+ * @returns {{ text: string, cutaway: boolean }}
+ */
+export function judgedView(text, { kind = null } = {}) {
+  const raw = String(text ?? "");
+  const prose = extractSidecar(raw).prose ?? raw;
+  return { text: bodyOf(prose), cutaway: kind === "cutaway" };
+}
+
+/**
+ * The judge-class kinds whose verdicts may act — re-ask a narration before it
+ * posts, or post the audit's review card (issue #399, D7: authority follows
+ * the measure). A kind is added only once it passes the measure on the kept
+ * runs; until then its verdicts are logged and counted, and the first draft
+ * posts. Empty: in round 9, its only live sample, the judge was wrong in
+ * five verdicts of five and the audit in six cards of six.
+ */
+const JUDGE_KINDS_THAT_ACT = Object.freeze(new Set([]));
+
+/**
+ * Whether a judge verdict on a line of `kind` may act (JUDGE_KINDS_THAT_ACT).
+ * Read by the pre-post judge's re-ask and the audit's review card alike.
+ *
+ * @param {string} kind
+ * @returns {boolean}
+ */
+export function judgeMayAct(kind) {
+  return JUDGE_KINDS_THAT_ACT.has(String(kind ?? "").replace(/^\[|\]$/g, ""));
 }
 
 /** Move display names of two words or more — a one-word name is an ordinary word (Strike, Heal, Compel). */
@@ -523,9 +564,11 @@ export async function judgeNarration(prose, tripped, { apiKey } = {}) {
     + "true breaks it. Read only what the narration says happens — a thing about to happen, feared, offered or merely "
     + "possible breaks nothing. Answer with JSON only: {\"violations\":[{\"tag\":\"<the line's tag>\",\"quote\":\"<the words that break it>\"}]} "
     + "— an empty list when nothing breaks.";
+  // The judged view (D1): the closing offer line is the rules' own, never a breach.
+  const view = judgedView(prose);
   const body = {
     model: JUDGE_MODEL, max_tokens: JUDGE_MAX_TOKENS, system,
-    messages: [{ role: "user", content: `LINES:\n${lines}\n\nNARRATION:\n"""${String(prose ?? "").slice(0, 4000)}"""` }],
+    messages: [{ role: "user", content: `LINES:\n${lines}\n\nNARRATION:\n"""${view.text.slice(0, 4000)}"""` }],
   };
   const headers = { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
   let timer = null;
@@ -605,11 +648,18 @@ export async function narrateKeepingObligations(call, obligations, { apiKey = nu
   for (const v of floor.logged) verdicts.push({ ...v, class: "floor", action: "logged" });
   let broken = [...certain.map(v => ({ ...v, class: "certain" })), ...floor.reask.map(v => ({ ...v, class: "floor" }))];
   if (!broken.length && judge) {
-    const tripped = trippedLines(prose, obligations, ctx);
+    // The trip words are read in the judged view too (D1): an offer line's
+    // move name ("…would be a Forge a Bond") trips nothing.
+    const tripped = trippedLines(judgedView(prose).text, obligations, ctx);
     if (tripped.length) {
       const verdict = await judgeNarration(prose, tripped, { apiKey });
       verdicts.push({ class: "judge", tripped: tripped.map(o => o.kind), judged: verdict.judged, violations: verdict.violations, error: verdict.error ?? null });
-      broken = verdict.violations.map(v => ({ ...v, class: "judge" }));
+      // Authority follows the measure (issue #399, D7): a verdict on a kind
+      // that has not passed is logged and counted, and the first draft posts.
+      // Round 9's four re-asks were all on wrong verdicts, and a redraft is
+      // posted unjudged ("…would be a Forge a Bond, if you press it").
+      for (const v of verdict.violations.filter(x => !judgeMayAct(x.tag))) verdicts.push({ ...v, class: "judge", action: "logged" });
+      broken = verdict.violations.filter(v => judgeMayAct(v.tag)).map(v => ({ ...v, class: "judge" }));
     }
   }
   if (!broken.length) {

@@ -322,8 +322,10 @@ CLAUDE.md "audit consumers" rule):
   live — and is given a player's own Chronicle entries as their notes, and a
   session from before the record as its Chronicle entries had it. The scribe
   still names whose thing a thing is and genders no one the story did not
-- WJ contradiction cards co-mark `narratorCard` but are excluded by the
-  ring's defensive filters
+- WJ contradiction cards (◈ Narrative Review) carry no `narratorCard` since
+  issue #399 (D5): no narration, so no reader of the flag counts one — the
+  correction hook wires their Retract button by `factContinuityReview`. The
+  ring's defensive filter on `worldJournalContradiction` stays
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
   3) — a published reflection shows there too
 - the Batch Mode Round window's "Latest narration" (`src/ui/roundWindow.js`

@@ -5051,10 +5051,12 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
 
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
   // A bookend starts one, never turns one: Begin's opening is the session's
-  // ("the session begins"), a closing or spotlight cutaway its own scene.
+  // ("the session begins"), a closing or spotlight cutaway its own scene —
+  // and a cutaway's audit is not held to the characters' place (issue #399, D1).
+  const cutaway = !/^\s*OPENING VIGNETTE\b/i.test(String(userMessage ?? ''));
   await ensureCurrentScene(campaignState, {
     mode: 'session_vignette', reason: 'session_vignette',
-    cause: /^\s*OPENING VIGNETTE\b/i.test(String(userMessage ?? '')) ? 'session' : 'cutaway',
+    cause: cutaway ? 'cutaway' : 'session',
   });
 
   // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
@@ -5097,7 +5099,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   try {
     const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
     if (xCard.interrupted('narrateSessionVignette')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette' });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette', cutaway });
     if (!text?.trim()) return null;
     scheduleNarrationCapture(text, campaignState, capture);   // its NPCs' developments → their cards (#286 D4)
     return text;
@@ -5108,7 +5110,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
         // Checked as the first try is.
         const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
         if (xCard.interrupted('narrateSessionVignette')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette' });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette', cutaway });
         if (!text?.trim()) return null;
         scheduleNarrationCapture(text, campaignState, capture);
         return text;
@@ -7174,6 +7176,8 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
       // What the narration was told it must tell and must not (overhaul 4):
       // audited too, kind `obligation`.
       obligations:       Array.isArray(ctx.obligations) ? ctx.obligations : [],
+      // A cutaway is not held to where the characters are (issue #399, D1).
+      narrationKind:     ctx.cutaway === true ? 'cutaway' : (ctx.mode ?? null),
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );
