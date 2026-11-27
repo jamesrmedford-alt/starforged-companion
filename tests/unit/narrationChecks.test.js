@@ -11,7 +11,11 @@
  * number, a two-word move's name and the word "match"; a tripped line goes to
  * one judge call (Haiku through api-proxy.js, label obligationJudge); a
  * failure is re-asked once, the second reply held to the certain checks, and
- * never a third call. The judge fails open.
+ * never a third call. The judge fails open. Since issue #399 (D7) a judge
+ * verdict re-asks only for a kind that passed the measure — [premise] did —
+ * and a62's "starts on the cuts" is caught in code before any judge is asked:
+ * [sheet]'s harm clause, a wound told on a character the sheet holds unhurt
+ * (D9).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -28,7 +32,7 @@ vi.mock("../../src/api-proxy.js", async (importOriginal) => ({
 }));
 
 import { apiPost } from "../../src/api-proxy.js";
-import { certainViolations, floorViolations, trippedLines, judgeNarration, narrateKeepingObligations } from "../../src/moves/contracts/checks.js";
+import { certainViolations, floorViolations, trippedLines, judgeNarration, narrateKeepingObligations, redraftBlock } from "../../src/moves/contracts/checks.js";
 import { obligationsFor } from "../../src/moves/contracts/obligations.js";
 
 const HEAL_REFUSAL = { moveId: "heal", code: "recoverable-health", hard: false, why: "nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked",
@@ -44,7 +48,11 @@ describe("the certain checks", () => {
     expect(certainViolations("It is a strong hit: the lock gives.", apparatus).map(v => v.tag)).toEqual(["apparatus"]);
     expect(certainViolations("She takes 2 health of damage.", apparatus)).toHaveLength(1);
     expect(certainViolations("You Gather Information from the logs.", apparatus)).toHaveLength(1);
-    expect(certainViolations("The lock gives.\n\n*If you want to read the logs, this could be a Gather Information.*", apparatus)).toEqual([]);
+    // Where it was offered a move — its lines hold [offer] — the closing line is the rules' own (issue #399's audit N32)…
+    const offered = [...apparatus, { kind: "offer", list: "NOT YET", text: "Gather Information is only offered." }];
+    expect(certainViolations("The lock gives.\n\n*If you want to read the logs, this could be a Gather Information.*", offered)).toEqual([]);
+    // …and offered none, it is narration: a move's name in it is a move's name.
+    expect(certainViolations("The lock gives.\n\n*If you want to read the logs, this could be a Gather Information.*", apparatus).map(v => v.tag)).toEqual(["apparatus"]);
     // A one-word move's name is an ordinary word.
     expect(certainViolations("You strike the hatch and it gives.", apparatus)).toEqual([]);
   });
@@ -107,7 +115,9 @@ describe("the judge (fail-open)", () => {
     const v = await judgeNarration("She starts on the cuts.", pacedRefused().filter(o => o.kind === "premise"), { apiKey: "sk-test" });
     expect(v).toMatchObject({ judged: true, violations: [{ tag: "premise", quote: "starts on the cuts" }] });
     expect(apiPost).toHaveBeenCalledTimes(1);
-    expect(apiPost.mock.calls[0][3]).toEqual({ label: "obligationJudge" });
+    expect(apiPost.mock.calls[0][3]).toMatchObject({ label: "obligationJudge" });
+    // Its own cancel, for its cutoff (issue #399's audit N7).
+    expect(apiPost.mock.calls[0][3].signal).toBeInstanceOf(AbortSignal);
   });
   it("an error or an unparsed answer passes the narration; no key, no call", async () => {
     judgeReplies.push(new Error("overloaded"));
@@ -121,17 +131,40 @@ describe("the judge (fail-open)", () => {
 });
 
 describe("narrateKeepingObligations", () => {
+  // a62's own words: a wound told on a character the sheet holds unhurt — the code's to catch (D9).
   const DRAFT = "The antiseptic stings as she starts on the cuts." + sidecar;
+  // Words of [premise]'s that the code does not hold: the judge's to read.
+  const JUDGED = "She thumbs the medkit open and lays the binding out on the bench." + sidecar;
   const CLEAN = "She checks her arms and finds nothing that needs it." + sidecar;
 
-  it("a violating draft, judged, is re-asked once with the draft and the line it broke; the clean reply is the one returned", async () => {
-    judgeReplies.push('{"violations":[{"tag":"premise","quote":"starts on the cuts"}]}');
+  // Issue #399, D7: authority follows the measure. [premise] passed it, so
+  // its verdict is asked again; round 9's four re-asks were all on kinds
+  // that had not been measured.
+  it("a violating draft, judged on a kind that passed the measure: asked again once, and the redraft posts", async () => {
+    judgeReplies.push('{"violations":[{"line":1,"quote":"lays the binding out on the bench"}]}');
+    const call = vi.fn(async (addendum) => (addendum ? CLEAN : JUDGED));
+    const onVerdict = vi.fn();
+    const kept = await narrateKeepingObligations(call, pacedRefused(), { apiKey: "sk-test", ctx: { refusalCode: "recoverable-health" }, onVerdict });
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(kept).toMatchObject({ raw: CLEAN, reasked: true, stillBroken: [] });
+    expect(kept.verdicts).toContainEqual({ tag: "premise", line: 1, quote: "lays the binding out on the bench", class: "judge", action: "reask", draft: 1 });
+    expect(onVerdict).toHaveBeenCalledWith(expect.objectContaining({ reasked: true }));
+  });
+
+  it("a62's draft is caught in code before any judge is asked: [sheet]'s harm clause (D9)", async () => {
     const call = vi.fn(async (addendum) => (addendum ? CLEAN : DRAFT));
     const kept = await narrateKeepingObligations(call, pacedRefused(), { apiKey: "sk-test", ctx: { refusalCode: "recoverable-health" } });
+    expect(apiPost).not.toHaveBeenCalled();
     expect(call).toHaveBeenCalledTimes(2);
-    expect(call.mock.calls[1][0]).toMatch(/^## YOUR DRAFT — NOT POSTED\n"The antiseptic stings as she starts on the cuts\."/);
-    expect(call.mock.calls[1][0]).toMatch(/This breaks:\n- \[premise\] A wound to treat is not so/);
     expect(kept).toMatchObject({ raw: CLEAN, reasked: true, stillBroken: [] });
+    expect(kept.verdicts).toContainEqual(expect.objectContaining({ tag: "sheet", class: "certain", action: "reask", draft: 1 }));
+  });
+
+  it("the re-ask's block names the draft and the line it broke, in the line's own words", () => {
+    const block = redraftBlock("The antiseptic stings as she starts on the cuts.", [{ tag: "premise", quote: "starts on the cuts" }], pacedRefused());
+    expect(block).toMatch(/^## YOUR DRAFT — NOT POSTED\n"The antiseptic stings as she starts on the cuts\."/);
+    expect(block).toMatch(/This breaks:\n- \[premise\] A wound to treat is not so/);
   });
 
   it("a clean draft is posted as written — no judge call when nothing trips", async () => {
@@ -144,10 +177,11 @@ describe("narrateKeepingObligations", () => {
 
   it("a judge error: posted as written", async () => {
     judgeReplies.push(new Error("timeout"));
-    const call = vi.fn(async () => DRAFT);
+    const call = vi.fn(async () => JUDGED);
     const kept = await narrateKeepingObligations(call, pacedRefused(), { apiKey: "sk-test", ctx: { refusalCode: "recoverable-health" } });
+    expect(apiPost).toHaveBeenCalledTimes(1);
     expect(call).toHaveBeenCalledTimes(1);
-    expect(kept.raw).toBe(DRAFT);
+    expect(kept.raw).toBe(JUDGED);
   });
 
   it("a certain failure twice: the second reply is posted, its breach reported — never a third call", async () => {
@@ -168,9 +202,12 @@ describe("narrateKeepingObligations", () => {
   });
 
   it("no judge when it is switched off — the certain checks still run", async () => {
-    const call = vi.fn(async () => DRAFT);
-    const kept = await narrateKeepingObligations(call, pacedRefused(), { apiKey: "sk-test", judge: false, ctx: { refusalCode: "recoverable-health" } });
+    const quiet = vi.fn(async () => JUDGED);
+    expect(await narrateKeepingObligations(quiet, pacedRefused(), { apiKey: "sk-test", judge: false, ctx: { refusalCode: "recoverable-health" } }))
+      .toMatchObject({ raw: JUDGED, reasked: false });
+    const told = vi.fn(async (addendum) => (addendum ? CLEAN : DRAFT));
+    expect(await narrateKeepingObligations(told, pacedRefused(), { apiKey: "sk-test", judge: false, ctx: { refusalCode: "recoverable-health" } }))
+      .toMatchObject({ raw: CLEAN, reasked: true });
     expect(apiPost).not.toHaveBeenCalled();
-    expect(kept).toMatchObject({ raw: DRAFT, reasked: false });
   });
 });

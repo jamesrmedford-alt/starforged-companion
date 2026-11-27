@@ -3942,7 +3942,7 @@ const ROUND_LATITUDE_LINES = Object.freeze({
  * @returns {string}
  */
 export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3, audio = false,
-  sceneObligations = [], chosenSince = [] }) {
+  sceneObligations = [], chosenSince = [], roundLines = {} }) {
   const parts = [];
   const cleanedRecent = stripHtml(recentContext).trim();
   if (cleanedRecent) parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
@@ -3993,7 +3993,9 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
   // The round's own obligations — the sheet, the apparatus (overhaul 4) — and
   // what the scene obliges its narration to tell: TELL [scene], NOT SO
   // [letgo] (overhaul 2 §10.3). One block for the round.
-  const roundBlock = formatObligationsBlock([...obligationsFor({ mode: 'round', chosenSince }), ...sceneLines(sceneObligations)]);
+  // The round's own lines, a move's beat-of-play lines among them (narrator.js
+  // roundLinesOf; issue #399's audit N28) — the same list its check holds it to.
+  const roundBlock = formatObligationsBlock([...obligationsFor({ mode: 'round', chosenSince, ...roundLines }), ...sceneLines(sceneObligations)]);
   if (roundBlock) parts.push(roundBlock);
 
   const target = Math.max(1, Number(sentenceTarget) || 3);

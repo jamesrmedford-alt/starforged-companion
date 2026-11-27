@@ -91,7 +91,8 @@ describe('issue #364 PLAN-REQUESTS-FACT-CONTINUITY-OFF — a plan request is fil
 
   it('a vow\'s swearing scene files what is behind the vow, with its roll', async () => {
     const isVowScene = (call) => isNarration(call) && /A character is swearing/.test(call.userText ?? '');
-    table.script.when(isVowScene, 'Kira lays her palm on the cold iron and says the words.');
+    // In the second person, as the oath scene is held to (issue #399's audit N29).
+    table.script.when(isVowScene, 'You lay your palm on the cold iron and say the words.');
     const { narrateAndPostVowSwearing } = await gmOf(table).import('../../src/narration/narrator.js');
     const text = await onGm(table, () => narrateAndPostVowSwearing({
       vow: { name: 'Find the lost ark', rank: 'dangerous', vowId: 'vow-ark-1' },

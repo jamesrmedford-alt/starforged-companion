@@ -237,9 +237,12 @@ async function main() {
             if (system.startsWith("You are the line reader")) {
               text = JSON.stringify({ move: "face_danger", risk: "high", category: "exploration", confidence: "high", reason: "E2E: a dash under fire.", stat: "edge" });
             } else if (system.includes("## RESPONSE FORMAT — MANDATORY SIDECAR")) {
-              text = "E2E: the round turns.\n\n```json\n{\"newTruths\":[],\"stateChanges\":[]}\n```";
+              // Told without the PC's name: a second-person round is held to
+              // "you", and "E2E Kira" is called "E2E" too (issue #399's audit
+              // N28) — "E2E: the round turns." was asked again.
+              text = "The round turns.\n\n```json\n{\"newTruths\":[],\"stateChanges\":[]}\n```";
             } else {
-              text = /json/i.test(system) ? "{}" : "E2E: the round turns.";
+              text = /json/i.test(system) ? "{}" : "The round turns.";
             }
             return new Response(JSON.stringify({ content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 10 } }),
               { status: 200, headers: { "Content-Type": "application/json" } });

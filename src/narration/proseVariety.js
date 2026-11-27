@@ -183,10 +183,15 @@ see way yet off are any few new old two put set ask own lot far yes per via nor 
 you're you’re you've you’ve you'll you’ll it's it’s that's that’s decide decided decides stop stops stopped start starts started
 stay stays stayed past short someone second`.split(/\s+/).filter(Boolean));
 
-/** A narration's content words, in order: lowercase, three letters or more ("pen", "boy"), no stop word and no name — its italic offer line left out. */
+/**
+ * A narration's content words, in order: lowercase, three letters or more
+ * ("pen", "boy"), no stop word and no name. Italic words are words — a
+ * ship's name, a stressed one; the closing offer line is its caller's to
+ * leave out, where it was given (narrator.js beatVariety; issue #399's audit
+ * N32 — every italic span was dropped here).
+ */
 function detailWords(text, names) {
-  const prose = String(text ?? '').replace(/<[^>]*>/g, ' ').replace(/\*[^*\n]+\*|(?<![\p{L}\p{N}])_[^_\n]+_(?![\p{L}\p{N}])/gu, ' ')
-    .replace(/[*_]/g, ' ').toLowerCase();
+  const prose = String(text ?? '').replace(/<[^>]*>/g, ' ').replace(/[*_]/g, ' ').toLowerCase();
   return prose.split(/[^\p{L}'’-]+/u)
     .map(w => w.replace(/^['’-]+|['’-]+$/g, '').replace(/['’]s$/, ''))
     .map(w => (w.length >= 3 && !WORN_STOP.has(w) && !names.has(w) ? w : null));
@@ -203,7 +208,8 @@ function detailWords(text, names) {
  */
 function namesWrittenIn(text) {
   const out = [];
-  for (const m of String(text ?? '').replace(/<[^>]*>/g, ' ').matchAll(/(?<=[\p{Ll},;:)] )\p{Lu}[\p{L}'’-]*(?: \p{Lu}[\p{L}'’-]*)*/gu)) out.push(m[0]);
+  // Emphasis off first: a ship's name in italics ("the *Kestrel*") is a name.
+  for (const m of String(text ?? '').replace(/<[^>]*>/g, ' ').replace(/[*_]/g, '').matchAll(/(?<=[\p{Ll},;:)] )\p{Lu}[\p{L}'’-]*(?: \p{Lu}[\p{L}'’-]*)*/gu)) out.push(m[0]);
   return out;
 }
 
@@ -263,7 +269,8 @@ export function linesAlreadySaid(narrations, { line = '' } = {}) {
  * WORN_IN_CARDS of the newest WORN_SOURCE_CARDS narrations; a pair before the
  * words it holds, the most-worn first. What the narrator is told to reach past.
  *
- * @param {string[]} narrations — narrator prose, oldest first (the session's last cards)
+ * @param {string[]} narrations — narrator prose, oldest first (the session's last cards), a card's closing
+ *   offer line left out where it offered a move (narrator.js beatVariety)
  * @param {{ names?: string[], keep?: string[], cards?: number, min?: number, limit?: number }} [opts] — `names`: the
  *   story's names (people, places, ships), never listed — a name is the story's, not a refrain; `keep`: the
  *   scene's own words and the player's line — what the scene is about is no refrain either

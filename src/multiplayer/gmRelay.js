@@ -197,6 +197,8 @@ export const GM_ACTIONS = Object.freeze({
   "forcedMove.hold":           { load: () => import("../index.js"),                                  fn: "holdHandedOverForcedMoves" },
   // Issue #382 — the session record: an event a co-GM's client reports, written by the canonical GM (its one writer)
   "record.append":             { load: () => import("../record/record.js"),                          fn: "applyRecordAppendFromRelay" },
+  // Issue #399's audit N27 — a co-GM's Consistency Check row, written by the canonical GM (its one writer)
+  "telemetry.consistency":     { load: () => import("../pacing/telemetry.js"),                       fn: "applyRelayedConsistencyDecision" },
   // Narration on a player's own key (no keyed GM online)
   "narrator.sidecar":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedNarratorSidecar" },
   // Known-issues SUMMARY-KEYLESS-GM — the rolling summary a keyed player's client made, for a keyless GM to store

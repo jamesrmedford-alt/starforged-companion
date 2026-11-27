@@ -75,6 +75,7 @@ import {
   getCampaignRecap,
   registerRollingSummaryRefreshHook,
   registerXCardRedirectHook,
+  registerStillBrokenNoteHook,
   registerDeletedChatHook,
   registerPublishedReflectionHook,
   narratorMemoryCard,
@@ -10894,6 +10895,7 @@ Hooks.once("ready", () => {
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
   registerXCardRedirectHook();             // #321 U07: the X-Card's redirect is cleared once the first narration after it posts
+  registerStillBrokenNoteHook();           // #399 N16: a narration still broken after its re-ask gets a GM note with its card
   registerXCardLatePostHook();             // XCARD-POST-RACE: a narration whose card posts after the pause is removed with it
   registerDeletedChatHook();               // #347 AB22: the X-Card's pick reads chat as it was, a deleted narration included
   registerConnectionWatch();               // #347 AB19: a narration in flight across a dropped connection is discarded
@@ -11069,13 +11071,16 @@ export function wireCombatTrackCardButtons(message, root) {
 onChatMessageRender((message, root) => wireCombatTrackCardButtons(message, root));
 
 /**
- * Wire the "Correct a fact" button on narrator cards
+ * Wire the "Retract the offending fact" button on ◈ Narrative Review cards
  * (fact-continuity scope §10.2). Two-hook pattern per CLAUDE.md: the card
- * HTML is rendered with the button in postNarrationCard /
- * postPacedNarrativeCard; click handlers are attached here at render time.
+ * HTML is rendered with the button in worldJournal.js
+ * postContradictionNotification; the click handler is attached here at
+ * render time. The review card is the button's only producer: narrator cards
+ * lost theirs in v1.7.25, and the review card is no narration (issue #399,
+ * D5 — its audit's N23 took the narrator-card arm out).
  */
 onChatMessageRender((message, root) => {
-  if (!message.flags?.[MODULE_ID]?.narratorCard) return;
+  if (!message.flags?.[MODULE_ID]?.factContinuityReview) return;
   if (!factContinuityEnabledFromSettings()) return;
 
   const btn = root.querySelector('[data-action="openCorrectionDialog"]');

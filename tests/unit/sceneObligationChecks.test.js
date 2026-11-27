@@ -6,13 +6,12 @@
  * obligations are checked before the narration posts, in overhaul 4's
  * classes (moves/contracts/checks.js):
  *
- *   NOT SO [place]  a judge tripwire — "docked", "berth", "clamps" in the
- *                   prose of the beat that opens a fight's scene while the
- *                   ship's record has her docked send the line to the one
- *                   judge call, which reads its NOT SO as a statement (the
- *                   ship fighting as a ship while still docked; a fight on
- *                   foot breaks nothing); a violation is asked once more, and
- *                   a judge that errs passes the narration as written
+ *   NOT SO [place]  told to the narrator on the beat that opens a fight's
+ *                   scene while the ship's record has her docked. It was a
+ *                   judge tripwire ("docked", "berth", "clamps") until issue
+ *                   #399's measure retired it from both judges (D10: the
+ *                   pre-post judge read a ship firing from her clamps, where
+ *                   the dice had her pinned, as the breach)
  *   NOT SO [letgo]  a floor, logged — the fourth live run's session 3 ended
  *                   beat after beat on "the second amber light" play had let
  *                   go: a stem of the let-go question in the prose's last two
@@ -42,7 +41,8 @@ vi.mock('../../src/api-proxy.js', async (importOriginal) => ({
 }));
 
 import { apiPost } from '../../src/api-proxy.js';
-import { floorViolations, trippedLines, narrateKeepingObligations } from '../../src/moves/contracts/checks.js';
+import { floorViolations, trippedLines, narrateKeepingObligations, redraftBlock, checkClassOf, judgeMayAct } from '../../src/moves/contracts/checks.js';
+import { auditObligationSection } from '../../src/factContinuity/consistencyCheck.js';
 import { sceneObligations } from '../../src/factContinuity/sceneTurns.js';
 import { letGoEntry } from '../../src/factContinuity/provenance.js';
 import { narratePacedInput } from '../../src/narration/narrator.js';
@@ -72,50 +72,29 @@ beforeEach(() => {
   apiPost.mockClear();
 });
 
-describe('NOT SO [place] — a judge tripwire (overhaul 2 §6.2, §10.3)', () => {
-  it('the line carries its NOT SO as a statement for the judge; "in the clamps" trips it, a fight in open space does not', () => {
+describe('NOT SO [place] — the narrator\'s alone (overhaul 2 §6.2; issue #399 D10)', () => {
+  it('the line is told to the narrator; no judge reads it — the measure retired it from both passes', () => {
     const [place] = placeOf(fightOpens());
     expect(place).toMatchObject({ kind: 'place', list: 'NOT SO' });
     expect(place.text).toContain('If this fight is the ship\'s, she is no longer docked: say where she is in your fact block');
-    expect(place.judge).toBe('Kobayashi IV fighting as a ship — firing, turning, running — while the narration still has her docked, '
-      + 'berthed or in the clamps at Bleakhold Station. A fight on foot while she stays docked breaks nothing.');
-    expect(trippedLines('Still in the clamps at the lock, the Kobayashi IV swings her guns onto the cutter.', [place])).toEqual([place]);
-    expect(trippedLines('The Kobayashi IV burns clear of the lock and swings her guns onto the cutter.', [place])).toEqual([]);
+    expect(place.judge).toBeUndefined();
+    expect(checkClassOf('place')).toBe('logged');
+    expect(judgeMayAct('place', 'audit')).toBe(false);
+    expect(trippedLines('Still in the clamps at the lock, the Kobayashi IV swings her guns onto the cutter.', [place])).toEqual([]);
+    expect(auditObligationSection([place]).lines).toEqual([]);
   });
 
-  it('a ship\'s fight told in the clamps: the judge is told the statement, and the narration is asked once more with its line', async () => {
+  it('a ship\'s fight told in the clamps: no judge call, and the draft posts as written', async () => {
     const place = placeOf(fightOpens());
     const DRAFT = `Still in the clamps at the lock, the Kobayashi IV swings her guns onto the cutter.${SIDECAR}`;
-    const CLEAN = `The Kobayashi IV tears free of the lock and swings her guns onto the cutter.${SIDECAR}`;
-    replies.judge.push('{"violations":[{"tag":"place","quote":"Still in the clamps at the lock"}]}');
-    const call = vi.fn(async (addendum) => (addendum ? CLEAN : DRAFT));
+    const call = vi.fn(async () => DRAFT);
     const kept = await narrateKeepingObligations(call, place, { apiKey: 'sk-test' });
-    expect(apiPost).toHaveBeenCalledTimes(1);
-    expect(apiPost.mock.calls[0][3]).toEqual({ label: 'obligationJudge' });
-    const asked = userOf(apiPost.mock.calls[0]);
-    expect(asked).toContain('- [place] (NOT SO) Kobayashi IV fighting as a ship — firing, turning, running');
-    expect(asked).not.toContain('say where she is in your fact block');
-    expect(call).toHaveBeenCalledTimes(2);
-    expect(call.mock.calls[1][0]).toContain('- [place] Kobayashi IV is docked at Bleakhold Station by the ship\'s record.');
-    expect(kept).toMatchObject({ raw: CLEAN, reasked: true });
-  });
-
-  it('a fight on foot while she stays docked: the judge finds nothing, and the draft posts as written', async () => {
-    const DRAFT = `The Kobayashi IV sits docked behind them as Mira drives the boarders back down the gantry.${SIDECAR}`;
-    const call = vi.fn(async () => DRAFT);
-    const kept = await narrateKeepingObligations(call, placeOf(fightOpens()), { apiKey: 'sk-test' });
-    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(apiPost).not.toHaveBeenCalled();
     expect(call).toHaveBeenCalledTimes(1);
     expect(kept).toMatchObject({ raw: DRAFT, reasked: false });
-  });
-
-  it('fail-open: a judge that errs passes the narration as written', async () => {
-    replies.judge.push(new Error('overloaded'));
-    const DRAFT = `Still in the clamps, the Kobayashi IV fires.${SIDECAR}`;
-    const call = vi.fn(async () => DRAFT);
-    const kept = await narrateKeepingObligations(call, placeOf(fightOpens()), { apiKey: 'sk-test' });
-    expect(call).toHaveBeenCalledTimes(1);
-    expect(kept).toMatchObject({ raw: DRAFT, reasked: false });
+    // A re-ask's block names a line in the narrator's words, never a judge's.
+    expect(redraftBlock(DRAFT, [{ tag: 'place', quote: 'Still in the clamps at the lock' }], place))
+      .toContain('- [place] Kobayashi IV is docked at Bleakhold Station by the ship\'s record.');
   });
 });
 

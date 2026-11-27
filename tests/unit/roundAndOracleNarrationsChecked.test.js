@@ -66,7 +66,10 @@ beforeEach(() => {
 });
 
 describe("the oracle follow-up's narration is checked", () => {
-  it('a NO told as a yes: the judge says so, and the answer is asked once more', async () => {
+  // Issue #399, D7: [oracle] passed the measure in the pre-post judge — round
+  // 3's a46 and round 8's a53 are among its real breaches (D6) — so the
+  // judge's verdict asks again.
+  it('a NO told as a yes: the judge says so, and the answer is asked once more — the second reply posts', async () => {
     answer(
       'A thin voice answers — someone is left alive aboard the wreck.' + SIDECAR,
       '{"violations":[{"tag":"oracle","quote":"someone is left alive aboard"}]}',
@@ -77,7 +80,8 @@ describe("the oracle follow-up's narration is checked", () => {
       rolledLine: 'd100 = 97 → NO', campaignState: game.settings.get(MODULE_ID, 'campaignState'),
     });
     expect(apiPost.mock.calls.map(labelOf)).toEqual(['narrator:narrateOracleFollowup', 'obligationJudge', 'narrator:narrateOracleFollowup:reask']);
-    expect(userOf(apiPost.mock.calls[2])).toContain('## YOUR DRAFT — NOT POSTED');
+    // The judge reads the line as the breach, with the question it answers.
+    expect(userOf(apiPost.mock.calls[1])).toContain('[oracle] BREACH: The narration says, shows or implies the opposite of the oracle\'s answer to "Is anyone left alive aboard the wreck?": the oracle answered NO.');
     expect(text).toBe('The comm stays dead; nothing aboard the wreck answers.');
     expect(kinds).toEqual(['callNarratorAPI>narrateOracleFollowup', 'judgeNarration>narrateOracleFollowup', 'callNarratorAPI>narrateOracleFollowup']);
   });
@@ -121,13 +125,16 @@ describe('a set-piece and an oracle follow-up are held to the table\'s words', (
 
   it('a follow-up that reads a track out is asked once more', async () => {
     answer('The voice laughs. "Still counting your boxes? Two of ten." Then the channel dies.' + SIDECAR,
-      'The voice laughs once, and the channel dies.' + SIDECAR);
+      'The voice laughs once, and the channel dies.' + SIDECAR, '{"violations":[]}');
     const text = await narrateOracleFollowup({
       kind: 'oracle_yes_no', oracleName: 'Ask the Oracle (likely)', question: 'Does the voice answer?',
       rolledLine: 'd100 = 12 → YES', campaignState: game.settings.get(MODULE_ID, 'campaignState'),
     });
-    // A certain check: asked again with no judge call.
-    expect(apiPost.mock.calls.map(labelOf)).toEqual(['narrator:narrateOracleFollowup', 'narrator:narrateOracleFollowup:reask']);
+    // A certain check: asked again, before any judge call. The draft that
+    // posts is then judged — its [oracle] line trips on "voice" — once (issue
+    // #399's audit N10: neither draft of a re-asked narration was judged).
+    expect(apiPost.mock.calls.map(labelOf)).toEqual(['narrator:narrateOracleFollowup', 'narrator:narrateOracleFollowup:reask', 'obligationJudge']);
+    expect(kinds.at(-1)).toBe('judgeNarration>narrateOracleFollowup');
     expect(text).toBe('The voice laughs once, and the channel dies.');
   });
 });

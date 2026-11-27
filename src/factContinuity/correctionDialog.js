@@ -40,14 +40,16 @@ const BASIS_NAMES = Object.freeze({ player: 'the player', dice: 'the dice', gm: 
 const MODULE_ID = 'starforged-companion';
 
 /**
- * Open the correction dialog for a narrator chat card. Reads the card's
+ * Open the correction dialog for a ◈ Narrative Review card — the one card
+ * with its Retract button (issue #399's audit N23; narrator cards lost their
+ * "Correct a fact" button in v1.7.25). Reads the card's
  * `flags[MODULE_ID].matchedEntityIds` to scope the truth/state listing.
  *
  * The dialog is non-blocking and stays open while play goes on, so it holds
  * no campaignState: each render and each row action reads the store as it is
  * then (issue #321 U06e).
  *
- * @param {ChatMessage} message — the narrator card
+ * @param {ChatMessage} message — the review card
  * @returns {Promise<void>}
  */
 export async function openCorrectionDialog(message) {

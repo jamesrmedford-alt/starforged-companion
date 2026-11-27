@@ -65,7 +65,10 @@ describe('XCARD-LATE-REVIEW — no review card for a narration the X-Card remove
 
   it('the narrator passes the audited narration\'s id to the check', () => {
     const src = readFileSync('src/narration/narrator.js', 'utf8');
-    const call = src.slice(src.indexOf('runConsistencyCheck(prose'), src.indexOf('runConsistencyCheck(prose') + 400);
+    // The narration alone: an inciting incident's proposal block is not audited (issue #399's audit N29).
+    const at = src.indexOf('runConsistencyCheck(narrationIn(prose');
+    expect(at).toBeGreaterThan(0);
+    const call = src.slice(at, at + 400);
     expect(call).toMatch(/narrationId:\s+typeof ctx\.narrationId === 'string'/);
   });
 });

@@ -377,6 +377,14 @@ async function finishXCardRemoval(narrator, removal) {
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: undoing what the narration's capture recorded failed:`, err?.message ?? err);
     }
+    // The ◈ Narrative Review cards about it: each quotes the removed prose
+    // (issue #399's audit N21 — XCARD-LATE-REVIEW kept only a late card out).
+    try {
+      const { withdrawReviewCards } = await import("../world/worldJournal.js");
+      await withdrawReviewCards(ids);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: withdrawing the review cards about the narration failed:`, err?.message ?? err);
+    }
     // The Chronicle entries the scribe wrote from it — the Chronicle feeds
     // the campaign recap and, pinned, every CHARACTER block (XCARD-CHRONICLE).
     try {

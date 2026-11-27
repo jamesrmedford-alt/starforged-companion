@@ -38,8 +38,8 @@
  *             on the beat that opens a fight's scene while the ship's record
  *             has her docked): one small model call (Haiku, through
  *             api-proxy.js, label `obligationJudge`) asks whether the prose
- *             tells any tripped line as true — it reads a line's `judge` words
- *             where it has them — and a violation is re-asked once
+ *             tells any tripped line as true (its `judge` words where it has
+ *             them); a violation re-asks only for a kind judgeMayAct allows
  *   logged    everything else ([scene] among them), left to the
  *             post-narration audit
  *
@@ -61,13 +61,15 @@ import { MOVES } from "../../schemas.js";
 import { moveDisplayName } from "../../system/i18n.js";
 import { personSaidIn } from "../../entities/nameMatch.js";
 import { quotedLinesOf } from "../../narration/proseVariety.js";
+import { splitOfferLine } from "../../narration/closingOfferLine.js";
+import { OBLIGATION_KINDS } from "./obligations.js";
 
 const MODULE_ID = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const JUDGE_MODEL = "claude-haiku-5-5";
 const JUDGE_MAX_TOKENS = 400;
 /** A judge slower than this passes the narration as written. */
-export const JUDGE_TIMEOUT_MS = 4000;
+const JUDGE_TIMEOUT_MS = 4000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Certain
@@ -95,9 +97,99 @@ const TRACK_WORDS = /\b(?:box|boxes|track|progress|milestones?)\b/i;
 // recorded round (the batch-round playthrough, 2026-11-25).
 const SHAPE_ECHO = /\bfirst sentence\b|\bacting character\b/i;
 
-/** The prose without its closing italic offer line (the one place a move may be named). */
-function bodyOf(prose) {
-  return String(prose ?? "").replace(/\s*[*_][^*_\n]{3,}[*_]\s*$/, "").trim();
+/**
+ * Whether a narration may close on an offer line: it was offered a move —
+ * its lines hold [offer] (a paced beat's SUGGESTED MOVE). Only there is its
+ * closing emphasised sentence the rules' own (issue #399's audit N32).
+ *
+ * @param {Array<{ kind: string }>|null} obligations — the narration's lines
+ * @returns {boolean}
+ */
+export function offerMayBeGiven(obligations) {
+  return Array.isArray(obligations) && obligations.some(o => o?.kind === "offer");
+}
+
+/**
+ * The prose's body: without its closing offer line where it may give one
+ * (narration/closingOfferLine.js — the one place a move may be named), else all of
+ * it (issue #399's audit N32: a move narration's closing italic comm line was
+ * taken out of every check, and a bold hint left in).
+ */
+function bodyOf(prose, { offer = false } = {}) {
+  const text = String(prose ?? "").trim();
+  return offer ? splitOfferLine(text).body : text;
+}
+
+/**
+ * The one text any judge reads (issue #399, D1): the narration without its
+ * fact block and, where it may give one (`offer` — offerMayBeGiven of its
+ * lines), without its closing offer line — the line the rules let name a
+ * move, which round 9's judge and audit read as the move made (eleven false
+ * findings, none right). `kind` says what narration this is; a `cutaway` (a
+ * session's closing vignette, a spotlight) is not about where the characters
+ * are, so it is not held to the lines that say so. Both the pre-post judge
+ * (judgeNarration) and the audit (consistencyCheck.js) read it; nothing else
+ * builds text for a judge. Pure.
+ *
+ * @param {string} text — a narration, its fact block on or off
+ * @param {{ kind?: string|null, offer?: boolean }} [opts] — the narration's kind: `cutaway`, a mode, or
+ *   none; `offer`: it was offered a move, so it may close on the line inviting it
+ * @returns {{ text: string, cutaway: boolean }}
+ */
+export function judgedView(text, { kind = null, offer = false } = {}) {
+  const raw = String(text ?? "");
+  const prose = extractSidecar(raw).prose ?? raw;
+  return { text: bodyOf(prose, { offer }), cutaway: kind === "cutaway" };
+}
+
+/**
+ * The kinds whose verdicts may act, by pass (issue #399, D7: authority
+ * follows the measure) — the pre-post judge's (`judge`) may re-ask a
+ * narration before it posts, the audit's (`audit`) may post its review card.
+ * Each pass is measured on its own (the audit's N3: the two read every line
+ * with different prompts), on the labelled set of the kept runs
+ * (test/ci/playwright/judges.mjs; decisions.md → "Issue #399"). A kind is
+ * here only where it passes that pass's bar on the counts pooled over the
+ * runs made with the current judge sentences (judges/pool.json), the newest
+ * as the module ships: the model samples at its default, so one run's flip
+ * of a verdict is noise, and the pool is the measure.
+ * tests/unit/judgeMeasure.test.js holds the sets to it.
+ *
+ * A pass is asked about a kind only where its verdict may act (D10): the
+ * judge-class kinds are exactly the `judge` set (a kind that failed it was
+ * retired to "logged", so it trips no call), and the audit is sent the lines
+ * of the `audit` set's kinds and no others (consistencyCheck.js). [dice]
+ * and [place] passed neither, and no judge reads them.
+ */
+const JUDGE_KINDS_THAT_ACT = Object.freeze({
+  judge: Object.freeze(new Set(["cost", "fight", "foe", "oracle", "premise", "price", "unsaid", "whereabouts"])),
+  audit: Object.freeze(new Set(["cost", "fight", "offer", "premise", "price", "state"])),
+});
+
+/**
+ * Whether a verdict on a line of `kind` may act in `pass` — "judge" (re-ask)
+ * or "audit" (a review card) — by JUDGE_KINDS_THAT_ACT.
+ *
+ * @param {string} kind
+ * @param {"judge"|"audit"} pass
+ * @returns {boolean}
+ */
+export function judgeMayAct(kind, pass) {
+  const acting = JUDGE_KINDS_THAT_ACT[pass];
+  return !!acting && acting.has(String(kind ?? "").replace(/^\[|\]$/g, ""));
+}
+
+/**
+ * The check class a kind's row declares — "certain", "floor", "judge",
+ * "logged" — or null for a kind no row declares (issue #399, D4: the `check`
+ * word on each row of obligations.js OBLIGATION_KINDS is what the code holds
+ * a line to; it was documentation, and the split was hard-coded here).
+ *
+ * @param {string} kind
+ * @returns {"certain"|"floor"|"judge"|"logged"|null}
+ */
+export function checkClassOf(kind) {
+  return OBLIGATION_KINDS[String(kind ?? "")]?.check ?? null;
 }
 
 /** Move display names of two words or more — a one-word name is an ordinary word (Strike, Heal, Compel). */
@@ -107,58 +199,132 @@ const MULTIWORD_MOVE_NAMES = Object.freeze(Object.keys(MOVES)
 
 const quoteAround = (text, index, len) => text.slice(Math.max(0, index - 30), Math.min(text.length, index + len + 30)).trim();
 
+/** [apparatus]: the table's words in the prose's body. One violation a pattern; a move's name once. */
+function apparatusViolations(body) {
+  const out = [];
+  const outcome = OUTCOME_NAME.exec(body);
+  if (outcome) out.push({ tag: "apparatus", quote: quoteAround(body, outcome.index, outcome[0].length) });
+  const number = SHEET_NUMBER.exec(body);
+  if (number) out.push({ tag: "apparatus", quote: quoteAround(body, number.index, number[0].length) });
+  const shape = SHAPE_ECHO.exec(body);
+  if (shape) out.push({ tag: "apparatus", quote: quoteAround(body, shape.index, shape[0].length) });
+  const meter = METER_TERM.exec(body);
+  if (meter) out.push({ tag: "apparatus", quote: quoteAround(body, meter.index, meter[0].length) });
+  for (const found of [STAT_NUMBER.exec(body), BOXES_AGO.exec(body), TRACK_WORDS.test(body) ? OF_TEN.exec(body) : null]) {
+    if (found) { out.push({ tag: "apparatus", quote: quoteAround(body, found.index, found[0].length) }); break; }
+  }
+  for (const name of MULTIWORD_MOVE_NAMES) {
+    const at = body.indexOf(name);
+    if (at >= 0) { out.push({ tag: "apparatus", quote: quoteAround(body, at, name.length) }); break; }
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Harm told where the sheet took none (issue #399, D9; HARM-TOLD-WITHOUT-A-COST)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A body's part, said as "your …".
+const BODY_PARTS = "shoulders?|arms?|forearms?|wrists?|hands?|palms?|fingers?|knuckles|elbows?|ribs|side|chest|back|neck|throat|face|"
+  + "cheeks?|jaw|lips?|scalp|head|temples?|brow|forehead|legs?|thighs?|knees?|shins?|calf|calves|ankles?|feet|foot|hips?|skin|flesh";
+const YOUR_PART = `your (?:left |right |good |bad |bare |outstretched )?(?:${BODY_PARTS})\\b`;
+// Harm done now, in the narration's present: a wound's verb on your body ("Something hot rakes your shoulder").
+const HARM_DONE = new RegExp(`\\b(?:rakes|burns|scalds|sears|singes|blisters|slices|cuts|gashes|grazes|bites|tears|splits|pierces|stabs|`
+  + `lacerates|cracks|breaks|crushes|lashes)(?: into| across| along| through| at| open)? ${YOUR_PART}`, "i");
+// …or harm carried onto it ("spits scalding vapor across your forearm").
+const HARM_CARRIED = new RegExp(`\\b(?:scalding|searing|burning|scorched|burnt|burned|white-hot|red-hot|blistering)\\b[^.!?\\n]{0,40}?\\b(?:across|along|into|over|`
+  + `through|on|down) ${YOUR_PART}`, "i");
+// A wound told: on a character whose sheet holds none, any is the prose's own.
+const WOUND_TOLD = new RegExp(`\\b(?:the|your|a|fresh|new) (?:cuts?|gash(?:es)?|wounds?|burns?|grazes?|scrapes?)\\b|${YOUR_PART} `
+  + "(?:bleeds?|throbs?|stings?|aches?|burns?)\\b|\\b(?:bandages?|dressings?|sealant|antiseptic|stitches)\\b", "i");
+// A move whose narration tells a wound by design: the harm itself, or its treatment.
+const WOUND_MOVES = new Set(["endure_harm", "face_death", "heal", "sojourn"]);
+// A TELL line that names health lost — a stated price, a chosen cost.
+const HEALTH_TOLD = /\bEndure Harm\b|\bhealth\b|\bharm\b/i;
+
 /**
- * The certain checks: [apparatus] and [match].
+ * Words of bodily harm said of "you" where the sheet took no health (issue
+ * #399, D9). Two cases, each read from the narration's lines alone:
+ *   - a beat of play — its [sheet] line holds the sheet to what TELL names —
+ *     whose TELL lines name no health lost, and none of whose moves tells a
+ *     wound by design (Endure Harm, Face Death; Heal, Sojourn, whose
+ *     treatment does): harm done now, in the present ("heat rakes your ribs";
+ *     round 8's a40, a44, a46 — each price fell on the ship);
+ *   - a refused Heal's [premise], "no wound is marked": any wound told
+ *     ("starts on the cuts"; round 4's a62, a63).
+ * Narrow by design: a wound from before, said in the past, and someone
+ * else's harm break nothing. Pure.
+ *
+ * @param {string} body — the prose, its closing offer line left out
+ * @param {Array<Object>} lines — the narration's obligation lines
+ * @param {{ moveId?: string|null, moveIds?: string[] }} [ctx] — the move narrated; a round's, its moves
+ * @returns {Array<{ tag: "sheet", quote: string, note: string }>}
+ */
+export function harmViolations(body, lines, { moveId = null, moveIds = [] } = {}) {
+  const text = String(body ?? "");
+  const all = Array.isArray(lines) ? lines : [];
+  const noWound = all.some(o => o?.kind === "premise" && /no wound is marked/.test(String(o.text ?? "")));
+  const moves = [moveId, ...(Array.isArray(moveIds) ? moveIds : [])];
+  const beat = all.some(o => o?.kind === "sheet") && !moves.some(m => WOUND_MOVES.has(m))
+    && !all.some(o => o?.list === "TELL" && HEALTH_TOLD.test(String(o.text ?? "")));
+  const found = (noWound ? [HARM_DONE, HARM_CARRIED, WOUND_TOLD] : beat ? [HARM_DONE, HARM_CARRIED] : [])
+    .map(re => re.exec(text)).find(Boolean);
+  if (!found) return [];
+  return [{ tag: "sheet", quote: quoteAround(text, found.index, found[0].length),
+    note: noWound ? "the sheet holds no wound: tell none" : "the sheet took no health on this beat: tell no harm done to you" }];
+}
+
+/**
+ * The certain checks, by kind (issue #399, D4) — each the certain-class
+ * kind's check, run on the first line of its kind, in this order. Each reads
+ * the prose's body: the closing offer line is the rules' own, never a breach
+ * (D1; [here] once read it, so an offer to fly somewhere re-asked as a
+ * flight). [here] reads the fact block too.
+ */
+export const CERTAIN_CHECKS = Object.freeze({
+  // [here]: the fact block's frame, its present, and the prose, against the
+  // record's place (CHARACTERS-MOVED-BY-THE-NARRATION, round 7).
+  here: (body, sidecar, o) => hereViolations(body, sidecar, o),
+  // [arrival]: a journey's arrival, its present alone — whoever was not with
+  // the characters as they set out is not waiting there (PEOPLE-WAITING-AT-THE-ARRIVAL).
+  arrival: (body, sidecar, o) => hereViolations(body, sidecar, { ...o, places: [] }).map(v => ({ ...v, tag: "arrival" })),
+  apparatus: (body) => apparatusViolations(body),
+  match: (body) => {
+    const m = /\bmatch(?:es|ed)?\b/i.exec(body);
+    return m ? [{ tag: "match", quote: quoteAround(body, m.index, m[0].length) }] : [];
+  },
+  material: (body, _sidecar, o) => materialViolations(body, o),
+  person: (body, _sidecar, o) => personViolations(body, o),
+  // [quote]: a line of speech an earlier narration of the session already
+  // gave (THE-REFRAINS-THE-LIST-CANNOT-NAME, round 8: a92 said a84's line again).
+  quote: (body, _sidecar, o) => {
+    const said = new Set(Array.isArray(o.quotes) ? o.quotes : []);
+    const again = quotedLinesOf(body).find(q => said.has(q));
+    return again ? [{ tag: "quote", quote: again, note: "an earlier narration of this session already gave this line, word for word — say it new, or let it go unsaid" }] : [];
+  },
+  // [sheet]: its harm clause — bodily harm said of "you" where the sheet took
+  // no health (issue #399 D9, HARM-TOLD-WITHOUT-A-COST). The rest of the line
+  // (supplies, repairs, bonds) is told, not held.
+  sheet: (body, _sidecar, _o, { lines, ctx }) => harmViolations(body, lines, ctx),
+});
+
+/**
+ * The certain checks (CERTAIN_CHECKS): each certain-class kind among the
+ * obligations, its first line, on the prose's body.
  *
  * @param {string} prose
  * @param {Array<{ kind: string }>} obligations
- * @returns {Array<{ tag: string, quote: string }>}
+ * @param {{ sidecar?: Object|null, ctx?: Object }} [opts] — the reply's fact block ([here], [arrival]); the check's context ([sheet]: the move)
+ * @returns {Array<{ tag: string, quote: string, note?: string }>}
  */
-export function certainViolations(prose, obligations, { sidecar = null } = {}) {
-  const kinds = new Set((obligations ?? []).map(o => o?.kind));
-  const text = String(prose ?? "");
+export function certainViolations(prose, obligations, { sidecar = null, ctx = {} } = {}) {
+  const lines = Array.isArray(obligations) ? obligations : [];
+  const body = bodyOf(prose, { offer: offerMayBeGiven(lines) });
   const out = [];
-  // [here]: the fact block's frame, its present, and the prose, against the
-  // record's place (CHARACTERS-MOVED-BY-THE-NARRATION, round 7).
-  const here = (obligations ?? []).find(o => o?.kind === "here");
-  if (here) out.push(...hereViolations(text, sidecar, here));
-  // [arrival]: a journey's arrival, its present alone — whoever was not with
-  // the characters as they set out is not waiting there (PEOPLE-WAITING-AT-THE-ARRIVAL).
-  const arrival = (obligations ?? []).find(o => o?.kind === "arrival");
-  if (arrival) out.push(...hereViolations(text, sidecar, { ...arrival, places: [] }).map(v => ({ ...v, tag: "arrival" })));
-  if (kinds.has("apparatus")) {
-    const body = bodyOf(text);
-    const outcome = OUTCOME_NAME.exec(body);
-    if (outcome) out.push({ tag: "apparatus", quote: quoteAround(body, outcome.index, outcome[0].length) });
-    const number = SHEET_NUMBER.exec(body);
-    if (number) out.push({ tag: "apparatus", quote: quoteAround(body, number.index, number[0].length) });
-    const shape = SHAPE_ECHO.exec(body);
-    if (shape) out.push({ tag: "apparatus", quote: quoteAround(body, shape.index, shape[0].length) });
-    const meter = METER_TERM.exec(body);
-    if (meter) out.push({ tag: "apparatus", quote: quoteAround(body, meter.index, meter[0].length) });
-    for (const found of [STAT_NUMBER.exec(body), BOXES_AGO.exec(body), TRACK_WORDS.test(body) ? OF_TEN.exec(body) : null]) {
-      if (found) { out.push({ tag: "apparatus", quote: quoteAround(body, found.index, found[0].length) }); break; }
-    }
-    for (const name of MULTIWORD_MOVE_NAMES) {
-      const at = body.indexOf(name);
-      if (at >= 0) { out.push({ tag: "apparatus", quote: quoteAround(body, at, name.length) }); break; }
-    }
-  }
-  if (kinds.has("match")) {
-    const m = /\bmatch(?:es|ed)?\b/i.exec(text);
-    if (m) out.push({ tag: "match", quote: quoteAround(text, m.index, m[0].length) });
-  }
-  const material = (obligations ?? []).find(o => o?.kind === "material");
-  if (material) out.push(...materialViolations(bodyOf(text), material));
-  const person = (obligations ?? []).find(o => o?.kind === "person");
-  if (person) out.push(...personViolations(bodyOf(text), person));
-  // [quote]: a line of speech an earlier narration of the session already
-  // gave (THE-REFRAINS-THE-LIST-CANNOT-NAME, round 8: a92 said a84's line again).
-  const quote = (obligations ?? []).find(o => o?.kind === "quote");
-  if (quote) {
-    const said = new Set(Array.isArray(quote.quotes) ? quote.quotes : []);
-    const again = quotedLinesOf(text).find(q => said.has(q));
-    if (again) out.push({ tag: "quote", quote: again, note: "an earlier narration of this session already gave this line, word for word — say it new, or let it go unsaid" });
+  for (const [kind, check] of Object.entries(CERTAIN_CHECKS)) {
+    if (checkClassOf(kind) !== "certain") continue;
+    const o = lines.find(l => l?.kind === kind);
+    if (o) out.push(...check(body, sidecar, o, { lines, ctx: ctx ?? {} }));
   }
   return out;
 }
@@ -380,49 +546,74 @@ const METER_WORDS = Object.freeze({
   supply:   ["stores", "rations", "fuel", "spent", "short", "supplies", "used"],
 });
 
-/** The last `n` sentences of a narration's body (its closing offer line left out). */
-function lastSentences(prose, n) {
-  const sentences = bodyOf(prose).split(/(?<=[.!?…]["”’)]?)\s+/).map(s => s.trim()).filter(Boolean);
+/** The last `n` sentences of a narration's body (its closing offer line already left out). */
+function lastSentences(body, n) {
+  const sentences = String(body ?? "").split(/(?<=[.!?…]["”’)]?)\s+/).map(s => s.trim()).filter(Boolean);
   return sentences.slice(-n).join(" ");
 }
 
+/** A cost's meters, by the words of its line ([chosen], [chosen-since]). */
+function costMeterWords(text) {
+  const meters = Object.keys(METER_WORDS).filter(m => new RegExp(`\\b${m}\\b|${m === "supply" ? "resources" : m === "health" ? "harm" : m === "spirit" ? "stress" : "momentum"}`, "i").test(text));
+  return meters.flatMap(m => METER_WORDS[m]);
+}
+
+/** A chosen cost told: a word of its meter in the narration ([chosen], [chosen-since] — logged). */
+const costTold = (body, o) => {
+  const words = costMeterWords(o.text);
+  const text = body.toLowerCase();
+  return words.length && !words.some(w => text.includes(w)) ? [{ tag: o.kind, quote: "" }] : [];
+};
+
 /**
- * The floor checks: [vow] (re-asked), [chosen] and [letgo] (logged).
+ * The floor checks, by kind (issue #399, D4) — each floor-class kind's
+ * lexical minimum and what a miss does: `reask` once, or `logged`. Each reads
+ * the prose's body, the closing offer line left out (D1).
+ */
+export const FLOOR_CHECKS = Object.freeze({
+  // A word of the vow's name, by its stem (its first four letters —
+  // "raiding" is told as "raiders"), or what is still not known.
+  vow: Object.freeze({ action: "reask", check: (body, o, { vowName = null } = {}) => {
+    const stems = contentWords(o.vowName ?? vowName).map(w => w.slice(0, 4));
+    const said = new Set(contentWords(body).map(w => w.slice(0, 4)));
+    return stems.length && !stems.some(w => said.has(w)) && !STILL_UNKNOWN.test(body) ? [{ tag: "vow", quote: "" }] : [];
+  } }),
+  chosen: Object.freeze({ action: "logged", check: (body, o) => costTold(body, o) }),
+  // A cost chosen since the last narration (D10): told as [chosen] is. Its
+  // row declared it floor, and nothing held it to one (issue #399's audit).
+  "chosen-since": Object.freeze({ action: "logged", check: (body, o) => costTold(body, o) }),
+  // Ended on what play let go (overhaul 2 §7.3, §10.3): a stem of its
+  // question in the last two sentences. A player's line that names the
+  // question — any of its stems — takes it up, and the narration may end
+  // on it ("I look up at the amber light": the second amber light above
+  // the stall may blink); provenance.js touchesLetGo stays per stem for
+  // the frame's own lines.
+  letgo: Object.freeze({ action: "logged", check: (body, o, { line = "" } = {}) => {
+    if (!o.letGo) return [];
+    const said = tellingStems(line);
+    const takenUp = (o.letGo.stems ?? []).some(st => said.has(st));
+    const ending = lastSentences(body, 2);
+    return !takenUp && touchesLetGo(ending, line, [o.letGo]) ? [{ tag: "letgo", quote: ending.slice(0, 200) }] : [];
+  } }),
+});
+
+/**
+ * The floor checks (FLOOR_CHECKS): every floor-class line, on the prose's
+ * body — a miss re-asked or logged, as its kind's check says.
  *
  * @param {string} prose
  * @param {Array<Object>} obligations
  * @param {{ vowName?: string|null, line?: string }} [ctx] — `line`: the beat's player words ([letgo])
  * @returns {{ reask: Array<{ tag: string, quote: string }>, logged: Array<{ tag: string, quote: string }> }}
  */
-export function floorViolations(prose, obligations, { vowName = null, line = "" } = {}) {
-  const text = String(prose ?? "").toLowerCase();
+export function floorViolations(prose, obligations, ctx = {}) {
+  const body = bodyOf(prose, { offer: offerMayBeGiven(obligations) });
   const reask = [];
   const logged = [];
   for (const o of obligations ?? []) {
-    if (o?.kind === "vow") {
-      // A word of the vow's name, by its stem (its first four letters —
-      // "raiding" is told as "raiders"), or what is still not known.
-      const stems = contentWords(vowName).map(w => w.slice(0, 4));
-      const said = new Set(contentWords(text).map(w => w.slice(0, 4)));
-      if (stems.length && !stems.some(w => said.has(w)) && !STILL_UNKNOWN.test(prose ?? "")) {
-        reask.push({ tag: "vow", quote: "" });
-      }
-    } else if (o?.kind === "chosen") {
-      const meters = Object.keys(METER_WORDS).filter(m => new RegExp(`\\b${m}\\b|${m === "supply" ? "resources" : m === "health" ? "harm" : m === "spirit" ? "stress" : "momentum"}`, "i").test(o.text));
-      const words = meters.flatMap(m => METER_WORDS[m]);
-      if (words.length && !words.some(w => text.includes(w))) logged.push({ tag: "chosen", quote: "" });
-    } else if (o?.kind === "letgo" && o.letGo) {
-      // Ended on what play let go (overhaul 2 §7.3, §10.3): a stem of its
-      // question in the last two sentences. A player's line that names the
-      // question — any of its stems — takes it up, and the narration may end
-      // on it ("I look up at the amber light": the second amber light above
-      // the stall may blink); provenance.js touchesLetGo stays per stem for
-      // the frame's own lines.
-      const said = tellingStems(line);
-      const takenUp = (o.letGo.stems ?? []).some(st => said.has(st));
-      const ending = lastSentences(prose, 2);
-      if (!takenUp && touchesLetGo(ending, line, [o.letGo])) logged.push({ tag: "letgo", quote: ending.slice(0, 200) });
-    }
+    const floor = checkClassOf(o?.kind) === "floor" ? FLOOR_CHECKS[o.kind] : null;
+    if (!floor) continue;
+    (floor.action === "reask" ? reask : logged).push(...floor.check(body, o, ctx ?? {}));
   }
   return { reask, logged };
 }
@@ -437,8 +628,6 @@ const FIGHT_WORDS = ["fire", "fires", "fired", "shot", "shoots", "salvo", "strik
 const FOE_DOWN_WORDS = ["dead", "dies", "died", "dying", "killed", "kills", "destroyed", "destroy", "destroys", "wreck", "wrecked", "wreckage",
   "hulk", "fled", "flee", "flees", "retreat", "retreats", "retreated", "surrender", "surrenders", "surrendered", "beaten", "defeated",
   "finished", "explode", "explodes", "exploded", "explosion", "crippled"];
-/** A ship told as still docked (overhaul 2 §6.2's [place]). */
-const DOCKED_WORDS = ["docked", "berth", "berthed", "clamps", "clamped", "moored"];
 const HEAL_WORDS  = ["cut", "cuts", "gash", "wound", "wounds", "blood", "bandage", "dressing", "stitch", "antiseptic", "medkit", "sealant", "binding"];
 const PREMISE_WORDS = Object.freeze({
   "recoverable-health": HEAL_WORDS,
@@ -448,39 +637,32 @@ const PREMISE_WORDS = Object.freeze({
   "open-fight":         FIGHT_WORDS,
   "their-connection":   ["bond", "bonded", "connection", "trust"],
 });
-const OFFER_WORDS = Object.freeze({
-  set_a_course: ["arrive", "arrives", "docks", "dock", "reach", "reaches", "land", "lands"],
-  undertake_an_expedition: ["arrive", "arrives", "reach", "reaches"],
-  finish_an_expedition: ["arrive", "arrives", "reach", "reaches"],
-  repair: ["patched", "repaired", "fixed", "welded"],
-  heal: HEAL_WORDS,
-  resupply: ["restock", "restocked", "supplies"],
-  enter_the_fray: FIGHT_WORDS,
-  forge_a_bond: ["bond", "bonded"],
-});
-
 /** Speech, said or told — what trips [unsaid] (a move pressed on a card gives the character no words). */
 const SPEECH_WORDS = ["tell", "tells", "told", "say", "says", "said", "ask", "asks", "asked", "promise", "promises", "promised",
   "admit", "admits", "confess", "confesses", "swear", "swears", "explain", "explains", "answer", "answers", "reply", "replies",
   "assure", "assures", "whisper", "whispers", "murmur", "murmurs", "insist", "insists"];
 
-/** The words that trip a line's judge, by what it tells; null for a line with none. */
-function tripWords(o, { refusalCode = null, offer = null, question = "", person = null } = {}) {
-  switch (o?.kind) {
-    case "premise": return PREMISE_WORDS[refusalCode] ?? null;
-    case "fight":   return FIGHT_WORDS;
-    case "foe":     return FOE_DOWN_WORDS;
-    case "offer":   return OFFER_WORDS[offer] ?? null;
-    case "cost":    return Object.entries(METER_WORDS).filter(([m]) => new RegExp(m === "supply" ? "supply|resources" : m === "health" ? "health|harm" : m === "spirit" ? "spirit|stress" : m, "i").test(o.text)).flatMap(([, w]) => w);
-    case "price":   return contentWords(o.text.replace(/^THE PRICE[^.]*\.\s*/, "")).slice(0, 12);
-    case "oracle":  return o.list === "NOT SO" ? contentWords(question) : null;
-    case "state":   return person && /not a bond/.test(o.text) ? ["bond", "bonded"] : (/No fight/.test(o.text) ? FIGHT_WORDS : null);
-    case "place":   return DOCKED_WORDS;
-    case "unsaid":  return SPEECH_WORDS;
-    case "dice":    return Array.isArray(o.words) && o.words.length ? o.words.flatMap(w => [w, `${w}'s`, `${w}’s`]) : null;
-    case "whereabouts": return Array.isArray(o.words) && o.words.length ? o.words : null;
-    default:        return null;
-  }
+/**
+ * The words that trip each judge-class kind's line, by what it tells — null
+ * for a line with none (issue #399, D4: one entry for each kind its row
+ * declares judge-class, and no other).
+ */
+export const TRIPWIRES = Object.freeze({
+  premise: (o, { refusalCode = null } = {}) => PREMISE_WORDS[o.refusalCode ?? refusalCode] ?? null,
+  fight:   () => FIGHT_WORDS,
+  foe:     () => FOE_DOWN_WORDS,
+  cost:    (o) => Object.entries(METER_WORDS).filter(([m]) => new RegExp(m === "supply" ? "supply|resources" : m === "health" ? "health|harm" : m === "spirit" ? "spirit|stress" : m, "i").test(o.text)).flatMap(([, w]) => w),
+  price:   (o) => contentWords(o.text.replace(/^THE PRICE[^.]*\.\s*/, "")).slice(0, 12),
+  oracle:  (o, { question = "" } = {}) => (o.list === "NOT SO" ? contentWords(question) : null),
+  unsaid:  () => SPEECH_WORDS,
+  whereabouts: (o) => (Array.isArray(o.words) && o.words.length ? o.words : null),
+});
+
+/** The words that trip a line's judge: its kind's TRIPWIRES, for a judge-class line; null for any other. */
+function tripWords(o, ctx = {}) {
+  if (checkClassOf(o?.kind) !== "judge") return null;
+  const words = TRIPWIRES[o.kind];
+  return typeof words === "function" ? words(o, ctx) : null;
 }
 
 /**
@@ -488,64 +670,171 @@ function tripWords(o, { refusalCode = null, offer = null, question = "", person 
  *
  * @param {string} prose
  * @param {Array<Object>} obligations
- * @param {{ refusalCode?: string|null, offer?: string|null, question?: string }} [ctx]
+ * @param {{ refusalCode?: string|null, question?: string }} [ctx]
  * @returns {Array<Object>} the tripped obligations
  */
 export function trippedLines(prose, obligations, ctx = {}) {
   const words = String(prose ?? "").toLowerCase().split(/[^a-z0-9'’-]+/).filter(Boolean);
-  // A possessive's word is said too: "the hulk's guns" says "hulk" (issue #397,
-  // Code fix 4). [dice] still lists its possessive forms by hand.
+  // A possessive's word is said too: "the hulk's guns" says "hulk" (issue #397, Code fix 4).
   const said = new Set(words.flatMap(w => { const bare = w.replace(/['’]s$/, ""); return bare && bare !== w ? [w, bare] : [w]; }));
   return (obligations ?? []).filter((o) => {
     if (o?.list !== "NOT YET" && o?.list !== "NOT SO") return false;
-    const person = o.kind === "state" ? (/^(.+?) is .*connection/.exec(o.text)?.[1] ?? null) : null;
-    const trip = tripWords(o, { ...ctx, person });
+    const trip = tripWords(o, ctx);
     if (!Array.isArray(trip) || !trip.length) return false;
     return trip.some(w => said.has(w));
   });
 }
 
 /**
- * One small model call: does the narration tell any tripped line as true?
- * Fail-open: an error, a timeout (JUDGE_TIMEOUT_MS) or an answer that does
- * not parse is no violation.
+ * How a tripped line is put to a judge (issue #399; the audit's N1): a line
+ * with a judge sentence is the breach itself — "BREACH", the narration
+ * breaks it by doing what it says — and any other is its narrator list. Round
+ * 9's [dice] sentence went out as "(NOT SO) The dice decided this: …" under
+ * the rule "telling it as true breaks it", which read the fact as the breach.
+ *
+ * @param {Object} o — an obligation line
+ * @returns {{ mark: string, words: string }}
+ */
+export function judgedLine(o) {
+  return typeof o?.judge === "string" && o.judge.trim()
+    ? { mark: "BREACH", words: o.judge.trim() }
+    : { mark: String(o?.list ?? "NOT SO"), words: String(o?.text ?? "").trim() };
+}
+
+/**
+ * What the narration's lines mean to a judge, said once for both passes
+ * (the audit's N2: the audit lacked the rule on what merely might happen).
+ */
+export const JUDGED_LINES_RULE = "A BREACH line describes a breach: the narration breaks it when it does what the line says. "
+  + "A NOT YET line names something the table has not decided; telling it as done breaks it. A NOT SO line names something "
+  + "that is not true; telling it as true breaks it. A TELL line names what has happened; leaving it untold breaks it. Read "
+  + "only what the narration says happens — a thing about to happen, feared, offered or merely possible breaks nothing.";
+
+/** A quote's words, compared loosely: case, emphasis, curly quotes and spacing aside. */
+const looseWords = (s) => String(s ?? "").toLowerCase().replace(/[*_]/g, "").replace(/[’‘]/g, "'").replace(/[“”]/g, '"')
+  .replace(/\s+/g, " ").trim();
+
+/**
+ * Whether a judge's quote is the narration's own words (D3): each part of it
+ * between ellipses is in the text, in order. A quote of what the judged view
+ * took off — the offer line, the fact block — or a paraphrase is not.
+ *
+ * @param {string} text — the judged view
+ * @param {string} quote
+ * @returns {boolean}
+ */
+export function quoteInNarration(text, quote) {
+  const told = looseWords(text);
+  const parts = looseWords(quote).split(/\s*(?:…|\.\.\.)\s*/)
+    .map(p => p.replace(/^["'\s.,;:!?-]+|["'\s.,;:!?-]+$/g, "")).filter(p => p.length > 0);
+  if (!parts.length) return false;
+  let from = 0;
+  for (const part of parts) {
+    const at = told.indexOf(part, from);
+    if (at < 0) return false;
+    from = at + part.length;
+  }
+  return true;
+}
+
+/**
+ * A judge's answer read against the lines it was asked about (D3): each
+ * violation names its line by number — or, the old form, by a tag that is
+ * exactly one line's kind — and quotes the narration. One that names no line
+ * or quotes words the judged view does not hold is dropped, with why.
+ *
+ * @param {Array} answered — the answer's `violations`
+ * @param {Array<Object>} lines — the lines asked about, in their numbered order
+ * @param {string} text — the judged view
+ * @returns {{ violations: Array<{ tag: string, line: number, quote: string, text: string }>,
+ *   dropped: Array<{ tag?: string, line?: number, quote: string, why: string }> }}
+ */
+export function verdictsByLine(answered, lines, text) {
+  const violations = [];
+  const dropped = [];
+  for (const v of Array.isArray(answered) ? answered : []) {
+    if (!v || typeof v !== "object") continue;
+    const quote = String(v.quote ?? "").slice(0, 200);
+    const n = Number.isInteger(v.line) ? v.line : (/^\s*\d+\s*$/.test(String(v.line ?? "")) ? Number(v.line) : null);
+    let index = n !== null && n >= 1 && n <= lines.length ? n - 1 : -1;
+    if (index < 0 && n === null && v.tag != null) {
+      const kind = String(v.tag).trim().replace(/^\[|\]$/g, "");
+      const same = lines.flatMap((o, i) => (o?.kind === kind ? [i] : []));
+      if (same.length === 1) index = same[0];
+    }
+    if (index < 0) {
+      dropped.push({ ...(n !== null ? { line: n } : {}), ...(v.tag != null ? { tag: String(v.tag).slice(0, 80) } : {}), quote, why: "names no line" });
+      continue;
+    }
+    const o = lines[index];
+    if (!quoteInNarration(text, quote)) {
+      dropped.push({ tag: o.kind, line: index + 1, quote, why: "not in the narration" });
+      continue;
+    }
+    violations.push({ tag: o.kind, line: index + 1, quote, text: o.text });
+  }
+  return { violations, dropped };
+}
+
+/** The first JSON object in a reply, or null: a reply cut off or not JSON parses to nothing. */
+function firstJsonObject(text) {
+  const json = /\{[\s\S]*\}/.exec(String(text ?? ""))?.[0];
+  if (!json) return null;
+  try { return JSON.parse(json); } catch { return null; }
+}
+
+/**
+ * One small model call: does the narration break any tripped line? Its lines
+ * are numbered and it answers by number with the narration's own words (D3),
+ * each line put as a breach where it has a judge sentence (judgedLine). It
+ * reads the judged view (D1). Fail-open: an error, a timeout
+ * (JUDGE_TIMEOUT_MS), a refusal or an answer that does not parse is no
+ * violation — `judged: false`, with `error` saying which ("timeout",
+ * "refused", "cut off at its token cap", "unparsed", "error: …", "no key").
  *
  * @param {string} prose
  * @param {Array<Object>} tripped
- * @param {{ apiKey: string|null }} opts
- * @returns {Promise<{ violations: Array<{ tag: string, quote: string }>, judged: boolean, error?: string }>}
+ * @param {{ apiKey: string|null, offer?: boolean }} opts — `offer`: the narration was offered a move
+ *   (offerMayBeGiven of its lines), so its closing offer line is left out (judgedView)
+ * @returns {Promise<{ violations: Array<{ tag: string, line: number, quote: string, text: string }>,
+ *   dropped: Array<Object>, judged: boolean, error: string|null }>}
  */
-export async function judgeNarration(prose, tripped, { apiKey } = {}) {
-  if (!apiKey || !tripped?.length) return { violations: [], judged: false };
-  const lines = tripped.map(o => `- [${o.kind}] (${o.list}) ${o.judge ?? o.text}`).join("\n");
-  const system = "You check a short piece of game narration against lines it must keep. A NOT YET line names something the "
-    + "table has not decided; telling it as done breaks it. A NOT SO line names something that is not true; telling it as "
-    + "true breaks it. Read only what the narration says happens — a thing about to happen, feared, offered or merely "
-    + "possible breaks nothing. Answer with JSON only: {\"violations\":[{\"tag\":\"<the line's tag>\",\"quote\":\"<the words that break it>\"}]} "
+export async function judgeNarration(prose, tripped, { apiKey, offer = false } = {}) {
+  if (!tripped?.length) return { violations: [], dropped: [], judged: false, error: null };
+  if (!apiKey) return { violations: [], dropped: [], judged: false, error: "no key" };
+  const lines = tripped.map((o, i) => { const l = judgedLine(o); return `${i + 1}. [${o.kind}] ${l.mark}: ${l.words}`; }).join("\n");
+  const system = `You check a short piece of game narration against numbered lines. ${JUDGED_LINES_RULE} `
+    + "Answer with JSON only: {\"violations\":[{\"line\":<the line's number>,\"quote\":\"<the narration's words that break it, copied exactly>\"}]} "
     + "— an empty list when nothing breaks.";
+  // The judged view (D1): the closing offer line is the rules' own, never a breach.
+  const view = judgedView(prose, { offer });
   const body = {
     model: JUDGE_MODEL, max_tokens: JUDGE_MAX_TOKENS, system,
-    messages: [{ role: "user", content: `LINES:\n${lines}\n\nNARRATION:\n"""${String(prose ?? "").slice(0, 4000)}"""` }],
+    messages: [{ role: "user", content: `LINES:\n${lines}\n\nNARRATION:\n"""${view.text.slice(0, 4000)}"""` }],
   };
   const headers = { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
   let timer = null;
+  const unjudged = (error) => {
+    console.warn(`${MODULE_ID} | obligation judge: no verdict (${error}) — the narration passes as written.`);
+    return { violations: [], dropped: [], judged: false, error };
+  };
+  // At the cutoff the request is cancelled, not left to run on to the
+  // network's own deadline, billed and in the API Log (issue #399's audit N7).
+  const cancel = typeof globalThis.AbortController === "function" ? new globalThis.AbortController() : null;
   try {
     const data = await Promise.race([
-      apiPost(ANTHROPIC_URL, headers, body, { label: "obligationJudge" }),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("the judge timed out")), JUDGE_TIMEOUT_MS); }),
+      apiPost(ANTHROPIC_URL, headers, body, { label: "obligationJudge", ...(cancel ? { signal: cancel.signal } : {}) }),
+      new Promise((_, reject) => { timer = setTimeout(() => { cancel?.abort(); reject(new Error("the judge timed out")); }, JUDGE_TIMEOUT_MS); }),
     ]);
     const text = (data?.content ?? []).filter(b => b?.type === "text").map(b => b.text).join("");
-    const json = /\{[\s\S]*\}/.exec(text)?.[0];
-    const parsed = json ? JSON.parse(json) : null;
-    if (!parsed || !Array.isArray(parsed.violations)) return { violations: [], judged: false, error: "unparsed" };
-    const tags = new Set(tripped.map(o => o.kind));
-    const violations = parsed.violations
-      .filter(v => v && tags.has(String(v.tag ?? "").replace(/^\[|\]$/g, "")))
-      .map(v => ({ tag: String(v.tag).replace(/^\[|\]$/g, ""), quote: String(v.quote ?? "").slice(0, 200) }));
-    return { violations, judged: true };
+    const parsed = firstJsonObject(text);
+    if (!parsed || !Array.isArray(parsed.violations)) {
+      return unjudged(data?.stop_reason === "max_tokens" ? "cut off at its token cap" : data?.stop_reason === "refusal" ? "refused" : "unparsed");
+    }
+    return { ...verdictsByLine(parsed.violations, tripped, view.text), judged: true, error: null };
   } catch (err) {
-    console.warn(`${MODULE_ID} | obligation judge: no verdict — the narration passes as written:`, err?.message ?? err);
-    return { violations: [], judged: false, error: String(err?.message ?? err) };
+    const message = String(err?.message ?? err);
+    return unjudged(message === "the judge timed out" ? "timeout" : `error: ${message}`);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -557,25 +846,45 @@ export async function judgeNarration(prose, tripped, { apiKey } = {}) {
 
 /**
  * The re-ask's addendum to the user message: the draft, not posted, and the
- * lines it broke.
+ * lines it broke — each line once, in its own words (a judge's verdict
+ * carries its line's `text`; a certain or floor breach is its kind's first
+ * line, the one the check read), with every quote of it (the audit's N11:
+ * one quote a kind, with that kind's last line, went out).
  *
  * @param {string} draft
- * @param {Array<{ tag: string, quote: string }>} violations
+ * @param {Array<{ tag: string, quote?: string, note?: string, text?: string }>} violations
  * @param {Array<Object>} obligations
  * @returns {string}
  */
 export function redraftBlock(draft, violations, obligations) {
-  const byTag = new Map((obligations ?? []).map(o => [o.kind, o]));
-  const broke = [...new Set(violations.map(v => v.tag))].map((tag) => {
-    const o = byTag.get(tag);
-    const quote = violations.find(v => v.tag === tag && v.quote)?.quote;
+  const firstOf = new Map();
+  for (const o of obligations ?? []) if (o?.kind && !firstOf.has(o.kind)) firstOf.set(o.kind, o);
+  const groups = new Map();
+  for (const v of violations ?? []) {
+    const text = typeof v?.text === "string" ? v.text : (firstOf.get(v?.tag)?.text ?? "");
+    const key = `${v?.tag}\u0000${text}`;
+    if (!groups.has(key)) groups.set(key, { tag: v?.tag, text, quotes: [], notes: [] });
+    const g = groups.get(key);
+    if (v?.quote && !g.quotes.includes(v.quote)) g.quotes.push(v.quote);
     // What a certain check found, in its own words ([here]: what the frame,
     // the present or the prose said, and what the record says instead).
-    const notes = [...new Set(violations.filter(v => v.tag === tag && v.note).map(v => v.note))];
-    return `- [${tag}] ${o?.text ?? ""}${quote ? ` (it says: "${quote}")` : ""}${notes.length ? ` — ${notes.join("; ")}.` : ""}`;
-  });
+    if (v?.note && !g.notes.includes(v.note)) g.notes.push(v.note);
+  }
+  const broke = [...groups.values()].map(g => `- [${g.tag}] ${g.text}`
+    + `${g.quotes.length ? ` (it says: ${g.quotes.map(q => `"${q}"`).join("; ")})` : ""}`
+    + `${g.notes.length ? ` — ${g.notes.join("; ")}.` : ""}`);
   return `## YOUR DRAFT — NOT POSTED\n"${String(draft ?? "").trim()}"\n\nThis breaks:\n${broke.join("\n")}\n`
     + "Write the narration again; keep everything else.";
+}
+
+/** A reply's checks in code — certain and floor — for one draft: what re-asks, and what is logged. */
+function codeChecks(prose, sidecar, obligations, ctx, draft) {
+  const floor = floorViolations(prose, obligations, ctx);
+  return {
+    broken: [...certainViolations(prose, obligations, { sidecar, ctx }).map(v => ({ ...v, class: "certain", draft })),
+      ...floor.reask.map(v => ({ ...v, class: "floor", draft }))],
+    logged: floor.logged.map(v => ({ ...v, class: "floor", action: "logged", draft })),
+  };
 }
 
 /**
@@ -584,15 +893,36 @@ export function redraftBlock(draft, violations, obligations) {
  * (the re-ask's block) appended to its user message when given — and returns
  * the raw reply (prose and fact block). Only the reply returned is the one
  * whose fact block is applied. A re-ask that throws (a rate limit, a dropped
- * connection) keeps the first draft: it was a narration, and only its check
- * failed — it threw out to the narrator's catch and the beat was not told.
+ * connection), or that comes back with no prose — a fact block alone is no
+ * narration — keeps the first draft: it was a narration, and only its check
+ * failed. So does a redraft that adds a certain breach the first draft did
+ * not have (issue #399's audit N9). The judge is called once at most, on the
+ * draft that posts (N10): the first when the code's checks pass it, else
+ * after the re-ask, its verdicts then only reported (`stillBroken`).
+ *
+ * Every verdict is a row of `verdicts`, marked with the draft it describes
+ * (`draft` 1 or 2); a judge's call is one summary row and one row a
+ * violation or a dropped one. `stopped()` is the caller's own discard test
+ * (an X-Card played, a round taken over, a dropped connection — the audit's
+ * N14): once it is true no judge is called and `onVerdict` is not told, as
+ * the caller posts nothing of this narration. `view(prose)` is the part of a
+ * reply's prose the checks and the judge read, when not all of it is
+ * narration (the audit's N29: an inciting incident's proposal block); the
+ * re-ask is shown its draft whole, so a redraft keeps the rest.
  *
  * @param {(addendum: string|null) => Promise<string|null>} call
  * @param {Array<Object>} obligations
- * @param {{ apiKey?: string|null, judge?: boolean, ctx?: Object, onVerdict?: Function }} [opts]
+ * @param {{ apiKey?: string|null, judge?: boolean, ctx?: Object, onVerdict?: Function, stopped?: Function, view?: Function }} [opts]
  * @returns {Promise<{ raw: string|null, reasked: boolean, verdicts: Array<Object>, stillBroken: Array<Object> }>}
  */
-export async function narrateKeepingObligations(call, obligations, { apiKey = null, judge = true, ctx = {}, onVerdict = null } = {}) {
+export async function narrateKeepingObligations(call, obligations, { apiKey = null, judge = true, ctx = {}, onVerdict = null, stopped = null, view = null } = {}) {
+  const halted = () => { try { return typeof stopped === "function" && stopped() === true; } catch { return false; } };
+  // The text checked of a draft's prose: the caller's view of it, or all of it.
+  const seen = (text) => {
+    if (typeof view !== "function") return text;
+    try { return String(view(text) ?? ""); } catch { return text; }
+  };
+  const tell = (v) => { if (!halted() && (v.verdicts.length || v.stillBroken?.length)) onVerdict?.(v); };
   const raw = await call(null);
   const verdicts = [];
   if (typeof raw !== "string" || !raw.trim() || !Array.isArray(obligations) || !obligations.length) {
@@ -600,36 +930,71 @@ export async function narrateKeepingObligations(call, obligations, { apiKey = nu
   }
   const first = extractSidecar(raw);
   const prose = first.prose ?? raw;
-  const certain = certainViolations(prose, obligations, { sidecar: first.sidecar });
-  const floor = floorViolations(prose, obligations, ctx);
-  for (const v of floor.logged) verdicts.push({ ...v, class: "floor", action: "logged" });
-  let broken = [...certain.map(v => ({ ...v, class: "certain" })), ...floor.reask.map(v => ({ ...v, class: "floor" }))];
-  if (!broken.length && judge) {
-    const tripped = trippedLines(prose, obligations, ctx);
-    if (tripped.length) {
-      const verdict = await judgeNarration(prose, tripped, { apiKey });
-      verdicts.push({ class: "judge", tripped: tripped.map(o => o.kind), judged: verdict.judged, violations: verdict.violations, error: verdict.error ?? null });
-      broken = verdict.violations.map(v => ({ ...v, class: "judge" }));
+  const firstChecks = codeChecks(seen(prose), first.sidecar, obligations, ctx, 1);
+  verdicts.push(...firstChecks.logged);
+  let broken = firstChecks.broken;
+  // The one judge call a narration (D9), on the draft that posts: the first,
+  // when the code's checks pass it; else, after the re-ask, whichever posts
+  // (issue #399's audit N10 — neither draft of a narration the code re-asked
+  // was judged). Its verdicts act only before the re-ask: there is no second.
+  // The trip words are read in the judged view too (D1): an offer line's
+  // move name ("…would be a Forge a Bond") trips nothing. judgeNarration is
+  // called from this function itself, never a helper: the playthrough
+  // harness files a judge call by the narration that made it, looking
+  // through this wrapper (test/ci/playwright/lib/claude.mjs PASS_THROUGH).
+  const offer = offerMayBeGiven(obligations);
+  const tripsOf = (text) => trippedLines(judgedView(seen(text), { offer }).text, obligations, ctx);
+  // A verdict's rows, and the lines it may act on: a verdict on a kind that
+  // has not passed the measure is logged and counted, and acts on nothing
+  // (issue #399, D7).
+  const verdictOn = (verdict, tripped, draft) => {
+    verdicts.push({ class: "judge", draft, tripped: tripped.map(o => o.kind), judged: verdict.judged, error: verdict.error ?? null });
+    for (const d of verdict.dropped ?? []) verdicts.push({ ...d, class: "judge", action: "dropped", draft });
+    const acts = (v) => judgeMayAct(v.tag, "judge");
+    for (const v of verdict.violations.filter(x => !acts(x))) {
+      verdicts.push({ class: "judge", draft, tag: v.tag, line: v.line, quote: v.quote, action: "logged" });
     }
+    return verdict.violations.filter(acts).map(v => ({ ...v, class: "judge", draft }));
+  };
+  let judgedOnce = false;
+  if (!broken.length && judge && !halted()) {
+    judgedOnce = true;
+    const tripped = tripsOf(prose);
+    if (tripped.length) broken = verdictOn(await judgeNarration(seen(prose), tripped, { apiKey, offer }), tripped, 1);
   }
   if (!broken.length) {
-    if (verdicts.length) onVerdict?.({ verdicts, reasked: false });
+    tell({ verdicts, reasked: false });
     return { raw, reasked: false, verdicts, stillBroken: [] };
   }
-  verdicts.push(...broken.map(v => ({ ...v, action: "reask" })));
+  verdicts.push(...broken.map(({ text: _text, ...v }) => ({ ...v, action: "reask" })));
   let again = null;
   try {
     again = await call(redraftBlock(prose, broken, obligations));
   } catch (err) {
     console.warn(`${MODULE_ID} | obligations: the re-ask failed — the first draft stands:`, err?.message ?? err);
   }
-  if (typeof again !== "string" || !again.trim()) {
-    // The re-ask failed: the first draft stands, its breach logged.
-    onVerdict?.({ verdicts, reasked: true, stillBroken: broken });
-    return { raw, reasked: true, verdicts, stillBroken: broken };
+  const second = typeof again === "string" ? extractSidecar(again) : null;
+  const secondProse = second ? String(second.prose ?? again) : "";
+  const bare = (list) => list.map(({ text: _text, ...v }) => v);
+  // The draft that posts, and what it still breaks. A re-ask that failed, or
+  // gave no narration — a fact block alone is none — keeps the first draft.
+  let posted = { raw, prose, draft: 1, stillBroken: bare(broken) };
+  if (secondProse.trim()) {
+    // The redraft is held to the code's checks — the certain and the floor
+    // (the audit's N9: it was held to the certain alone).
+    const secondChecks = codeChecks(seen(secondProse), second.sidecar, obligations, ctx, 2);
+    verdicts.push(...secondChecks.logged);
+    // A redraft that adds a certain breach the first draft did not have is
+    // not posted: the first draft is (the audit's N9, its posting half).
+    const firstCertain = new Set(broken.filter(v => v.class === "certain").map(v => v.tag));
+    const added = secondChecks.broken.filter(v => v.class === "certain" && !firstCertain.has(v.tag));
+    if (added.length) verdicts.push(...bare(added).map(v => ({ ...v, action: "redraft not posted" })));
+    else posted = { raw: again, prose: secondProse, draft: 2, stillBroken: bare(secondChecks.broken) };
   }
-  const second = extractSidecar(again);
-  const stillBroken = certainViolations(second.prose ?? again, obligations, { sidecar: second.sidecar }).map(v => ({ ...v, class: "certain" }));
-  onVerdict?.({ verdicts, reasked: true, stillBroken });
-  return { raw: again, reasked: true, verdicts, stillBroken };
+  if (!judgedOnce && judge && !halted()) {
+    const tripped = tripsOf(posted.prose);
+    if (tripped.length) posted.stillBroken.push(...bare(verdictOn(await judgeNarration(seen(posted.prose), tripped, { apiKey, offer }), tripped, posted.draft)));
+  }
+  tell({ verdicts, reasked: true, stillBroken: posted.stillBroken });
+  return { raw: posted.raw, reasked: true, verdicts, stillBroken: posted.stillBroken };
 }

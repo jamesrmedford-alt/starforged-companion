@@ -9,7 +9,10 @@ layers. This file is the never-break list.
 
 1. **The flag-family contract.** Every chat card whose prose is fiction the
    narrator should remember MUST carry `narratorCard: true`,
-   `narrationText: <prose>`, and `sessionId`. Error/fallback cards must NOT.
+   `narrationText: <prose>`, and `sessionId`. Error/fallback cards must NOT,
+   nor a ◈ Narrative Review card, which is no narration — its Retract button
+   is wired by its `factContinuityReview` (issue #399 D5: it co-marked the
+   flag, and the long haul's runner counted each card as a narration).
    Each also carries the scene it was told in, `sceneId` — stamped by one
    `preCreateChatMessage` hook on whichever client creates the card
    (`record/cards.js registerSceneStampHook`, overhaul 2 §8), never by a post
