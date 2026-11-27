@@ -47,6 +47,12 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **A session's closing scene or spotlight is not checked against where the characters are** (issue #399). It shows someone elsewhere by design; round 9's closing cutaway was carded for it.
 - Fixed: **The second opinion reads what the dice decided the right way round** (issue #399). Its line read "…something this result of the dice denies — the cutter: has the better angle", and the fact was taken for the thing denied.
 - Fixed: **The Narrative Review is not sent lines already checked before the narration posted** (issue #399), such as an outcome's name in the prose or the character called by name in a second-person game. Eleven of round 9's findings were on those.
+- Fixed: **The X-Card withdraws a Narrative Review card about the narration it removes** (issue #399's audit). The card quoted the removed words and offered to change a fact because of them; only a card for a narration already removed was kept out.
+- Fixed: **Narrative Review cards are counted as they are posted** (issue #399's audit). A card that could not post, with Contradiction Notifications off, was counted as posted and never came once they were on. A fact said again after it was struck shared the struck card's place and got no card. A late check for an earlier scene let the current scene's cards post again, and two checks at once could both post.
+- Fixed: **A Batch Mode round checks each refused move and each fulfilled vow on its own words** (issue #399's audit). The round's check held every one to the first.
+- Fixed: **A line offered a journey keeps the offer on its retry after a rate limit** (issue #399's audit; SHIP-BOUND-FOR-READ-AS-NEAR). The retry could move the ship before the roll.
+- Changed: **The Consistency Check page says when a check did not run** (issue #399's audit). A failed or unparsed check was logged as a clean one; the checks made before a narration posts are shown by what each found.
+- Internal: **The narration's checks read their verdicts by line and their classes from one table** (issue #399, D3 and D4). The judge's lines are numbered and its verdicts name a line and quote the narration, or are dropped and logged. Each check runs for the class its line's row declares, the scene's own lines included.
 - Internal: **The long haul after round 8.**
   - The maintainer raised the caps to 400 actions, 1,600 calls and 240 minutes; $15 is unchanged.
   - The consistency check and its judge are on (JUDGE-OFF-IN-THE-LONG-HAUL, HARM-TOLD-WITHOUT-A-COST).

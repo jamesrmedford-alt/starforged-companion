@@ -1253,9 +1253,11 @@ export async function applyStateTransition(transition, campaignState, { narratio
     case "factContinuity": {
       // fact-continuity scope §11.2 — high-confidence consistency-check
       // contradictions land on the same GM-only Narrative Review surface.
+      // Whether the card posted, for the audit's dedup and its "Routed" mark
+      // (issue #399's audit N22d: a card that never posted was counted).
       if (transition.change === "contradicted") {
-        await postContradictionNotification(transition);
-        return null;
+        const card = await postContradictionNotification(transition);
+        return { posted: !!card, messageId: card?.id ?? null };
       }
       return null;
     }
@@ -2910,12 +2912,12 @@ function byRecency(a, b) {
 }
 
 async function postContradictionNotification(transition) {
-  if (!globalThis.ChatMessage?.create) return;
+  if (!globalThis.ChatMessage?.create) return null;
   const enabled = (() => {
     try   { return game.settings?.get(MODULE_ID, "contradictionNotifications") !== false; }
     catch { return true; }
   })();
-  if (!enabled) return;
+  if (!enabled) return null;
 
   const isFactContinuity = transition.entryType === "factContinuity";
   // A fact-continuity catch says what conflicts (issue #354 P2-19): the fact
@@ -2966,7 +2968,7 @@ async function postContradictionNotification(transition) {
     `</div>`;
 
   try {
-    await ChatMessage.create({
+    return await ChatMessage.create({
       content:  html,
       whisper:  game.users?.filter ? game.users.filter(u => u.isGM).map(u => u.id) : [],
       flags:    {
@@ -2977,7 +2979,9 @@ async function postContradictionNotification(transition) {
           // long haul's runner saw round 9's five lines "narrated twice". The
           // correction hook reads `factContinuityReview` instead.
           factContinuityReview:      isFactContinuity,
-          contradictedSubject:       transition.name ?? null,
+          // The narration it is about, by id: the X-Card withdraws the card
+          // with it (withdrawReviewCards; issue #399's audit N21).
+          reviewOf:                  typeof transition.narrationId === "string" ? transition.narrationId : null,
           // What the World Journal panel's row shows (issue #354 P2-19).
           ...(isFactContinuity ? { contradiction: { subject: transition.subjectLabel || transition.name || "", recorded, evidence } } : {}),
           contradictedTruthId:       transition.truthId ?? null,
@@ -2987,7 +2991,37 @@ async function postContradictionNotification(transition) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | worldJournal: postContradictionNotification failed:`, err);
+    return null;
   }
+}
+
+/**
+ * Withdraw the ◈ Narrative Review cards about narrations the X-Card removed
+ * (issue #399's audit N21): each quotes the removed prose ("The narration
+ * said: …") and offers to change a truth because of it. The audit writes no
+ * card for a narration already removed (XCARD-LATE-REVIEW); a card posted
+ * before the play is deleted here, by the narration's id it carries
+ * (`reviewOf`). A GM's call (the X-Card's finish runs on the GM who records
+ * the pause). Fail-open per card.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<number>} how many were withdrawn
+ */
+export async function withdrawReviewCards(narrationIds) {
+  const ids = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === "string" && id));
+  if (!ids.size || !globalThis.game?.user?.isGM) return 0;
+  let withdrawn = 0;
+  for (const m of [...(game.messages?.contents ?? [])]) {
+    const f = m?.flags?.[MODULE_ID];
+    if (!f?.factContinuityReview || !ids.has(f.reviewOf)) continue;
+    try {
+      await m.delete();
+      withdrawn += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | worldJournal: a review card for an X-carded narration could not be withdrawn:`, err?.message ?? err);
+    }
+  }
+  return withdrawn;
 }
 
 function escapeHtml(s) {

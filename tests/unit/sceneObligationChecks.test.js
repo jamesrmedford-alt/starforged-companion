@@ -96,11 +96,11 @@ describe('NOT SO [place] — a judge tripwire (overhaul 2 §6.2, §10.3)', () =>
     expect(apiPost).toHaveBeenCalledTimes(1);
     expect(apiPost.mock.calls[0][3]).toEqual({ label: 'obligationJudge' });
     const asked = userOf(apiPost.mock.calls[0]);
-    expect(asked).toContain('- [place] (NOT SO) Kobayashi IV fighting as a ship — firing, turning, running');
+    expect(asked).toContain('1. [place] BREACH: Kobayashi IV fighting as a ship — firing, turning, running');
     expect(asked).not.toContain('say where she is in your fact block');
     expect(call).toHaveBeenCalledTimes(1);
     expect(kept).toMatchObject({ raw: DRAFT, reasked: false });
-    expect(kept.verdicts).toContainEqual({ tag: 'place', quote: 'Still in the clamps at the lock', class: 'judge', action: 'logged' });
+    expect(kept.verdicts).toContainEqual({ tag: 'place', line: 1, quote: 'Still in the clamps at the lock', class: 'judge', action: 'logged', draft: 1 });
     expect(redraftBlock(DRAFT, [{ tag: 'place', quote: 'Still in the clamps at the lock' }], place))
       .toContain('- [place] Kobayashi IV is docked at Bleakhold Station by the ship\'s record.');
   });

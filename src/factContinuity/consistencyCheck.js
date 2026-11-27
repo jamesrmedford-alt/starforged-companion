@@ -32,7 +32,7 @@ import { getConnection } from '../entities/connection.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { generatedName } from '../entities/nameMatch.js';
-import { judgedView, judgeMayAct } from '../moves/contracts/checks.js';
+import { judgedView, judgeMayAct, judgedLine, JUDGED_LINES_RULE, quoteInNarration } from '../moves/contracts/checks.js';
 import { OBLIGATION_KINDS } from '../moves/contracts/obligations.js';
 
 const MODULE_ID     = 'starforged-companion';
@@ -101,7 +101,8 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // outcome, the stakes, the sheet — are audited here, kind `obligation`.
   // They ride an audit the ledger already calls for; they make no call of
   // their own (an empty ledger is still not audited).
-  const obligations = formatAuditObligations(options.obligations);
+  const auditLines = auditObligationLines(options.obligations);
+  const obligations = formatAuditObligations(auditLines);
 
   // A cutaway is somewhere else by design: not held to the characters' place
   // (D1 — round 9's a93 closing cutaway to Tamsin was carded against it).
@@ -125,14 +126,25 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   });
   const startedAt    = Date.now();
 
+  // Whether the audit ran, and why not (issue #399's audit N18: a failed or
+  // unparsed audit was logged as a clean one).
   let contradictions = [];
+  let audited = false;
+  let error = null;
   try {
     const text = await callHaiku(apiKey, systemPrompt);
-    contradictions = parseAuditResponse(text);
+    const read = parseAuditResponse(text, { withStatus: true });
+    audited = read.parsed;
+    error = read.parsed ? null : 'unparsed';
+    contradictions = read.contradictions;
   } catch (err) {
     console.warn(`${MODULE_ID} | consistencyCheck: Haiku call failed:`, err);
+    error = `error: ${String(err?.message ?? err)}`;
     contradictions = [];
   }
+  // A finding on an obligation line is one by its line, whatever kind the
+  // model gave it (N19, N20): by its number, else by its subject's tag.
+  contradictions = contradictions.map(c => withObligationLine(c, auditLines, view.text));
 
   // The X-Card may have removed the narration while the call was out: the
   // review card and the telemetry line both quote its prose, so neither is
@@ -147,44 +159,63 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   for (const c of contradictions) {
     if (c.confidence !== 'high') continue;
     // An obligation line's finding posts a card only for a kind that has
-    // passed the measure (issue #399, D7; checks.js judgeMayAct): logged
-    // below, as every finding is, and no card. Round 9's six cards were all
-    // wrong. Truths, state, place, retractions and identities card as before.
-    if (c.kind === 'obligation' && !judgeMayAct(obligationKindOf(c))) continue;
+    // passed the audit's measure (issue #399, D7; checks.js judgeMayAct):
+    // held — logged below, as every finding is — and no card. Round 9's six
+    // cards were all wrong. Truths, state, place, retractions and identities
+    // card as before.
+    if (c.kind === 'obligation' && !judgeMayAct(c.obligationKind, 'audit')) { c.action = 'held'; continue; }
     // Cross-turn dedup (narrator-consistency audit 2026-07): a standing
     // contradiction — prose that keeps asserting the same violated fact —
     // used to re-post an identical review card every narration. One card per
-    // (scene, subject, violated fact); telemetry below still logs every
-    // audit. In-memory by design: a reload re-arms the reminder once.
+    // (scene, kind, subject, violated fact); telemetry below still logs every
+    // audit. In-memory by design: a reload re-arms the reminder once. The key
+    // is claimed before the card is awaited, so two audits racing post one
+    // card, and given back when no card posted (N22).
+    const posted = dispatchedFor(campaignState.currentSceneId);
     const dedupKey = contradictionDedupKey(campaignState.currentSceneId, c);
-    if (_dispatchedContradictions.has(dedupKey)) continue;
+    if (posted.has(dedupKey)) { c.action = 'already posted'; continue; }
     // Each card is awaited: one played during an earlier card's post stops the rest.
     if (isNarrationXCarded(options.narrationId)) return { contradictions: [], dispatched };
+    posted.add(dedupKey);
     try {
       // What the card shows (issue #354 P2-19): the fact as recorded and the
       // narration's own words. It showed the subject and the audit's
       // `violated` alone — "ACTIVE SCENE STATE — isaac sutton location" — so
       // the GM could not tell what to correct.
       const shown = describeContradiction(c, campaignState, ledger);
-      await applyStateTransition({
+      const out = await applyStateTransition({
         entryType:        'factContinuity',
         change:           'contradicted',
         kind:             c.kind ?? 'truth',
         name:             c.subject ?? '(unknown)',
-        newValue:         c.evidence ?? '',
         summary:          c.violated ?? '',
         subjectLabel:     shown.subject,
         recorded:         shown.recorded,
         evidence:         shown.evidence,
-        // The truth the catch names, found in the scene's ledger: the audit
-        // never returned an id, so the review card's flag was always null and
-        // the Retract dialog could not point at the fact (issue #326 W63).
-        truthId:          c.truthId ?? resolveContradictedTruthId(c, campaignState),
+        // The truth the catch names, found in the scene's ledger by the
+        // finding's own words (issue #326 W63) — never an id the model gives,
+        // which the ledger never showed it (N24).
+        truthId:          resolveContradictedTruthId(c, campaignState),
         matchedEntityIds: options.matchedEntityIds ?? [],
+        // The narration the card is about: the X-Card withdraws it with the
+        // narration (N21 — XCARD-LATE-REVIEW held for one ordering only).
+        narrationId:      typeof options.narrationId === 'string' ? options.narrationId : null,
       }, campaignState);
-      _dispatchedContradictions.add(dedupKey);
-      dispatched = true;
+      // A card that did not post — notifications off, a refused create — is
+      // not counted as routed, and may post later (N22d). An unknown answer
+      // counts as posted.
+      if (out?.posted !== false) {
+        c.action = 'carded';
+        dispatched = true;
+        // Played while this card posted: it goes with the narration.
+        if (isNarrationXCarded(options.narrationId) && out.messageId) await withdrawReviewCardById(out.messageId);
+      } else {
+        posted.delete(dedupKey);
+        c.action = 'not posted';
+      }
     } catch (err) {
+      posted.delete(dedupKey);
+      c.action = 'not posted';
       console.warn(`${MODULE_ID} | consistencyCheck: dispatch failed:`, err);
     }
   }
@@ -198,6 +229,8 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     contradictions,
     elapsedMs,
     dispatched,
+    audited,
+    error,
   }).catch(err => console.warn(`${MODULE_ID} | consistencyCheck: telemetry failed:`, err));
 
   return { contradictions, dispatched };
@@ -238,10 +271,9 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     'STANDING NOW:',
     stateBlock?.trim() || '(none)',
     '',
-    'WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND MUST NOT (a TELL line left',
-    'untold, a NOT YET line told as done or a NOT SO line told as true IS a',
-    'contradiction — kind "obligation", "subject" the line\'s tag as written,',
-    'e.g. "[outcome]", "violated" the line):',
+    'WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND MUST NOT — numbered lines.',
+    `${JUDGED_LINES_RULE} A broken line IS a contradiction: kind "obligation",`,
+    '"line" its number, "subject" its tag as written (e.g. "[outcome]"), "violated" the line:',
     extra.obligations?.trim() || '(none)',
     '',
     'NARRATION:',
@@ -250,13 +282,13 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     'Return:',
     '{',
     '  "contradictions": [',
-    '    { "subject": string, "violated": string, "evidence": string,',
+    '    { "subject": string, "violated": string, "evidence": string, "line": number (an obligation\'s only),',
     '      "kind": "truth" | "state" | "place" | "retraction" | "identity" | "obligation",',
     '      "confidence": "high" | "medium" | "low" }',
     '  ]',
     '}',
     '',
-    '"subject" is the name as the section above writes it. "violated" is the',
+    '"subject" is the name as the section above writes it (an obligation: its tag). "violated" is the',
     'established fact itself, copied from its line above ("location: the bridge",',
     '"walks with a limp") — never a section heading or a bare field name.',
     '"evidence" is the narration\'s own words that conflict with it, quoted.',
@@ -271,14 +303,25 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
  * Parse the Haiku audit response. Robust against fenced code blocks and
  * prose preamble. Returns an array; missing / malformed input → []. Each
  * element is normalised to the documented shape, with unknown confidences
- * coerced to "low".
+ * coerced to "low"; a finding's `line` is kept — an obligation's number
+ * (D3). With `withStatus`, it returns `{ contradictions, parsed }`: a reply
+ * that is no JSON object with a `contradictions` list is no audit, and the
+ * audit logs it so (issue #399's audit N18). Never throws.
  *
- * Exported for testing.
+ * @param {string} rawText
+ * @param {{ withStatus?: boolean }} [opts]
+ * @returns {Array<Object>|{ contradictions: Array<Object>, parsed: boolean }}
  */
-export function parseAuditResponse(rawText) {
-  if (typeof rawText !== 'string' || !rawText.trim()) return [];
+export function parseAuditResponse(rawText, { withStatus = false } = {}) {
+  const read = readAuditReply(rawText);
+  return withStatus ? read : read.contradictions;
+}
+
+/** The audit's reply, read (parseAuditResponse): its findings, and whether it parsed at all. */
+function readAuditReply(rawText) {
+  if (typeof rawText !== 'string' || !rawText.trim()) return { contradictions: [], parsed: false };
   const stripped = stripFences(rawText).trim();
-  if (!stripped) return [];
+  if (!stripped) return { contradictions: [], parsed: false };
 
   let parsed = null;
   try {
@@ -286,12 +329,12 @@ export function parseAuditResponse(rawText) {
   } catch {
     // Fall back: extract the first object in the string.
     const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) return [];
-    try { parsed = JSON.parse(match[0]); } catch { return []; }
+    if (!match) return { contradictions: [], parsed: false };
+    try { parsed = JSON.parse(match[0]); } catch { return { contradictions: [], parsed: false }; }
   }
 
-  const list = Array.isArray(parsed?.contradictions) ? parsed.contradictions : [];
-  return list
+  if (!Array.isArray(parsed?.contradictions)) return { contradictions: [], parsed: false };
+  const contradictions = parsed.contradictions
     .filter(c => c && typeof c === 'object')
     .map(c => ({
       subject:    typeof c.subject    === 'string' ? c.subject.trim()    : '',
@@ -299,9 +342,10 @@ export function parseAuditResponse(rawText) {
       evidence:   typeof c.evidence   === 'string' ? c.evidence.trim()   : '',
       kind:       normaliseKind(c.kind),
       confidence: normaliseConfidence(c.confidence),
-      truthId:    typeof c.truthId    === 'string' ? c.truthId.trim()    : null,
+      ...(Number.isInteger(c.line) ? { line: c.line } : (/^\s*\d+\s*$/.test(String(c.line ?? '')) ? { line: Number(c.line) } : {})),
     }))
     .filter(c => c.subject && c.violated);
+  return { contradictions, parsed: true };
 }
 
 /**
@@ -451,7 +495,7 @@ function normaliseConfidence(v) {
 }
 
 function normaliseKind(v) {
-  const s = String(v ?? '').toLowerCase();
+  const s = String(v ?? '').trim().toLowerCase();
   // `place`: where the characters are or their ship is, by the table's
   // record (overhaul 2 §5.8 — the `frame` and `ship` kinds folded in; the
   // frame is the narration's own colour now, and no contradiction to audit).
@@ -460,55 +504,101 @@ function normaliseKind(v) {
 }
 
 /**
- * A narration's obligation lines for the audit's prompt (overhaul 4): one a
- * line, its list and tag first — "TELL [outcome] …". Empty for none.
+ * The obligation lines the audit is given (overhaul 4): every line with words
+ * but a certain-class one — enforced in code before the narration posted
+ * (issue #399, D2: round 9's audit re-judged [apparatus], [person], [here]
+ * and [arrival] eleven times). Their order is their numbers.
  *
- * @param {Array<{ list?: string, kind?: string, text?: string }>|undefined} obligations
- * @returns {string}
+ * @param {Array<{ list?: string, kind?: string, text?: string, judge?: string }>|undefined} obligations
+ * @returns {Array<Object>}
  */
-function formatAuditObligations(obligations) {
-  if (!Array.isArray(obligations)) return '';
+function auditObligationLines(obligations) {
+  if (!Array.isArray(obligations)) return [];
   return obligations
     .filter(o => o && typeof o.text === 'string' && o.text.trim())
-    // A certain-class line was enforced in code before the narration posted
-    // (issue #399, D2): round 9's audit re-judged [apparatus], [person],
-    // [here] and [arrival] eleven times.
-    .filter(o => OBLIGATION_KINDS[o.kind]?.check !== 'certain')
-    // Written for the judge where the kind has a sentence for it, else the
-    // narrator's own instruction (D2).
-    .map(o => `${o.list ?? 'TELL'} [${o.kind ?? '?'}] ${String(o.judge ?? o.text).trim()}`)
-    .join('\n');
+    .filter(o => OBLIGATION_KINDS[o.kind]?.check !== 'certain');
 }
 
 /**
- * The obligation kind an audit finding names — its `[kind]` tag, in the
- * subject or the line it says was broken — or ''. Never throws.
+ * The audit's obligation lines as its prompt shows them: numbered (D3), each
+ * its tag and how a judge reads it — a judge sentence as the breach itself,
+ * else its list and the narrator's words (checks.js judgedLine, one wording
+ * for both passes). Empty for none.
  *
- * @param {{ subject?: string, violated?: string }} c
+ * @param {Array<Object>} lines — auditObligationLines's
  * @returns {string}
  */
-function obligationKindOf(c) {
-  const m = /\[([a-z-]+)\]/i.exec(`${c?.subject ?? ''} ${c?.violated ?? ''}`);
-  return m ? m[1].toLowerCase() : '';
+function formatAuditObligations(lines) {
+  return (lines ?? []).map((o, i) => { const l = judgedLine(o); return `${i + 1}. ${l.mark} [${o.kind ?? '?'}] ${l.words}`; }).join('\n');
 }
 
-// Review cards already posted, keyed by scene + subject + violated fact.
-// Bounded: entries for finished scenes are dropped the first time a new
-// scene's contradiction lands (single-scene working set).
-const _dispatchedContradictions = new Set();
-let _dedupSceneId = null;
+/** A finding's subject as a line's tag ("[outcome]"), or '' — only a subject that is a tag and nothing else. */
+const tagOf = (subject) => /^\[([a-z-]+)\]$/i.exec(String(subject ?? '').trim())?.[1]?.toLowerCase() ?? '';
 
 /**
- * Dedup key for a dispatched contradiction. Exported for unit testing.
- * Clears the working set when the scene changes so the set stays small.
+ * A finding, classed by the obligation line it names (issue #399's audit
+ * N19, N20): its `line` number, else a subject that is exactly a given
+ * line's tag — whatever `kind` the model gave it ("truth", "obligations", a
+ * missing one), it is an obligation finding, and `obligationKind` is its
+ * line's kind. A finding labelled "obligation" that names no line stays one,
+ * with no kind (held, never carded). The quote check (D3): an obligation
+ * finding whose evidence is not the narration's own words is dropped from
+ * the cards — held, `why` saying so. Pure.
+ *
+ * @param {Object} c — a parsed finding
+ * @param {Array<Object>} lines — the obligation lines the audit was given, numbered in order
+ * @param {string} text — the judged view
+ * @returns {Object}
+ */
+function withObligationLine(c, lines, text) {
+  const byNumber = Number.isInteger(c.line) && c.line >= 1 && c.line <= lines.length ? lines[c.line - 1] : null;
+  const tag = tagOf(c.subject);
+  const byTag = !byNumber && tag ? lines.filter(o => o?.kind === tag) : [];
+  const line = byNumber ?? (byTag.length ? byTag[0] : null);
+  if (!line && c.kind !== 'obligation') return c;
+  const out = { ...c, kind: 'obligation', obligationKind: line?.kind ?? '' };
+  if (line && c.evidence && !quoteInNarration(text, c.evidence)) out.why = 'not in the narration';
+  if (out.why) out.obligationKind = '';
+  return out;
+}
+
+// Review cards already posted, a set of keys for each of the last few
+// scenes — a late audit for an earlier scene no longer clears the live
+// scene's keys (issue #399's audit N22b).
+const DEDUP_SCENES_KEPT = 3;
+const _dispatchedByScene = new Map();
+
+/** The keys of the review cards posted in a scene, its set made on first use; the oldest scenes' dropped. */
+function dispatchedFor(sceneId) {
+  const scene = sceneId ?? 'no-scene';
+  let set = _dispatchedByScene.get(scene);
+  if (!set) {
+    set = new Set();
+    _dispatchedByScene.set(scene, set);
+    while (_dispatchedByScene.size > DEDUP_SCENES_KEPT) _dispatchedByScene.delete(_dispatchedByScene.keys().next().value);
+  }
+  return set;
+}
+
+/**
+ * Dedup key for a dispatched contradiction: its scene, kind, subject and
+ * violated fact — the kind with them since issue #399's audit (N22a: a
+ * retraction finding after a strike shared the struck truth card's key, and
+ * posted no card). Exported for unit testing.
  */
 export function contradictionDedupKey(sceneId, c) {
   const scene = sceneId ?? 'no-scene';
-  if (scene !== _dedupSceneId) {
-    _dispatchedContradictions.clear();
-    _dedupSceneId = scene;
+  const norm = (v) => String(v ?? '').trim().toLowerCase();
+  return `${scene}|${norm(c?.kind) || 'truth'}|${norm(c?.subject)}|${norm(c?.violated)}`;
+}
+
+/** Delete a review card the X-Card's removal reached while it posted (N21). Fail-open. */
+async function withdrawReviewCardById(messageId) {
+  try {
+    await globalThis.game?.messages?.get?.(messageId)?.delete?.();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | consistencyCheck: a review card for an X-carded narration could not be withdrawn:`, err?.message ?? err);
   }
-  return `${scene}|${String(c?.subject ?? '').toLowerCase()}|${String(c?.violated ?? '').toLowerCase()}`;
 }
 
 /**

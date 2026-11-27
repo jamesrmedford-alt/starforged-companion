@@ -225,7 +225,9 @@ describe('runConsistencyCheck', () => {
         entryType:        'factContinuity',
         change:           'contradicted',
         name:             'Vance',
-        truthId:          'tr-abc12345',
+        // The ledger's own truth, found by the finding's words — never the id
+        // the model gave, which the ledger never showed it (issue #399's audit N24).
+        truthId:          null,
         matchedEntityIds: ['JE.x7'],
       });
       expect(out.dispatched).toBe(true);

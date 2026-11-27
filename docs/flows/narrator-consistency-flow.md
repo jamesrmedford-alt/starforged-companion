@@ -73,19 +73,29 @@ D9's logged class — the narration's obligation lines, one a line with its
 list and tag, handed in by the narrator through `applyNarratorSidecar`'s
 `obligations`: the move's, the paced line's, the round's, the oracle
 follow-up's; they ride an audit the ledger calls for and make no call of
-their own; `formatAuditObligations` sends each in its judge sentence where
-its kind has one, and never a certain-class line — the code held the
-narration to those before it posted, and eleven of round 9's audit findings
-were on them, issue #399 D2) —
+their own; `formatAuditObligations` sends them numbered, each a judge
+sentence as the breach itself (`BREACH`, `checks.js judgedLine`) or else its
+list and the narrator's words, and never a certain-class line — the code held
+the narration to those before it posted, and eleven of round 9's audit
+findings were on them, issue #399 D2 — under the judge's own rule for them,
+`JUDGED_LINES_RULE`: a thing about to happen, feared, offered or merely
+possible breaks nothing) —
 via one Haiku call (the model `consistencyCheck.js` names, `MAX_TOKENS`
 1300, with a `stop_reason` truncation warning, through `api-proxy.js`). What the
 narration described — its colour, and the frame's Where and Now — is not
 audited: a narration that changes it is no contradiction. Response kinds:
 `truth | state | place | retraction | identity | obligation` (a `frame` or
 `ship` reply reads as `place`; `obligation`: a TELL line left untold, a NOT
-YET told as done, a NOT SO told as true — its subject the line's tag), each
+YET told as done, a NOT SO told as true, a BREACH committed — its `line` the
+line's number, its subject the line's tag), each
 with confidence high/medium/low; parsing is
-fence-and-preamble tolerant and never throws.
+fence-and-preamble tolerant and never throws. A finding is an obligation one
+by its line number, or by a subject that is exactly a line's tag, whatever
+`kind` the model wrote (`withObligationLine`, issue #399's audit N19/N20 —
+"truth" or a missing kind posted a truth card); one whose evidence is not the
+narration's own words is held. Whether the audit ran is logged with it:
+`audited` false and `error` for a failed call or a reply that did not parse
+(N18 — both were logged as a clean audit).
 
 **Who passes matched entities:** the move path, `@scene`, and paced all
 pass `relevance/extras.matchedEntityIds` into the apply ctx, so the audit's
@@ -105,10 +115,19 @@ label `obligationJudge`, 4 s, fail-open), sent the judged view too — it was
 sent the whole prose, and re-asked a70 on its own offer line. It runs only on
 a GM, with this audit's setting on (`narrator.js obligationJudgeOn`). **A
 judge verdict acts only for a kind that has passed the measure**
-(`judgeMayAct`; none has yet, issue #399 D7): until then it is logged —
-`action: "logged"` on the telemetry row — and the first draft posts. Round
-9's four re-asks were all on wrong verdicts. The full class list is in
-`narrator-context-flow.md` (the obligations block).
+(`judgeMayAct(kind, "judge")`; none has yet, issue #399 D7): until then it is
+logged — `action: "logged"` on the telemetry row — and the first draft posts.
+Round 9's four re-asks were all on wrong verdicts. Since slice 3 (D3) its
+lines are numbered, and it answers by number with the narration's own words:
+a verdict that names no line, or quotes words the judged view does not hold
+(`quoteInNarration`), is dropped as a row with `why`. Each judge sentence is
+put as the breach (`BREACH`), never under its NOT SO. When it does not judge
+it says why (`timeout`, `refused`, `cut off at its token cap`, `unparsed`,
+`error: …`, `no key`). It is not called, and writes no row, once the caller's
+`stopped()` — the X-Card watcher's quiet test, or a round taken over — is
+true. At its 4 s cutoff the request is not cancelled: it runs to its own
+deadline and is logged in the API Log (the audit's N7, left alone). The full
+class list is in `narrator-context-flow.md` (the obligations block).
 
 ## 2. From catch to correction
 
@@ -138,8 +157,14 @@ judge verdict acts only for a kind that has passed the measure**
   (`index.js`) reads `factContinuityReview`; the ring's defensive exclude
   (`worldJournalContradiction`) stays.
   **An obligation finding posts no card** until its kind has passed the
-  measure (issue #399 D7, `judgeMayAct`): it is returned and logged, as
-  every finding is. Round 9's six obligation cards were all wrong.
+  audit's measure (issue #399 D7, `judgeMayAct(kind, "audit")`): it is
+  returned and logged with `action: "held"`, as every finding is logged.
+  Round 9's six obligation cards were all wrong.
+  The card carries the narration it is about (`reviewOf`): the X-Card's
+  finish withdraws it (`worldJournal.js withdrawReviewCards`, from
+  `safety.js finishXCardRemoval`), and one posted while the X-Card was
+  played is deleted at once (issue #399's audit N21 — XCARD-LATE-REVIEW kept
+  only a late card out).
   The card's `factContinuityReview` also lists it in the World Journal panel
   lists it under Contradictions with **Correct…** (the same dialog, when the
   card has the button) and Dismiss — never the lore actions. Override
@@ -272,9 +297,13 @@ judge verdict acts only for a kind that has passed the measure**
 
 ## 4. Design-level exposure — dispositions (2026-07)
 
-- **Cross-turn dedup — addressed.** One review card per (scene, subject,
-  violated fact); the in-memory set clears on scene change, so a reload
-  re-arms the reminder once. Telemetry keeps the full stream.
+- **Cross-turn dedup — addressed.** One review card per (scene, kind,
+  subject, violated fact) — the kind since issue #399's audit (N22a). The
+  in-memory sets are kept for the last three scenes (a late audit for an
+  earlier scene clears no live one's, N22b); a key is claimed before the
+  card is awaited (N22c) and given back when no card posted — notifications
+  off, a refused create — which is then not counted as routed (N22d). A
+  reload re-arms the reminder once. Telemetry keeps the full stream.
 - **Medium-confidence catches stay telemetry-only — reaffirmed** and now
   recorded (decisions.md → consistency reaffirmations): high-confidence is
   the GM-interrupt bar; the Pacing Telemetry journal's Consistency Check

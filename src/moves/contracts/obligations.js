@@ -185,10 +185,36 @@ const items = (list) => list.map(x => `\n  - ${x}`).join("");
 /**
  * One row a kind: its list (a function where the kind's list depends on what
  * it tells — a price pending is NOT YET, declined NOT SO), its check class
- * (slice 4), and its text builder.
+ * (slice 4; since issue #399 D4 the class checks.js holds the line to —
+ * checkClassOf), its text builder, and for a judge line the words the judge
+ * reads (`judge`). The scene's own lines are rows too, built by
+ * factContinuity/sceneTurns.js through obligationLine.
  * @type {Readonly<Object<string, { list: string|Function, check: "certain"|"floor"|"judge"|"logged", text: Function }>>}
  */
 export const OBLIGATION_KINDS = Object.freeze({
+  // The scene's own lines (overhaul 2 §6.2, §7.3, §10.3 — sceneTurns.js
+  // sceneObligations): a beat that opens a scene, a docked ship's fight, and
+  // what play let go. Their class was declared nowhere (issue #399, D4).
+  scene: Object.freeze({
+    list: "TELL", check: "logged",
+    text: ({ opening }) => `This beat opens a new scene: ${opening}. Open it there — where the characters `
+      + "are now, who is here. What still binds is under ACTIVE SCENE; the last scene's description is not carried: describe "
+      + "this place fresh.",
+  }),
+  place: Object.freeze({
+    list: "NOT SO", check: "judge",
+    text: ({ ship, at }) => `${ship} is docked at ${at} by the ship's record. If this fight `
+      + "is the ship's, she is no longer docked: say where she is in your fact block (ship/position). If it is fought on foot, "
+      + "she stays docked.",
+    // What the judge reads: the line's NOT SO as a statement.
+    judge: ({ ship, at }) => `${ship} fighting as a ship — firing, turning, running — while the narration still has her docked, berthed `
+      + `or in the clamps at ${at}. A fight on foot while she stays docked breaks nothing.`,
+  }),
+  letgo: Object.freeze({
+    list: "NOT SO", check: "floor",
+    text: ({ letGo }) => `Play let this go: "${letGo.text}". Do not end on it or bring it back unless the `
+      + "player's line takes it up.",
+  }),
   // A line of speech said again, word for word (THE-REFRAINS-THE-LIST-CANNOT-NAME,
   // round 8: a92 gave Tamsin a84's "Then you're in it as deep as I am").
   // Held by its certain check (checks.js); the session's lines ride on it.
@@ -335,6 +361,9 @@ export const OBLIGATION_KINDS = Object.freeze({
   }),
   vow: Object.freeze({
     list: "TELL", check: "floor",
+    // The vow's name rides on its line (issue #399's audit N13): a round's
+    // check held every [vow] line to the first fulfilment's vow.
+    carry: ({ resolution }) => ({ vowName: resolution?.moveTarget ?? null }),
     text: () => "THE VOW IS FULFILLED. " +
       "This move fulfils a vow. Say what the vow set out to find, do or learn, and only as far as the " +
       "story holds it: what the recent scene and your instructions state — a hidden plan's truth only " +
@@ -373,6 +402,9 @@ export const OBLIGATION_KINDS = Object.freeze({
   }),
   premise: Object.freeze({
     list: "NOT SO", check: "judge",
+    // The refusal's code rides on its line, for its trip words (issue #399's
+    // audit N13: a round tripped every [premise] line on one refusal's words).
+    carry: ({ refusal }) => ({ refusalCode: refusal?.code ?? null }),
     text: ({ refusal }) => {
       const claim = refusal?.premise?.claim ? cap(refusal.premise.claim) : "What the line sets about";
       const never = refusal?.premise?.never ? `: never ${refusal.premise.never}` : "";
@@ -478,8 +510,12 @@ export const OBLIGATION_KINDS = Object.freeze({
       + "does not make it so: tell what is there.",
     // Issue #399, D2: it read "…something this result of the dice denies —
     // Ashen Wake: has the better angle", and the judge read the fact as the
-    // thing denied — round 9's a34, a36 and a54 flagged narrations that told it.
-    judge: ({ subject, fact }) => `The dice decided this: ${subject} — ${fact}. It is broken only if the narration says the opposite.`,
+    // thing denied — round 9's a34, a36 and a54 flagged narrations that told
+    // it. Written as the breach, as every judge sentence is (checks.js
+    // judgedLine marks it BREACH): the audit's N1 found slice 1's "The dice
+    // decided this: …" still put under NOT SO's "telling it as true breaks it".
+    judge: ({ subject, fact }) => `The narration says the opposite of what the dice decided. The dice decided: ${subject} — ${fact}. `
+      + "A narration that tells this as so, or does not mention it, breaks nothing.",
   }),
   // A second-person set-piece's character is "you" (issue #389 #4,
   // OPENING-IN-THE-THIRD-PERSON: three of the sixth live round's six openings
@@ -508,10 +544,27 @@ const namesList = (xs) => {
 
 const line = (kind, input = {}) => {
   const row = OBLIGATION_KINDS[kind];
+  if (!row) throw new Error(`no obligation kind "${kind}"`);
   const list = typeof row.list === "function" ? row.list(input) : row.list;
   // A judge line may say to the judge what it trips on in its own words (checks.js judgeNarration).
-  return { kind, list, text: row.text(input), ...(typeof row.judge === "function" ? { judge: row.judge(input) } : {}) };
+  return { kind, list, text: row.text(input), ...(typeof row.judge === "function" ? { judge: row.judge(input) } : {}),
+    // What a check reads beside the words, where a row carries it ([vow]'s name, [premise]'s refusal code).
+    ...(typeof row.carry === "function" ? row.carry(input) : {}) };
 };
+
+/**
+ * One obligation line of `kind`, built by its row: `{ kind, list, text }`,
+ * with `judge` where the row has one. For the lines built outside this file
+ * (sceneTurns.js sceneObligations), so a kind's words and class live on its
+ * row alone.
+ *
+ * @param {string} kind
+ * @param {Object} [input] — what the row's builders read
+ * @returns {{ kind: string, list: string, text: string, judge?: string }}
+ */
+export function obligationLine(kind, input = {}) {
+  return line(kind, input);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // [state] — what the sheet says of what the beat touches

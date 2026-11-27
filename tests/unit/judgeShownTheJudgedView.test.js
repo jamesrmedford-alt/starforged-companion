@@ -188,7 +188,8 @@ describe('the pre-post judge is sent the judged view (D1)', () => {
 });
 
 describe('D2 — the [dice] sentence, written for the judge', () => {
-  it('a34\'s line as the judge reads it now: the fact is what the dice decided, broken only by the opposite', async () => {
+  // Slice 3 (the audit's N1): written as the breach, and put to the judge as a BREACH, never under NOT SO.
+  it('a34\'s line as the judge reads it now: the breach is saying the opposite of what the dice decided', async () => {
     const a34 = JUDGED.find(j => j.step === 'a34');
     const recorded = a34.lines.find(o => o.kind === 'dice').text;
     // As round 9 sent it — the fact after the dash read as the thing denied (a34, a36, a54).
@@ -196,11 +197,12 @@ describe('D2 — the [dice] sentence, written for the judge', () => {
     expect([subject, fact]).toEqual(['Ashen Wake', 'has the better angle on the Kobayashi IV, which is pinned by the docking clamps']);
     const lines = obligationsFor({ mode: 'paced', line: 'I hold the line', dice: [{ subject, fact, words: ['ashen', 'wake'] }] });
     const dice = lines.find(o => o.kind === 'dice');
-    expect(dice.judge).toBe('The dice decided this: Ashen Wake — has the better angle on the Kobayashi IV, which is pinned by the docking clamps. '
-      + 'It is broken only if the narration says the opposite.');
+    expect(dice.judge).toBe('The narration says the opposite of what the dice decided. The dice decided: Ashen Wake — has the better angle '
+      + 'on the Kobayashi IV, which is pinned by the docking clamps. A narration that tells this as so, or does not mention it, breaks nothing.');
     await judgeNarration(a34.narration, [dice], { apiKey: 'sk-test' });
     const sent = apiPost.mock.calls.at(-1)[2].messages[0].content;
-    expect(sent).toContain(`- [dice] (NOT SO) ${dice.judge}`);
+    expect(sent).toContain(`1. [dice] BREACH: ${dice.judge}`);
+    expect(sent).not.toContain('(NOT SO)');
     expect(sent).not.toContain('denies');
   });
 });
@@ -231,7 +233,7 @@ describe('the audit is sent the judged view, and no line the code already held t
     const lines = obligationsFor({ mode: 'paced', line: 'I hold the line', dice: [{ subject: 'Ashen Wake', fact: 'has the better angle', words: ['ashen', 'wake'] }] });
     const dice = lines.find(o => o.kind === 'dice');
     await runConsistencyCheck('The Ashen Wake holds off.', sceneState(), { obligations: lines });
-    expect(auditPrompt()).toContain(`NOT SO [dice] ${dice.judge}`);
+    expect(auditPrompt()).toMatch(new RegExp(`\\d+\\. BREACH \\[dice\\] ${dice.judge.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     expect(auditPrompt()).not.toContain(dice.text);
   });
 });
@@ -284,7 +286,7 @@ describe('a cutaway is not held to the characters\' place (D1) — a93, the sess
       expect(runConsistencyCheck, userMessage).toHaveBeenCalledTimes(1);
       told.push(runConsistencyCheck.mock.calls[0][2].narrationKind);
     }
-    expect(told).toEqual(['cutaway', 'cutaway', 'session_vignette']);
+    expect(told).toEqual(['cutaway', 'cutaway', null]);
   });
 });
 

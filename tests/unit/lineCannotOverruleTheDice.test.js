@@ -143,7 +143,8 @@ describe('NOT SO [dice]: the line does not make otherwise so', () => {
       const dice = lines.find(o => o.kind === 'dice');
       // Issue #399, D2: the fact is what the dice decided, never the thing denied.
       expect(dice, mode).toMatchObject({ list: 'NOT SO', words: FACTS[0].words,
-        judge: `The dice decided this: Cinder Wren — ${A41_FACT}. It is broken only if the narration says the opposite.` });
+        judge: `The narration says the opposite of what the dice decided. The dice decided: Cinder Wren — ${A41_FACT}. `
+          + 'A narration that tells this as so, or does not mention it, breaks nothing.' });
       expect(formatObligationsBlock(lines), mode).toContain(`- [dice] What the dice decided stands — Cinder Wren: ${A41_FACT}. `
         + 'A line that takes otherwise for granted does not make it so: tell what is there.');
     }
@@ -165,8 +166,8 @@ describe('NOT SO [dice]: the line does not make otherwise so', () => {
     const lines = obligationsFor({ mode: 'paced', line: A77_LINE, dice: FACTS });
     const verdict = await judgeNarration(A77_TOLD, trippedLines(A77_TOLD, lines), { apiKey: 'sk-test' });
     expect(apiPost.mock.calls.at(-1)[2].messages[0].content)
-      .toContain(`- [dice] (NOT SO) The dice decided this: Cinder Wren — ${A41_FACT}. It is broken only if the narration says the opposite.`);
-    expect(verdict).toEqual({ violations: [{ tag: 'dice', quote: 'The wreck of the Cinder Wren' }], judged: true });
+      .toContain(`1. [dice] BREACH: The narration says the opposite of what the dice decided. The dice decided: Cinder Wren — ${A41_FACT}.`);
+    expect(verdict).toMatchObject({ violations: [{ tag: 'dice', line: 1, quote: 'The wreck of the Cinder Wren' }], dropped: [], judged: true });
   });
 });
 
@@ -223,7 +224,7 @@ describe('a77, through the paced narration', () => {
     const out = await narratePacedInput(A77_LINE, game.settings.get(MODULE_ID, 'campaignState'), { speakerActorId: 'pc-mira' });
     const judged = apiPost.mock.calls.filter(c => c[3]?.label === 'obligationJudge');
     expect(judged.length, 'the judge was asked once').toBe(1);
-    expect(judged[0][2].messages[0].content).toContain('- [dice] (NOT SO)');
+    expect(judged[0][2].messages[0].content).toContain('1. [dice] BREACH:');
     expect(narrationCalls().length, 'no re-ask').toBe(1);
     expect(JSON.stringify(out ?? '')).toContain('The wreck of the Cinder Wren');
     expect(JSON.stringify(out ?? '')).not.toContain(KEPT);

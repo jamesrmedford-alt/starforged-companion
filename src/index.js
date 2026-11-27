@@ -11069,16 +11069,16 @@ export function wireCombatTrackCardButtons(message, root) {
 onChatMessageRender((message, root) => wireCombatTrackCardButtons(message, root));
 
 /**
- * Wire the "Correct a fact" button on narrator cards
+ * Wire the "Retract the offending fact" button on ◈ Narrative Review cards
  * (fact-continuity scope §10.2). Two-hook pattern per CLAUDE.md: the card
- * HTML is rendered with the button in postNarrationCard /
- * postPacedNarrativeCard; click handlers are attached here at render time.
+ * HTML is rendered with the button in worldJournal.js
+ * postContradictionNotification; the click handler is attached here at
+ * render time. The review card is the button's only producer: narrator cards
+ * lost theirs in v1.7.25, and the review card is no narration (issue #399,
+ * D5 — its audit's N23 took the narrator-card arm out).
  */
 onChatMessageRender((message, root) => {
-  // A narration, or a ◈ Narrative Review card — no narration since issue
-  // #399 (D5), whose Retract button opens the same dialog.
-  const flags = message.flags?.[MODULE_ID];
-  if (!flags?.narratorCard && !flags?.factContinuityReview) return;
+  if (!message.flags?.[MODULE_ID]?.factContinuityReview) return;
   if (!factContinuityEnabledFromSettings()) return;
 
   const btn = root.querySelector('[data-action="openCorrectionDialog"]');

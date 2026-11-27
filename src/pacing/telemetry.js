@@ -103,6 +103,13 @@ async function writePacingDecision(entry) {
  * @param {Array}  entry.contradictions — full audit result from the Haiku call
  * @param {number} [entry.elapsedMs]
  * @param {boolean} [entry.dispatched]  — true when ≥1 high-confidence routed
+ * @param {boolean} [entry.audited]     — whether the audit ran: false when its call
+ *   failed or its reply did not parse (issue #399's audit N18 — both were logged
+ *   as a clean audit); `error` says why
+ * @param {string|null} [entry.error]
+ * @param {string|null} [entry.obligations] — a narration's obligation verdicts
+ *   (narrator.js logObligationVerdict): the mode they were checked in; the row
+ *   is the check before posting, not an audit
  * @returns {Promise<void>}
  */
 export function logConsistencyDecision(entry) {
@@ -128,6 +135,8 @@ async function writeConsistencyDecision(entry) {
       contradictions: Array.isArray(entry.contradictions) ? entry.contradictions : [],
       elapsedMs:      typeof entry.elapsedMs === "number" ? entry.elapsedMs : null,
       dispatched:     !!entry.dispatched,
+      ...(typeof entry.audited === "boolean" ? { audited: entry.audited, error: entry.error ?? null } : {}),
+      ...(typeof entry.obligations === "string" ? { obligations: entry.obligations } : {}),
     };
 
     if (existing) {
@@ -321,14 +330,36 @@ function renderHtml(entries, label) {
   ].join("");
 }
 
+/**
+ * What a row says it found: an audit's count of findings — or that it did not
+ * run, and why — and a narration's check before posting by what each verdict
+ * did (issue #399's audit N5, N17: a failed judge and a clean one both read
+ * "0 high / N total").
+ */
+function consistencyRowSummary(e) {
+  const found = Array.isArray(e.contradictions) ? e.contradictions : [];
+  if (typeof e.obligations === "string") {
+    const count = (pick) => found.filter(pick).length;
+    const unjudged = found.filter(c => c.class === "judge" && c.judged === false).map(c => c.error ?? "failed");
+    const parts = [
+      ["logged", count(c => c.action === "logged")], ["re-asked", count(c => c.action === "reask")],
+      ["dropped", count(c => c.action === "dropped")], ["posted broken", count(c => c.action === "posted-broken")],
+    ].filter(([, n]) => n).map(([what, n]) => `${n} ${what}`);
+    if (unjudged.length) parts.push(`not judged (${unjudged.join(", ")})`);
+    return `${e.obligations}: ${parts.join(" · ") || "nothing found"}`;
+  }
+  if (e.audited === false) return `not audited (${e.error ?? "failed"})`;
+  const high  = found.filter(c => c.confidence === "high").length;
+  const held  = found.filter(c => c.action === "held").length;
+  return `${high} high / ${found.length} total${held ? ` · ${held} held` : ""}`;
+}
+
 function renderConsistencyHtml(entries) {
   const rows = entries.slice(-50).reverse().map(e => {
     const time   = e.ts ? new Date(e.ts).toLocaleTimeString() : "—";
-    const high   = (e.contradictions ?? []).filter(c => c.confidence === "high").length;
-    const total  = (e.contradictions ?? []).length;
-    const flags  = `${high} high / ${total} total`;
+    const flags  = consistencyRowSummary(e);
     const proseExcerpt = escapeHtml(e.prose ?? "");
-    return `<tr><td>${time}</td><td>${escapeHtml(e.sceneId ?? "—")}</td><td>${flags}</td><td>${e.dispatched ? "✓" : ""}</td><td>${proseExcerpt}</td></tr>`;
+    return `<tr><td>${time}</td><td>${escapeHtml(e.sceneId ?? "—")}</td><td>${escapeHtml(flags)}</td><td>${e.dispatched ? "✓" : ""}</td><td>${proseExcerpt}</td></tr>`;
   }).join("");
   return [
     `<h2>Consistency Check Telemetry</h2>`,

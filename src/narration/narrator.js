@@ -275,32 +275,44 @@ function xCardPlayCount() {
 export function watchXCard(campaignState) {
   const playsAtStart = xCardPlayCount();
   const dropsAtStart = connectionDrops();
+  // Why the narration is to be discarded, or null — the one test both
+  // `interrupted` and `stopped` read.
+  const why = () => {
+    // This client's connection dropped while the narration was written: a
+    // pause recorded meanwhile never reached its cache, so neither the count
+    // nor the flag can be trusted — the narration is discarded, its sidecar
+    // never applied (issue #347 AB19).
+    if (connectionDrops() !== dropsAtStart) return 'drop';
+    // Nor can a narration started on a page whose connection had already
+    // dropped: its cache may lack an X-Card played during the drop — a
+    // player's page, which keeps narrating on the player's own key (the
+    // Private Channel; a command or follow-up at a table with no keyed GM),
+    // is not reloaded for it (STALE-PLAYER-PAGE).
+    if (pageIsStale()) return 'stale';
+    if (!isXCardActive(campaignState) && xCardPlayCount() === playsAtStart) return null;
+    return 'xcard';
+  };
   return {
     interrupted(label) {
-      // This client's connection dropped while the narration was written: a
-      // pause recorded meanwhile never reached its cache, so neither the
-      // count nor the flag can be trusted — the narration is discarded, its
-      // sidecar never applied (issue #347 AB19).
       _discardedForDrop = false;
       _discardedForStale = false;
-      if (connectionDrops() !== dropsAtStart) {
+      const reason = why();
+      if (reason === 'drop') {
         console.warn(`${MODULE_ID} | ${label}: the connection to the server dropped while the narration was generated — discarded.`);
         _discardedForDrop = true;
-        return true;
-      }
-      // Nor can a narration started on a page whose connection had already
-      // dropped: its cache may lack an X-Card played during the drop — a
-      // player's page, which keeps narrating on the player's own key (the
-      // Private Channel; a command or follow-up at a table with no keyed GM),
-      // is not reloaded for it (STALE-PLAYER-PAGE).
-      if (pageIsStale()) {
+      } else if (reason === 'stale') {
         console.warn(`${MODULE_ID} | ${label}: this page's connection to the server dropped earlier and it has not reloaded — discarded.`);
         _discardedForStale = true;
-        return true;
+      } else if (reason === 'xcard') {
+        console.debug(`${MODULE_ID} | ${label}: X-Card played while the narration was generated — discarded.`);
       }
-      if (!isXCardActive(campaignState) && xCardPlayCount() === playsAtStart) return false;
-      console.debug(`${MODULE_ID} | ${label}: X-Card played while the narration was generated — discarded.`);
-      return true;
+      return reason !== null;
+    },
+    // The same test, quietly — no log and no flag: the check before posting
+    // asks it before its judge and its rows (checks.js narrateKeepingObligations
+    // `stopped`, issue #399's audit N14).
+    stopped() {
+      return why() !== null;
     },
   };
 }
@@ -1636,6 +1648,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       ask,
       moveObligations,
       { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line },
+        stopped: () => xCard.stopped(),
         onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
     );
     const raw = kept.raw;
@@ -1689,6 +1702,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
         const raw = (await narrateKeepingObligations(ask,
           moveObligations,
           { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line },
+            stopped: () => xCard.stopped(),
             onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
         )).raw;
         if (xCard.interrupted('narrateResolution')) {
@@ -2150,6 +2164,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       const raw = (await narrateKeepingObligations(ask,
         roundObligations,
         { apiKey, judge: obligationJudgeOn(), ctx: roundCheckContext(entries),
+          // Discarded if the X-Card is played or the round taken over meanwhile.
+          stopped: () => xCard.stopped() || superseded(),
           onVerdict: (v) => logObligationVerdict('round', v, campaignState, narrationId) },
       )).raw;
       if (superseded()) return { posted: null, superseded: true };
@@ -4562,6 +4578,7 @@ export async function narrateOracleFollowup({
   // opposite not (overhaul 4: checks.js narrateKeepingObligations).
   const oracleObligations = [...oracleObligationsFor({ kind, question, rolledLine, here: arrivalHere }), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const checking = { apiKey, judge: obligationJudgeOn(), ctx: { question: sanitizePlayerText(question ?? ''), line: question ?? '' },
+    stopped: () => xCard.stopped(),
     onVerdict: (v) => logObligationVerdict('oracle', v, campaignState, narrationId) };
   // A local `ask`, so the playthrough harness files the call as this
   // function's (lib/claude.mjs PASS_THROUGH looks through it and the check).
@@ -5087,7 +5104,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   const closing = /^\s*CLOSING VIGNETTE\b/i.test(String(userMessage ?? ''));
   const person = perspective === 'second_person' && !closing ? personNamesOf(character) : null;
   const obligations = obligationsFor({ mode: 'set-piece', material: rolledWordsOf(seeds, { told: `${systemPrompt}\n${userMessage}` }), person });
-  const checking = { judge: false, onVerdict: (v) => logObligationVerdict('session_vignette', v, campaignState, narrationId) };
+  const checking = { judge: false, stopped: () => xCard.stopped(), onVerdict: (v) => logObligationVerdict('session_vignette', v, campaignState, narrationId) };
   const ask = (addendum) => (addendum && xCard.interrupted('narrateSessionVignette') ? null : callNarratorAPI({
     label: addendum ? 'narrateSessionVignette:reask' : 'narrateSessionVignette',
     apiKey, systemPrompt,
@@ -5638,6 +5655,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         pacedObligations,
         { apiKey, judge: obligationJudgeOn(),
           ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
+          stopped: () => xCard.stopped(),
           onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
       );
       const raw = kept.raw;
@@ -5687,6 +5705,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
             pacedObligations,
             { apiKey, judge: obligationJudgeOn(),
               ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
+              stopped: () => xCard.stopped(),
               onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
           );
           const raw = keptAgain.raw;
@@ -5694,9 +5713,11 @@ export async function narratePacedInput(playerText, campaignState, options = {},
             await postPacedNarrationPausedCard(campaignState);
             return null;
           }
+          // Its offer too, as the first try's (issue #399's audit N31: a binding
+          // ship change moved the ship before a Set a Course's roll here).
           const text = applyNarratorSidecar(raw, campaignState, { obligations: pacedObligations,
             moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-            mode: 'paced_narrative', ground: groundOf({ line: playerText }),
+            mode: 'paced_narrative', ground: groundOf({ line: playerText }), offer: suggestedMove ?? null,
           });
           if (text?.trim()) {
             const journey = journeyOfferOf(keptAgain, suggestedMove);
@@ -6984,6 +7005,8 @@ function logObligationVerdict(mode, v, campaignState, narrationId) {
       sceneId: campaignState?.currentSceneId ?? '', sessionId: campaignState?.currentSessionId ?? null,
       sessionNumber: campaignState?.sessionNumber ?? null, prose: `[obligations ${mode}${narrationId ? ` ${narrationId}` : ''}]`,
       contradictions: rows, dispatched: false,
+      // The check before posting, by mode — the page shows it by what each verdict did (issue #399's audit N17).
+      obligations: mode,
     })?.catch?.(() => {});
   } catch (err) {
     console.warn(`${MODULE_ID} | obligations: the verdict could not be logged:`, err?.message ?? err);
@@ -7177,7 +7200,7 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
       // audited too, kind `obligation`.
       obligations:       Array.isArray(ctx.obligations) ? ctx.obligations : [],
       // A cutaway is not held to where the characters are (issue #399, D1).
-      narrationKind:     ctx.cutaway === true ? 'cutaway' : (ctx.mode ?? null),
+      narrationKind:     ctx.cutaway === true ? 'cutaway' : null,
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );

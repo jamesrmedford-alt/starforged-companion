@@ -136,7 +136,7 @@ describe("narrateKeepingObligations", () => {
     expect(apiPost).toHaveBeenCalledTimes(1);
     expect(call).toHaveBeenCalledTimes(1);
     expect(kept).toMatchObject({ raw: DRAFT, reasked: false, stillBroken: [] });
-    expect(kept.verdicts).toContainEqual({ tag: "premise", quote: "starts on the cuts", class: "judge", action: "logged" });
+    expect(kept.verdicts).toContainEqual({ tag: "premise", line: 1, quote: "starts on the cuts", class: "judge", action: "logged", draft: 1 });
     expect(kept.verdicts.some(v => v.action === "reask")).toBe(false);
     expect(onVerdict).toHaveBeenCalledWith(expect.objectContaining({ reasked: false }));
   });

@@ -33,6 +33,32 @@ rejected.
 - D9's "one judge and one re-ask a narration" stands. A certain or floor failure is re-asked as before.
 - The reason: in its only live sample the judge was wrong in five verdicts of five and the audit in six cards of six, and a wrong verdict is not free — it re-asks, and the redraft posts unjudged ("…would be a Forge a Bond, if you press it").
 - Rejected: *switch the judge off until it is measured.* Its logged verdicts are part of what is counted. The judge's calls and their delay before a narration posts are the cost of that while no kind acts.
+- Authority is per pass (slice 3; the audit's N3): `judgeMayAct(kind, "judge")` for a re-ask, `judgeMayAct(kind, "audit")` for a card. The two passes read every judge-class line with different prompts, so each is measured on its own.
+
+**Verdicts by line** (D3, slice 3):
+- The judge's lines are numbered, and it answers `{"violations":[{"line": n, "quote": "…"}]}` (`checks.js judgeNarration`, `verdictsByLine`). Two [dice] lines are told apart. The old answer by tag is taken only where it names exactly one line.
+- A verdict that names no line, or quotes words the judged view does not hold (`quoteInNarration`: case, emphasis, curly quotes and spacing aside, each part between ellipses in order), is dropped and logged as a row with `why`. So the offer line can never count.
+- The audit's obligation lines are numbered too, and a finding names its line. It is an obligation finding by its line, or by a subject that is exactly a line's tag, whatever `kind` the model gave it (`withObligationLine`; the audit's N19, N20: "truth", "obligations" or a missing kind posted a truth card). One whose evidence is not the narration's words is held.
+- A judge sentence is put to both passes as the breach itself, `BREACH`, never under its NOT SO (`judgedLine`; the audit's N1). Slice 1's [dice] sentence still went out as "(NOT SO) The dice decided this: …" under "telling it as true breaks it". [dice] now reads "The narration says the opposite of what the dice decided. The dice decided: …". Both passes are given one rule for the lines (`JUDGED_LINES_RULE`), the judge's own: a thing about to happen, feared, offered or merely possible breaks nothing (the audit's N2).
+- The judge says why it did not judge: `timeout`, `refused`, `cut off at its token cap`, `unparsed`, `error: …` or `no key`.
+
+**The class is declared once** (D4, slice 3):
+- `checkClassOf(kind)` reads the `check` word on a kind's row (`obligations.js OBLIGATION_KINDS`). The checks are tables keyed by kind: `CERTAIN_CHECKS`, `FLOOR_CHECKS` (each with its action, re-ask or logged) and `TRIPWIRES`. Each runs only for a line whose row declares its class. A test asserts that the tables' kinds are the rows' kinds, class by class.
+- The scene's own lines are rows now: [scene] logged, [place] judge and [letgo] floor. `sceneTurns.js sceneObligations` builds them through `obligationLine`, so their words live on the row too. Their class was declared nowhere.
+- [chosen-since] gets the floor check its row declared, [chosen]'s: a word of the cost's meter, logged (the audit's N30).
+- A row may carry what its check reads beside the words (`carry`): [premise]'s refusal code and [vow]'s name. A Batch Mode round held every [premise] line to one refusal's trip words, and every [vow] line to the first fulfilment's vow (the audit's N13).
+
+**What the audit fixed with them** (slice 3, from the list on issue #399):
+- Every check in code reads the narration's body, with the offer line off (N12). "*Flying your skiff to Hollow Spire is a Set a Course.*" alone re-asked [here] as a flight.
+- The check before posting writes one row a verdict, each marked with its draft (`draft` 1 or 2; N15). It writes none for a narration the caller then discards, and calls no judge once it is stopped (`stopped`, the X-Card watcher's quiet test `xCard.stopped()`; N14).
+- A redraft with no prose keeps the first draft (N8). The redraft is held to the floor checks as well as the certain, and what it still breaks is reported (N9; posting the first draft instead is the maintainer's call).
+- The re-ask names every line broken, once, in its own words, with all of its quotes (N11).
+- The audit's row says whether it ran (`audited`, `error`; N18). The Consistency Check page shows a check before posting by what its verdicts did, and an audit that did not run as such (N5, N17).
+- The review card carries the narration it is about (`reviewOf`). The X-Card's finish withdraws it (`worldJournal.js withdrawReviewCards`), and a card posted while the X-Card was played goes too (N21). It follows XCARD-LATE-REVIEW, which kept only a late card out.
+- The dedup keys on the kind too, keeps a set for each of the last three scenes, claims its key before the card is awaited, and gives it back when no card posted (N22). A card that did not post is not counted as routed.
+- The correction hook reads `factContinuityReview` alone (N23). The review card is its button's only producer.
+- Removed as written and never read (N24): the card's `contradictedSubject`, the audit's `newValue`, a model's own `truthId` (the resolver finds the truth), the mode passed as `narrationKind`, and the `JUDGE_TIMEOUT_MS` export.
+- The paced rate-limit retry keeps its offer (N31). It is outside the judge, but listed on the issue.
 
 ---
 

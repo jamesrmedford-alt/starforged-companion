@@ -1323,15 +1323,23 @@ possessive too) sends one Haiku call (`api-proxy.js`, label
 consistency check on). The trip words and the judge both read the
 narration's judged view (`checks.js judgedView`, issue #399 D1): no fact
 block and no closing offer line — round 9's a29 tripped three lines on its
-offer line's "fire" alone, and a70 was re-asked on its own offer line. A
-certain or floor failure is asked once more — the same prompt plus
+offer line's "fire" alone, and a70 was re-asked on its own offer line. Since
+slice 3 every check in code reads the body too (the audit's N12), and each
+class is the one its row declares (D4 — `checks.js checkClassOf`, and the
+tables `CERTAIN_CHECKS`, `FLOOR_CHECKS`, `TRIPWIRES`; the scene's [scene],
+[place] and [letgo] are rows, built through `obligationLine`; [premise]
+carries its refusal code and [vow] its vow's name, so a round's lines are
+each held to their own). The judge's lines are numbered and its verdicts name
+their line (D3). A certain or floor failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels
 `narrateResolution:reask`, `narratePacedInput:reask`, `narrateRound:reask`,
 `narrateOracleFollowup:reask`); **a judge verdict is asked again only for a
 kind that has passed the measure** (`judgeMayAct`, issue #399 D7 — none has
 yet): until then it is logged, `action: "logged"`, and the first draft
 posts. The second reply is
-held to the certain checks only and posted whatever it says. At most one
+held to the certain and floor checks and posted whatever they say (a reply
+with no prose keeps the first draft); its breaches are reported, each row
+marked with the draft it describes (`draft` 1 or 2). At most one
 judge call and one re-ask a narration. Each verdict is a row on the
 Consistency Check telemetry page (`kind: "obligation"`, mode `move` /
 `paced` / `round` / `oracle`). The lines the check does not hold a narration

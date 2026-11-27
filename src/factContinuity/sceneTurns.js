@@ -43,6 +43,7 @@
  */
 
 import { normaliseLetGo } from './provenance.js';
+import { obligationLine } from '../moves/contracts/obligations.js';
 
 /** The progress track types a scene's situation turns on, and the cause each is. */
 const TRACK_CAUSES = Object.freeze({ combat: 'fight', expedition: 'expedition', scene_challenge: 'challenge' });
@@ -342,25 +343,13 @@ export function sceneOpeningOf(state) {
 export function sceneObligations(state, { ship = '' } = {}) {
   const out = [];
   const opening = sceneOpeningOf(state);
-  if (opening) {
-    out.push({ kind: 'scene', list: 'TELL', text: `This beat opens a new scene: ${opening}. Open it there — where the characters `
-      + 'are now, who is here. What still binds is under ACTIVE SCENE; the last scene\'s description is not carried: describe '
-      + 'this place fresh.' });
-  }
+  // Each line is built by its row (obligations.js OBLIGATION_KINDS — its
+  // words and its class, issue #399 D4).
+  if (opening) out.push(obligationLine('scene', { opening }));
   const docked = opening && state.sceneBegan?.cause === 'fight' ? DOCKED_AT.exec(clean(ship)) : null;
-  if (docked) {
-    out.push({ kind: 'place', list: 'NOT SO', text: `${docked[1]} is docked at ${docked[2]} by the ship's record. If this fight `
-      + 'is the ship\'s, she is no longer docked: say where she is in your fact block (ship/position). If it is fought on foot, '
-      + 'she stays docked.',
-      // What the judge reads (checks.js): the line's NOT SO as a statement.
-      judge: `${docked[1]} fighting as a ship — firing, turning, running — while the narration still has her docked, berthed `
-        + `or in the clamps at ${docked[2]}. A fight on foot while she stays docked breaks nothing.` });
-  }
+  if (docked) out.push(obligationLine('place', { ship: docked[1], at: docked[2] }));
   const frame = state?.sceneFrame;
   const own = frame && typeof frame === 'object' && (frame.sceneId ?? null) === (state.currentSceneId ?? null);
-  for (const e of own ? normaliseLetGo(frame.letGo) : []) {
-    out.push({ kind: 'letgo', list: 'NOT SO', text: `Play let this go: "${e.text}". Do not end on it or bring it back unless the `
-      + 'player\'s line takes it up.', letGo: e });
-  }
+  for (const e of own ? normaliseLetGo(frame.letGo) : []) out.push({ ...obligationLine('letgo', { letGo: e }), letGo: e });
   return out;
 }
