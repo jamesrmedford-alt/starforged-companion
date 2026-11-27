@@ -4,7 +4,42 @@ Run `long-haul-live-20261127-202557` · live · class **suspected-quality-issue*
 
 ## The cold read
 
-_To write before anything below — `transcript.md` read straight through by a reader who has seen neither the charter, this run's questions nor the fixes it was to verify (in a Claude Code session, a sub-agent handed that one file), asked what the session was like to play: what a player would complain of, what repeats, what makes no sense, what the player was made to do. Its findings, each then checked against the evidence — and, first, what the charter itself made the player do that a person at the table would not._
+The cold read (`cold-read.md`): `transcript.md` read straight through by a reader who had seen neither the charter, this run's questions nor the fixes it was to verify. Its findings, worst first, each checked against the evidence (findings by number are `review-notes.md`'s).
+
+**First, what the charter made the player do that a person at the table would not:**
+- swear the vow in the Begin dialog and leave its reward card unanswered (a2, a75);
+- plant four facts in four lines, one of them by scripting Tamsin's act (a10–a13);
+- make the world's events itself: the distress call (a22), the cutter named before it appears (a27) and its attack (a28);
+- rename the cutter with `!truth` (a40–a42) and the connection mid-session (x19);
+- open End a Session and close it unanswered (x15), and raise the X-Card on a narration chosen by beat (x16);
+- ask its memory questions in runs (a18–a21, a48–a54, a79–a87);
+- make six Develop lines over one comm call to fill a track (a58–a68);
+- fulfil the vow at 4 of 10 boxes.
+
+Every progress roll's challenge dice are the charter's 1 and 2. Each question put to Mira and left unanswered (a13, a21, a25, a26, a55, a87) is left by a beat that moves on.
+
+1. **"The narrator's drafting note is printed in the story" (a77): confirmed** — findings 2 and 3. A wrong [unsaid] verdict on Okoro's "Hold the line," caused the re-ask, and the redraft opened with a note about the draft, which no check reads.
+2. **"The customs clerk changes sex" (a47 → a53): confirmed** — finding 8. "Her" from a26 to a43, "he" from a53. No prompt of session 3 held a pronoun for the unnamed clerk.
+3. **"The answer to the main vow is contradicted by the recap and feels unearned" (a71–a78): confirmed** — finding 7. The plan's truth names the foreman, and the code appended a drawn stranger, Talia Tolari. No prompt was told to show her first, so her name came first at the fulfilment, "off the page you sent her", a page never sent. The recap names both. Its motive ("to gain power") is the oracle pair the rolls card says was replaced.
+4. **"The narrator decides what Mira thinks and does at the start of every session": confirmed** (a2, a17, a47, a91) — a smaller observation (11). Each opening tells her mind and her plan in a jokey voice the play does not have.
+5. **"Who holds the manifest is never settled": confirmed in part.** The foreman's manifest (a3) and the one left with Tamsin (a12) are two documents the story never tells apart. a20 says so honestly. The recap's "still holds the manifest" is the plan's truth (7). Every probe's answer — Tamsin has it — is right.
+6. **"A survivor confirmed by the oracle disappears": confirmed** — finding 9. The YES (a43) is in the record but binds nothing. Session 3's opening was handed the survivor in its last narration and kept only the open lock.
+7. **"The X-Card made no visible difference" (x16): wrong.** a38 was removed and its facts withdrawn, and every later prompt carried X-CARD — REDIRECT. The voice and the lock it named are older than a38 (a23, a35, a36), and a43 is a new development. What a player sees is a scene that goes on.
+8. **"Game terms used as story facts": confirmed** (a80 "dangerous", a52 "command vehicle", a22 "a vital world") — 11. The italic move menus are the offer lines, the one place a move may be named.
+9. **"A false Narrative Review card" (a49): confirmed** — finding 1. But it is not that "Okoro is at Hollow Spire": the card held "Back at Hollow Spire" to where the characters are. `!at &lt;place&gt;` is the runner's transcript, which strips tags without decoding them; the table read `!at <place>`.
+10. **"The player is made to do things no person at a table would do"**: the charter's (above).
+11. **"Session 3's comm call is a dead loop" (a58–a72)**: the charter's beat 23. The prose under it is the refrains (finding 5): the hook man in every narration a57–a75, the clerk looking away ten times, Okoro's pen fourteen times. The hook man's threat ends offstage (a75).
+12. **"The vow reward is lost without a second prompt": the charter's** (its player never answers the card), and the fulfilment says so ✓.
+
+**Its smaller points:**
+- **a57's supplies: confirmed** — finding 6. "your supplies run thinner than you left them" with supply 5 throughout, and the plating told mended with integrity 4 to the end.
+- **The truths one scene early (a40): confirmed** — finding 10, as round 7.
+- **"Kobayashi IV Wreck Crater": confirmed** — the detector took the ship's name for the world's (11).
+- **"Deepen your bond" before any bond (a36): in part.** It is the linked vow's one deepen, by design; only the word is wrong.
+- **"The rename card is posted as if by the NPC" (x19) and "0 momentum (now 10)" (a89):** the game system's own alerts.
+- **"She pays in news … reverses a6" (a59): wrong.** It is Okoro's plan's clue, shown.
+- **"trade you for her own freedom" (a80):** from her hidden plan's possible ending, hinted in a scene answer (11).
+- The slips over a comm, the swinging airlocks, the pencil become a pen, and Okoro's knowing "Ilse's notes" and "the price you named": confirmed, each in its step's note.
 
 ## What this run was to answer
 
@@ -22,7 +57,48 @@ _To write before anything below — `transcript.md` read straight through by a r
 12. Repetition: is any line of speech of six words or more said twice, and how does the refrain count compare with round 9's?
 13. What it cost: calls, dollars and seconds a line against round 9 (469 calls, $3.26), with the judge and the audit on; beats done and checks violated against round 9.
 
-_To write — the answer to each, with its evidence, or that the run did not answer it._
+1. **Review cards: one, and it is false.**
+   - 71 audit calls found two contradictions and posted one ◈ Narrative Review card: the Place card at a49, on an `@scene` answer that looked back ("Back at Hollow Spire …"). It is not a cutaway, an offer line or a line the code held. It is the audit's own place check, which the measure never scored. The obligation line [place] is another thing, read by no judge (finding 1).
+   - The other, a85's, was low confidence and posted nothing. It was wrong too: it held Okoro's bond to an answer that agrees with it.
+   - No obligation card, truth card or state card was posted.
+2. **The judge's re-asks: one, on a passed kind, and wrong.**
+   - 15 judge calls (a25, a58–a70, a77, a87): 13 for [whereabouts] alone, one for [unsaid], one for both.
+   - One violation, a77 [unsaid], and so one re-ask, on a kind the measure passed. The verdict was wrong: "Hold the line," is Okoro's (finding 2), and its redraft was worse than the draft (finding 3).
+   - Every [whereabouts] call passed its narration (each a comm call to Hollow Spire or the place bait), and [here] fired on none.
+3. **Answered once: clean** — 0 of 1,389 checks violated, against round 9's 5. The review card is no longer counted as a narration.
+4. **The judge's cutoff: not reached.** The slowest judge call took 1.15 s (a65), so N7's cancel was not exercised.
+5. **Redrafts: two re-asks, both posted, neither refused.**
+   - a2's opening ([person], certain) and a77 ([unsaid], the judge). Neither redraft broke a certain or floor check, so N9 had nothing to refuse.
+   - a77's redraft should have been refused for its note about the draft, but no check reads that (finding 3).
+   - No narration of play was re-asked by a code check, so N10 (the posted draft judged) was not exercised.
+6. **The GM's note: none needed.** No narration still broke a line after its re-ask, so N16 was not exercised.
+7. **Set-pieces: held.**
+   - The oath scene (a3) and the clock vignette (a91) are told as "you", with no table words, and neither was asked again (N29).
+   - The haul has no inciting incident.
+   - The a2 opening's first draft named her ("gave Mira a great deal of bench"); its redraft says "you".
+8. **The offer line: every one recognised.**
+   - Ten narrations offered a move: a5, a12, a28, a56, a58, a60, a62, a64, a66 and a69. Make a Connection, Develop Your Relationship ×7, Enter the Fray and Repair.
+   - Each closed on an italic offer line naming that move. Each line was left out of the checks, and each card's Roll is that move (N32).
+   - No narration that was offered nothing closed on emphasis.
+9. **Harm with no cost: no bodily harm; one spent resource, not caught.**
+   - No [sheet] re-ask fired, and no harm is said of "you".
+   - a57 tells a cost the sheet never took: "your supplies run thinner than you left them", with supply 5 throughout. It also tells the plating mended, with integrity 4 to the end. The harm clause holds bodily harm only, and [sheet] is not one of the judge's kinds (finding 6; EFFECT-TOLD-BEFORE-APPLIED, the fourth round running).
+10. **The fight: never told beaten before its end.**
+    - Between Enter the Fray (a29) and Take Decisive Action (a36), the cutter is "still armed and still hers" (a35), never destroyed, dead, fled or beaten.
+    - No [foe] trip fired. Take Decisive Action ended it: "Her guns sag away … and go quiet."
+11. **Where Mira is: held.**
+    - No frame, recap or STANDING NOW moved her, and no one appeared in person where the record had them elsewhere.
+    - The four "one place" flags (a38, a39, a55, a84) are the cutter adrift off the ring, not her ship.
+    - The audit's one card is the false Place card (1).
+12. **Repetition: no line said twice word for word; refrains 30, the same as round 9's.**
+    - No line of speech of six words or more was said twice, so no [quote] re-ask fired.
+    - Near-repeats get past it: "Nobody has put their neck on my ledger before" (a61) and "No one has put their own fuel on my ledger before" (a67); "Keep that line open" (a59) and "Keep the line open" (a67).
+    - Refrains, words and phrases in a third or more of a session's narrations: 30, against round 9's 30, spread 7/15/8 against 11/10/9. "ledger" is in 8 of session 1's 10, and "light" in 15 of session 3's 17 (finding 5).
+13. **What it cost: a little less a line, a little faster.**
+    - $2.98, 418 calls, 91 actions and 35.3 minutes, against round 9's $3.26, 469, 95 and 40.6: $0.033 an action against $0.034.
+    - A line of play to its reply: p50 9.6 s, against 11.3 s.
+    - The judge made 15 calls (round 9: 19) and one re-ask (round 9: 4). The audit made 71 (round 9: 78) and one card (round 9: 6).
+    - 27 of 27 beats, against 26. 1,389 checks with none violated, against 1,453 with 5.
 
 | Dimension | Result | Basis | Trust |
 | --- | --- | --- | --- |
@@ -1363,5 +1439,27 @@ Per action: $0.0328. Per line of play: $0.0662.
 
 ## The reading
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**What the charter made happen.**
+- Its scripted dice give each beat's key move a strong hit, so every progress roll was 1, 2 and the vow closed at 4 of 10.
+- Its player makes the world's events, renames two things, asks its memory questions in runs and fills a track with six lines over one comm call.
+- It renames Tamsin at beat 19 but scores F3 by "Tamsin" alone, so a right answer that calls her Okoro was scored lost (finding 4). Rescored with "Okoro" as a variant, the run passes: 27 of 27 beats, no check violated, no fact lost.
+- None of this is the module's. For the first time, the long haul reached every beat.
+
+**#399's measure: two of three clean.**
+- The runner's answered-once check is clean, and the review card no longer reads as a narration.
+- One review card was posted, against six, and it is false: the audit's own [place] check read an answer that looked back as where the characters are.
+- The judge caused one re-ask, against four. It is on a kind that passed, but the verdict is wrong, and its redraft posted the narrator's note about the draft.
+- So the passes act far less, and each act is still wrong. The measure that passed [unsaid] did not hold a line of the NPC's speech on a button-made move. The audit's [place] is not in the measure at all. #399 stays open.
+
+**The audit's nine fixes were barely reached.**
+- N29 and N32 held where they were reached: three set-pieces checked with no judge, ten offer lines read right.
+- N7, N9, N10, N16, N26–N28 had nothing to act on. No judge call came near 4 s, no redraft broke a line, no narration stayed broken, there was one GM and no Batch Mode round.
+- Their proof stays the tests, and the batch-round playthrough re-recorded the same day.
+
+**What a player feels is the story's seams, and most are known rows.**
+- The cold read's worst is the note about the draft, at the vow's last beat.
+- Then a culprit named first at the fulfilment. Round 8's fix for that never fired: the vow's two rules disagree on a pending draft (finding 7).
+- Then a clerk who changes sex across a session break (8), and a survivor the oracle gave and the next session left behind (9).
+- The repeated detail is unchanged (5). So are a cost told and never taken (6, the fourth round running) and truths filed a scene early (10, round 7's).
+- Each has its cause read from the recorded prompts and the code. Findings 1–3 and 6–10 can each be fixed and proved on a recorded case. None needs another live run first.
 
