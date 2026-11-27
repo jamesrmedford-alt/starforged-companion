@@ -30,6 +30,14 @@ All notable changes to Starforged Companion are documented here.
   - Confirm makes them the roster's, and Dismiss drops them.
   - In round 8 the berth's visitor, never confirmed, followed the character "across the docks" to another settlement, and nothing knew where he was.
 - Fixed: **An arrival is held to who is where** (PEOPLE-WAITING-AT-THE-ARRIVAL). A hit on Set a Course or Finish an Expedition is told who the record has elsewhere, leaving out anyone who was with the characters as they set out, who may have come along. A narration whose fact block has one of those people at the arrival is asked again. The first-session playthrough's re-records had the Hollow Spire dockmaster waiting at both ends of both journeys.
+- Fixed: **What the dice decided is told sparingly** (DICE-LINES-UNBOUNDED, round 7: 61 such lines on 22 narrations, two contradicting each other). A beat is told what the dice decided about what its line names, with three limits. It never includes a player character's or their ship's own facts, which are the line's to tell. It leaves out the current scene's, which the scene block already holds. And it gives at most two a subject, the newest.
+- Fixed: **The ship sets out with the characters** (SHIP-LEFT-NEAR-ON-SETTING-OUT, round 7). An expedition for another place, or a Set a Course that misses, records the ship as under way when her record had her at the place they left. Every reader used to say "between places" beside "near Hollow Spire". The arrival docks her.
+- Fixed: **An unconfirmed person keeps their pronouns** (UNNAMED-FIGURE-PRONOUN-DRIFT, round 6: the customs officer was "she" in one session and "he" the next). The people not yet on record are told with the pronouns the narration gave them.
+- Fixed: **The Campaign Setup reminder stays where it was** (WORLD-TRUTHS-REMINDER-ON-RELOAD, six live rounds). A GM's reload no longer re-posts it at the foot of the chat, mid-fight. Once a session has been begun, a load posts none.
+- Fixed: **A move rolled as another says why** (round 8: "I Strike" rolled Clash with no word). The move card reads "↪ Strike becomes Clash: the character is in a bad spot."
+- Fixed: **An upgrade's extra progress reads as extra** (round 6). Burn Momentum's added mark posts "Marked progress once more, for the upgraded result", which used to read as a second count.
+- Fixed: **The Begin a Session card names the vow its dialog swears as the dialog's** (round 8's cold read took "Mira Kestrel swears one" for the game swearing it).
+- Fixed: **Set a Course's 🎲 aside fits a known route** (round 8: "You're further into the unknown than you intended to be" on a charted course).
 - Internal: **The long haul after round 8.**
   - The maintainer raised the caps to 400 actions, 1,600 calls and 240 minutes; $15 is unchanged.
   - The consistency check and its judge are on (JUDGE-OFF-IN-THE-LONG-HAUL, HARM-TOLD-WITHOUT-A-COST).

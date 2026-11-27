@@ -299,7 +299,9 @@ async function postBeginSessionCard(rollVignette, includeGalley = true, quest = 
     : !swearing
       ? `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — swear an iron vow to give this session a quest.</em></p>`
       : gmOnline
-        ? `<p class="sf-no-vow"><em>No vow was in play besides a background vow: ${escapeHtml(swearing.swearer.name)} swears one — <strong>${escapeHtml(swearing.newVow)}</strong>${vowRank}. Its card follows.</em></p>`
+        // The vow is the dialog's, written by the table — the eighth live round's
+        // cold read took "Mira Kestrel swears one" for the game swearing it.
+        ? `<p class="sf-no-vow"><em>No vow was in play besides a background vow, so ${escapeHtml(swearing.swearer.name)} swears the vow written in the Begin a Session dialog: <strong>${escapeHtml(swearing.newVow)}</strong>${vowRank}. Its card follows.</em></p>`
         : `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — the vow <strong>${escapeHtml(swearing.newVow)}</strong> is not sworn until a GM has joined.</em></p>`;
 
   // The table's own word on where and when the session picks up (issue #381

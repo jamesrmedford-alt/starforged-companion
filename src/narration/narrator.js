@@ -127,6 +127,8 @@ const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']
 
 /** The most a beat is told of what the dice decided about what its line names (issue #389 #2). */
 const DICE_FACTS_MAX = 4;
+/** The most of them about one subject — the newest (DICE-LINES-UNBOUNDED, round 7: nine narrations told four, two contradicting). */
+const DICE_FACTS_PER_SUBJECT = 2;
 const DICE_STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'into', 'their', 'there', 'where', 'what', 'have',
   'been', 'were', 'they', 'them', 'your', 'about', 'over', 'down', 'back', 'still', 'then', 'than', 'just', 'some']);
 const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
@@ -141,14 +143,19 @@ const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '')
  * by a word of its name, or of what one of the record's name changes says it
  * is — "raider cutter" for the Cinder Wren, the sixth live long haul's "the
  * cutter's wreck" — or the name of what a change says the subject is. The
- * latest first, at most DICE_FACTS_MAX. Never throws: a record that cannot be
- * read tells nothing.
+ * latest first, at most DICE_FACTS_MAX, and DICE_FACTS_PER_SUBJECT a subject.
+ * Never a player character's or the command vehicle's own (`own`: the table's
+ * side is the line's to tell), nor the current scene's (`sceneId`: WHAT BINDS
+ * holds them) — DICE-LINES-UNBOUNDED, round 7: [dice] rode on 22 of 44
+ * narrations, 61 lines, the PC's own ship's two of them contradicting each
+ * other. Never throws: a record that cannot be read tells nothing.
  *
  * @param {string} line
- * @param {{ source?: Object }} [opts] — the record to read (default: the stored pages)
+ * @param {{ source?: Object, own?: string[], sceneId?: string|null }} [opts] — the record to read (default: the
+ *   stored pages); the table's own names (meterOwnersOf); the current scene's id
  * @returns {Array<{ subject: string, fact: string, words: string[] }>}
  */
-export function diceFactsOf(line, { source } = {}) {
+export function diceFactsOf(line, { source, own = [], sceneId = null } = {}) {
   try {
     const said = new Set(diceWords(line));
     if (!said.size) return [];
@@ -157,20 +164,30 @@ export function diceFactsOf(line, { source } = {}) {
     const same = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
     const facts = [];
     const seen = new Set();
+    const perSubject = new Map();
+    const ownKeys = new Set((Array.isArray(own) ? own : []).map(n => String(n ?? '').trim().toLowerCase()).filter(Boolean));
+    // Each session's beats, the newest first: a beat's truths with its scene
+    // (the same truths as the session's `open.established`, which carries none).
+    const told = (session) => (Array.isArray(session?.beats) ? session.beats : []).filter(b => !b?.removed).reverse()
+      .flatMap(b => [...(Array.isArray(b.established) ? b.established : [])].reverse().map(t => ({ t, scene: b.scene ?? null })));
     for (const session of [...(record?.sessions ?? [])].reverse()) {
-      for (const t of [...(session?.open?.established ?? [])].reverse()) {
+      for (const { t, scene } of told(session)) {
         if (t?.basis !== 'dice') continue;
+        if (sceneId && scene === sceneId) continue;
         // As the record's views read it (summaryView.js subjectText): its words, or the name read gave it.
         const subject = typeof t.subject === 'string' ? t.subject.trim()
           : String(t.subject?.text ?? t.subject?.name ?? '').trim();
         const fact = String(t.fact ?? '').trim();
         if (!subject || !fact) continue;
+        if (ownKeys.has(subject.toLowerCase())) continue;
+        if ((perSubject.get(subject.toLowerCase()) ?? 0) >= DICE_FACTS_PER_SUBJECT) continue;
         const also = changes.flatMap(c => (same(c?.to, subject) ? [c.about] : same(c?.about, subject) ? [c.to] : []));
         const words = [...new Set([subject, ...also].flatMap(diceWords))];
         if (!words.some(w => said.has(w))) continue;
         const key = `${subject.toLowerCase()}|${fact.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        perSubject.set(subject.toLowerCase(), (perSubject.get(subject.toLowerCase()) ?? 0) + 1);
         facts.push({ subject, fact, words });
         if (facts.length >= DICE_FACTS_MAX) return facts;
       }
@@ -1564,7 +1581,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
   const fightStanding = await fightStandingOf(resolution, character?.actorId ?? null);
   const moveObligations = [...obligationsFor({ mode: 'move', resolution: fightStanding ? { ...resolution, fightStanding } : resolution, situation: touched.situation,
     line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince, madeLine,
-    dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? ''), whereabouts: extras.elsewhere ?? null,
+    dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? '', { own: meterOwnersOf(campaignState), sceneId: campaignState?.currentSceneId ?? null }),
+    whereabouts: extras.elsewhere ?? null,
     here: extras.here ?? null, person: beatPersonOf(settings, campaignState, character), quotes: extras.saidLines ?? [] }),
     ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const userMessage  = buildNarratorUserMessage(
@@ -4849,7 +4867,7 @@ const PENDING_PEOPLE_MODES = new Set(['move_resolution', 'paced_narrative', 'rou
  * have been there, so this is told, never checked). Never throws.
  *
  * @param {Object|null} campaignState
- * @returns {Array<{ name: string, description: string, where: string|null }>}
+ * @returns {Array<{ name: string, description: string, pronouns: string, where: string|null }>}
  */
 function pendingPeopleTold(campaignState) {
   try {
@@ -4863,7 +4881,7 @@ function pendingPeopleTold(campaignState) {
       const where = seen
         ? (seen.place?.name ? `last with the characters at ${seen.place.name}` : 'last with the characters, between places')
         : (came ? `came into the story at ${came}` : null);
-      return { name: p.name, description: p.description ?? '', where };
+      return { name: p.name, description: p.description ?? '', pronouns: p.pronouns ?? '', where };
     });
   } catch (err) {
     console.debug?.(`${MODULE_ID} | the people not yet on record were not read for the scene:`, err?.message ?? err);
@@ -5555,7 +5573,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       // the scene obliges (overhaul 2 §10.3).
       pacedObligations = [...obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
         situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince,
-        dice: diceFactsOf(playerText ?? ''), whereabouts: extras.elsewhere ?? null,
+        dice: diceFactsOf(playerText ?? '', { own: meterOwnersOf(campaignState), sceneId: campaignState?.currentSceneId ?? null }),
+        whereabouts: extras.elsewhere ?? null,
         here: extras.here ?? null, person: beatPersonOf(settings, campaignState, character), quotes: extras.saidLines ?? [] }),
         ...sceneObligationsOf(extras.sceneLedger, campaignState)];
       userMessage = buildPacedNarrativeUserMessage(

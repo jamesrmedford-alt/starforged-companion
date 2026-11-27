@@ -564,7 +564,9 @@ export function buildLedgerBlock(campaignState, options = {}) {
     for (const p of pending) {
       const what = typeof p.description === 'string' && p.description.trim() ? ` — ${clipWords(p.description.trim(), 90).replace(/[\s.;,:]+$/, '')}` : '';
       const where = typeof p.where === 'string' && p.where.trim() ? `; ${p.where.trim()}` : '';
-      placeLines.push(`    ${p.name.trim()}${what}${where}`);
+      // Their pronouns as the narration gave them, so they hold (UNNAMED-FIGURE-PRONOUN-DRIFT).
+      const pronouns = typeof p.pronouns === 'string' && p.pronouns.trim() ? ` (${p.pronouns.trim()})` : '';
+      placeLines.push(`    ${p.name.trim()}${pronouns}${what}${where}`);
     }
   }
   const frameLines = [];

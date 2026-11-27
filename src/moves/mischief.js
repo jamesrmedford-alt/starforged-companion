@@ -221,12 +221,21 @@ function pickBalancedAside(narration, moveId, statUsed, category) {
                   "Not every challenge has a clean outcome."],
   };
 
+  // A move its category's lines misread: a Set a Course is a known route to a
+  // charted place, not the unknown (the eighth live round's a71 was told "You're
+  // further into the unknown than you intended to be" on a course it had flown).
+  const moveAsides = {
+    set_a_course: ["A charted route still has its own ideas.",
+                   "The course is known. The crossing is another matter."],
+  };
+
   // Try a stat aside first (50% of the time if stat matches)
   if (statAsides[statUsed] && Math.random() < 0.5) {
     return pick(statAsides[statUsed]);
   }
 
-  // Then try a category aside
+  // Then the move's own, then a category aside
+  if (moveAsides[moveId]) return pick(moveAsides[moveId]);
   if (categoryAsides[category]) {
     return pick(categoryAsides[category]);
   }

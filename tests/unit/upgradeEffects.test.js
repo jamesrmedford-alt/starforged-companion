@@ -158,6 +158,8 @@ describe("a combat move upgraded from a miss", () => {
     expect(pc.system.health.value).toBe(5);     // the price reverted
     expect(pc.system.momentum.value).toBe(2);   // reset
     expect(table.cards(f => f.combatProgressCard).map(c => c.flags[MODULE_ID].marksApplied)).toEqual([2]);
+    // The upgrade's marks are what its result adds: "more" (round 6's a40 read a second "once" as a double count).
+    expect(table.cards(f => f.combatProgressCard)[0].content).toContain("Marked progress 2 times more, for the upgraded result, on <strong>Boarders</strong>.");
     expect(content(card._id)).toContain("Also applied: progress marked 2 times on Boarders; in control.");
   });
 

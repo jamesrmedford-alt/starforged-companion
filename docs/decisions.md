@@ -61,6 +61,28 @@ rejected.
 - It is a certain check on the fact block's present alone. The journey's narration speaks of the places it crosses, so the place and motion readings stay off.
 - The kept first-session recording holds under it: its departure frames had Vance aboard. The CI replay is its proof, with no re-record.
 
+**The Campaign Setup reminder is a setup card** (WORLD-TRUTHS-REMINDER-ON-RELOAD, six live rounds; amends issue #362 AC58):
+- A card already in chat stays where it is. AC58's "a load replaces the card an earlier load posted" kept it to one card, but moved that card to the foot of the chat on every load, mid-fight in the long haul's reloads.
+- Once a session has been begun (`sessionStartedId`), a load posts none: a table playing without World Truths has chosen to.
+
+**The small items of rounds 6–8, fixed as their rows proposed (2026-11-27):**
+- DICE-LINES-UNBOUNDED: never the table's own side, never the current scene's, at most two a subject.
+- SHIP-LEFT-NEAR-ON-SETTING-OUT: the ship sets out with the characters.
+- UNNAMED-FIGURE-PRONOUN-DRIFT: a pending person is told with their pronouns.
+- A gate reroute is told on its card ("↪ Strike becomes Clash: the character is in a bad spot"): the gate returns the reroute's reason (`insteadWhy`).
+- An upgrade's extra progress reads "once more".
+- The Begin card names its vow as the dialog's.
+- Set a Course has asides of its own.
+
+Left, as not small:
+- the vow link card's "will deepen" after the deepen is spent (a historical card);
+- the detector's reading of a ship's name as a faction;
+- `!truth list`'s length;
+- a second foe's marks on the fight's one track;
+- an oracle twist against the fight;
+- an object's place;
+- the opening's place.
+
 **Rejected or left for a call:**
 - *A certain check for harm on a beat whose price took no health.* The judge is measured first; the maintainer agreed ("Ok").
 - *Listing devices and beat endings as worn.* Round 8's "unhurried" and the comm voice's eight endings are not listed (THE-REFRAINS (d)). The maintainer wants something more systematic than more lists, and held its design for now.

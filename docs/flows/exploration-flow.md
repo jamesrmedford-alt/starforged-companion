@@ -194,7 +194,10 @@ finish docks there and charts nothing.
   ship-position flag on the command vehicle and the sector-scene token syncs
   (its `report` says whether the token moved). A **miss sets out** (D1):
   waylaid, the characters are between places — the current location none
-  (`index.js setOut`) — until an arrival. Whatever Ship Positioning says, the narrator
+  (`index.js setOut`) — until an arrival. The ship sets out with them: when her
+  record had her at the place left, `shipSetsOut` writes her under way (free
+  text "under way — waylaid on the course to …" / "— on the expedition …",
+  `previous` the place left; SHIP-LEFT-NEAR-ON-SETTING-OUT). Whatever Ship Positioning says, the narrator
   is told — and, since round 8, NOT SO [arrival] holds the hit's fact block
   to who is where: nobody the record has elsewhere, who was not with the
   characters as they set out (`whereabouts.js departedWith`, the latest

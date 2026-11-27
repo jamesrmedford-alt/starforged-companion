@@ -327,3 +327,25 @@ describe('buildMischiefFraming — chaotic heuristics branches', () => {
     expect(f.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 7. A move its category's lines misread (the eighth live round's a71: a Set
+//    a Course on a known route was told "You're further into the unknown than
+//    you intended to be")
+// ---------------------------------------------------------------------------
+
+describe('buildMischiefAside — a Set a Course is a known route', () => {
+  it('is never told it went into the unknown; an expedition still may be', () => {
+    const seen = new Set();
+    for (const r of [0.01, 0.3, 0.6, 0.99]) {
+      const spy = vi.spyOn(Math, 'random').mockReturnValue(r);
+      seen.add(buildMischiefAside('We plot the jump to Hollow Spire.', 'set_a_course', 'supply', 'balanced'));
+      spy.mockRestore();
+    }
+    expect([...seen].some(a => /unknown/i.test(a))).toBe(false);
+    expect([...seen].every(a => /charted route|course is known/i.test(a))).toBe(true);
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.01);
+    expect(buildMischiefAside('We push into the dark.', 'undertake_an_expedition', 'supply', 'balanced')).toMatch(/unknown/);
+    spy.mockRestore();
+  });
+});

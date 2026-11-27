@@ -384,6 +384,12 @@ ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
 The marks land before the move's roll card is built; the "Combat progress"
 card that says so is posted after it (`afterMoveCard`, above) — for a held
 result too: the marks are the roll's, only its price and narration wait.
+An upgrade's added marks (Burn Momentum, Improve Result) post "Marked progress
+once more, for the upgraded result", so a second card no longer reads as a
+double count. A move the gate makes as another, a Strike in a bad spot being a
+Clash, carries its reason on the move card: "↪ Strike becomes Clash: the
+character is in a bad spot" (`gate.js` `insteadWhy` → `interpretation.rerouted`
+→ `index.js reroutedLine`).
 Since round 8 (FIGHT-PAST-ITS-END), a full track (40 ticks) is said in three
 places:
 - The "Combat progress" card adds "The track is full: another blow marks nothing

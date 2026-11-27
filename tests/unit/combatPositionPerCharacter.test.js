@@ -208,6 +208,15 @@ describe("two PCs in one fight roll by their own positions (booted table)", () =
     expect(forKira.opts.combatPosition).toBe("bad_spot");
   });
 
+  it("a Strike made in a bad spot is rolled as Clash, and its card says why (the eighth live round's unexplained Clash)", async () => {
+    await roll("pl-1", kira, { moveId: "strike", moveName: "Strike", statUsed: "iron" });
+    const card = table.world.messages().find(m => /becomes Clash/.test(m.content ?? ""));
+    expect(card?.content).toContain("↪ Strike becomes Clash: the character is in a bad spot.");
+    // Ren, in control, strikes as Strike: no such line.
+    await roll("pl-2", ren, { moveId: "strike", moveName: "Strike", statUsed: "iron" });
+    expect(table.world.messages().filter(m => /becomes Clash/.test(m.content ?? ""))).toHaveLength(1);
+  });
+
   it("Take Decisive Action is downgraded for the PC in a bad spot only", async () => {
     // As the interpreter's parse derives it from the schema: a progress move.
     const tda = { moveId: "take_decisive_action", moveName: "Take Decisive Action", statUsed: null,

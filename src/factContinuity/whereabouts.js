@@ -166,7 +166,7 @@ function placeNameOf(id, campaignState) {
  *
  * @param {Object} campaignState
  * @param {{ entities?: Object[]|null, messages?: Object[] }} [opts] — the roster, when the caller has read it; the chat log
- * @returns {Array<{ name: string, description: string, at: number|null, cardId: string|null, exact: true }>}
+ * @returns {Array<{ name: string, description: string, pronouns: string, at: number|null, cardId: string|null, exact: true }>}
  */
 export function pendingPeopleOf(campaignState, { entities = null, messages = undefined } = {}) {
   try {
@@ -182,7 +182,7 @@ export function pendingPeopleOf(campaignState, { entities = null, messages = und
       if (!key || seen.has(key) || dismissed.has(key)) continue;
       seen.add(key);
       if ([...recorded, ...pcs].some(n => nameKey(n) === key || personNameMatch(n, row.name))) continue;
-      out.push({ name: clean(row.name), description: row.description, at: row.at, cardId: row.cardId, exact: true });
+      out.push({ name: clean(row.name), description: row.description, pronouns: row.pronouns ?? '', at: row.at, cardId: row.cardId, exact: true });
       if (out.length >= PENDING_PEOPLE_MAX) break;
     }
     return out;

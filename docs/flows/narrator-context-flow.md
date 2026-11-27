@@ -1368,7 +1368,9 @@ Cinder Wren: engines hit and burning; driven off the docking ring with her guns
 silent. A line that takes otherwise for granted does not make it so: tell what
 is there." `narrator.js` `diceFactsOf` reads the record (`readRecord({ session:
 'campaign' })`, its names corrected): every session's established truths of
-basis `dice` whose subject the line names — a word of its name, or of what one
+basis `dice` — never a PC's or the command vehicle's own (`own`), nor the
+current scene's (`sceneId`; WHAT BINDS holds those), at most two a subject
+(DICE-LINES-UNBOUNDED) — whose subject the line names — a word of its name, or of what one
 of the record's name changes says it is ("the cutter's wreck" names the Cinder
 Wren, "raider cutter") — the latest first, at most four. A paced line and a
 typed move's narration carry it (a move made from a card has no line, and
@@ -1399,7 +1401,8 @@ met who are not yet on record (`Not yet on record —`, at most four):
   pendingPeopleTold` → `whereabouts.js pendingPeopleOf`, over the draft cards'
   pending person rows. It is read in the move, paced, round, oracle-follow-up
   and `@scene` modes.
-- **Each entry.** The draft's name and description, and where they are: "last
+- **Each entry.** The draft's name, its pronouns as the detector read them
+  (UNNAMED-FIGURE-PRONOUN-DRIFT), its description, and where they are: "last
   with the characters at X" from a frame that named them, else "came into the
   story at X", the place of their card's scene (`placeAtTime`).
 - **Why.** The fact block names them by the card's name, so their whereabouts

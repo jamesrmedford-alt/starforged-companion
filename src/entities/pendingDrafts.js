@@ -29,7 +29,7 @@ export const isPendingDraftRow = (d) => !d?.status || d.status === 'pending';
  * card's id and time, and the narration whose capture drafted it.
  *
  * @param {{ messages?: Object[], type?: string|null }} [opts] — `type`: one type's rows ("connection": the people)
- * @returns {Array<{ name: string, type: string|null, description: string, cardId: string|null, at: number|null, narrationId: string|null }>}
+ * @returns {Array<{ name: string, type: string|null, description: string, pronouns: string, cardId: string|null, at: number|null, narrationId: string|null }>}
  */
 export function pendingDraftRows({ messages = undefined, type = null } = {}) {
   try {
@@ -47,6 +47,9 @@ export function pendingDraftRows({ messages = undefined, type = null } = {}) {
           name,
           type: typeof d.type === 'string' ? d.type : null,
           description: typeof d.description === 'string' ? d.description.trim() : '',
+          // As the narration gave them (the detector's): told with the person, so they hold
+          // (UNNAMED-FIGURE-PRONOUN-DRIFT — the customs officer "she" in session 2, "he" in 3).
+          pronouns: typeof d.pronouns === 'string' ? d.pronouns.trim() : '',
           cardId: m.id ?? null,
           at: Number.isFinite(at) ? at : null,
           narrationId: typeof f.narrationId === 'string' && f.narrationId ? f.narrationId : null,

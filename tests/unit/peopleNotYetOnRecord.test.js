@@ -58,7 +58,7 @@ function cards({ clerk = 'pending', vance = 'pending' } = {}) {
       row(2, 'ship', 'Marrow Dray'),
     ]),
     card('card-spire', T + 6_000, [
-      row(0, 'connection', 'Vance Oduya', vance, 'The Hollow Spire dockmaster.'),
+      { ...row(0, 'connection', 'Vance Oduya', vance, 'The Hollow Spire dockmaster.'), pronouns: 'he/him' },
       row(1, 'connection', 'Mira Kestrel'),          // the detector's slip — the PC
       row(2, 'connection', 'Tamsin'),                // the recorded Tamsin Okoro's own name
     ]),
@@ -220,7 +220,8 @@ describe('through a paced narration', () => {
     expect(narration, 'the line was narrated').toBeTruthy();
     const system = narration.system.map(b => b.text).join('\n');
     expect(system).toContain('  Not yet on record — people met;');
-    expect(system).toContain('    Vance Oduya — The Hollow Spire dockmaster; came into the story at Hollow Spire');
+    // With the pronouns the narration gave him (UNNAMED-FIGURE-PRONOUN-DRIFT).
+    expect(system).toContain('    Vance Oduya (he/him) — The Hollow Spire dockmaster; came into the story at Hollow Spire');
     expect(system).toContain('    Station Clerk — A flat-voiced station clerk at the hatch who presses Mira for a berth fee; came into the story at Bleakhold Station');
     expect(system).not.toMatch(/\n {4}(?:Mira Kestrel|Tamsin|Officer)\b/);
   });

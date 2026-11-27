@@ -501,6 +501,8 @@ export async function readMove({
     { stage: "read", override: interpretation.gateOverride === true });
   if (verdict.ok && verdict.instead) {
     console.debug(`${MODULE_ID} | ${interpretation.moveId}: made as ${verdict.instead} (the move gate's reroute).`);
+    // Its card says why (the eighth live round's "I Strike" rolled Clash unexplained).
+    interpretation.rerouted = interpretation.rerouted ?? { from: interpretation.moveId, why: verdict.insteadWhy ?? null };
     interpretation.moveId   = verdict.instead;
     interpretation.moveName = moveDisplayName(verdict.instead);
   } else if (!verdict.ok) {
@@ -1120,6 +1122,7 @@ async function rollAndApply({
     }
     if (verdict.instead) {
       console.debug(`${MODULE_ID} | ${interpretation.moveId}: rolled as ${verdict.instead} (the move gate's reroute).`);
+      interpretation.rerouted = interpretation.rerouted ?? { from: interpretation.moveId, why: verdict.insteadWhy ?? null };
       interpretation.moveId   = verdict.instead;
       interpretation.moveName = moveDisplayName(verdict.instead);
     }
@@ -1301,6 +1304,8 @@ async function rollAndApply({
   // A Set a Course read as Undertake an Expedition: the move card says why
   // (issue #348 PT06; readMove).
   if (interpretation.courseRerouted) resolution.courseRerouted = interpretation.courseRerouted;
+  // A move the gate made as another (a Strike in a bad spot is a Clash): its card says so, and why.
+  if (interpretation.rerouted?.from && interpretation.rerouted.from !== resolution.moveId) resolution.rerouted = interpretation.rerouted;
   // A soft refusal the GM rolled anyway: the move card and the narration say
   // so (index.js postMoveResult; obligations.js TELL [overridden]).
   if (interpretation.gateNote) resolution.gateNote = interpretation.gateNote;
