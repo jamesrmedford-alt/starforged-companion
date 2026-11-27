@@ -19,7 +19,7 @@ rejected.
 **Lines written for the judge, and no certain line in the audit** (D2, its first part):
 - [dice]'s judge sentence reads "The dice decided this: *subject* — *fact*. It is broken only if the narration says the opposite." It read "…something this result of the dice denies — *subject*: *fact*", and the judge took the fact for the thing denied (a34, a36, a54).
 - The audit is sent each line in its judge sentence where its kind has one, else the narrator's instruction, and never a certain-class line: the code held the narration to those before it posted. Eleven of round 9's audit findings were on [apparatus], [person], [here] and [arrival].
-- Still to build: sentences for the seven judge kinds that have none (slice 5).
+- The seven judge kinds that had none got their sentences in slice 5 (below), and [dice]'s was removed when the measure retired it.
 
 **The review card is not a narration** (D5):
 - The ◈ Narrative Review card no longer carries `narratorCard`. The correction hook (`index.js`, the Retract button) reads `factContinuityReview`, which the card already had.
@@ -27,7 +27,7 @@ rejected.
 - The runner needs no special case.
 
 **Authority follows the measure — the holding half** (D7; amends overhaul 4's D9 below):
-- A judge-class kind may act — re-ask before posting, or post the audit's card — only once it has passed the measure on the kept runs (`checks.js judgeMayAct`; the set it reads, `JUDGE_KINDS_THAT_ACT`, is empty). Until then its verdicts are logged and counted (`action: "logged"` on the telemetry row), and the first draft posts.
+- A judge-class kind may act — re-ask before posting, or post the audit's card — only once it has passed the measure on the kept runs (`checks.js judgeMayAct`; the sets it reads, `JUDGE_KINDS_THAT_ACT`, were empty until slice 5 filled them from the measure, below). Until then its verdicts are logged and counted (`action: "logged"` on the telemetry row), and the first draft posts.
 - The audit's findings on an obligation line are logged and post no card, whatever the kind. Its cards for truths, state, place, retractions and identities are as before.
 - The bar, as recommended: at least nine in ten of a kind's flags right (all of them, with fewer than ten), and at least two of every three breaches caught, real and seeded together. The measure is slice 4; a kind that fails is retired to "logged" (D10).
 - D9's "one judge and one re-ask a narration" stands. A certain or floor failure is re-asked as before.
@@ -74,6 +74,64 @@ rejected.
   - The audit passed [cost], [place], [premise], [price], [state] and [unsaid].
   - [dice] failed the judge: 21 flags, 3 right.
   - The judge read the [oracle] NOT SO line backwards on three of the five kept answers. That line had no judge sentence yet.
+
+
+**The judge sentences, and authority by pass** (D2's rest, D7, D10; slice 5):
+- Seven kinds got a judge sentence, each put as the breach and saying what breaks nothing (`obligations.js`):
+  - [premise]: the claim told as real, with its `never`, and why it is not so;
+  - [offer]: what the move would decide told as done (`OFFER_DECIDES`, by move);
+  - [state] (`stateBreach`): a bond told forged; a severed tie told standing; the characters fighting in a fight already under way, where a foe's attack beginning breaks nothing;
+  - [oracle]: both parts, said with the question. Round 9's NOT SO line had no question, and the judge read it backwards;
+  - [fight]: offered, and declined;
+  - [cost]: the open choice, with its options where it has them;
+  - [price]: offered, and declined.
+- The measure rebuilds each from the recorded text (`INPUTS_OF`; [oracle]'s question comes from its TELL line), and a literal hand-written line is rebuilt as a recorded one.
+- The second run (`judges-live-20261127-155819`, the sentences in, the classes as before; 458 calls, $0.06):
+  - The pre-post judge passed [cost], [fight], [foe], [oracle], [premise], [price], [unsaid] and [whereabouts].
+  - It failed [dice] (22 flags, 3 right), [offer] (1 breach of 4 caught), [place] and [state]. [place] and [state] read a ship firing from her clamps, and a foe's attack beginning, as the breach; the [state] sentence says that breaks nothing, and the judge flagged it anyway.
+  - The audit passed [cost], [fight], [offer], [place], [premise], [price], [state] and [unsaid].
+  - It failed [dice] (5 flags, 3 right), [foe] (4 of 7 caught), [oracle] (5 flags, 3 right) and [whereabouts] (none of 8 caught).
+- The third run (`judges-live-20261127-162035`, as the module then shipped; 273 calls, $0.03) repeated the second for all but three kinds near the bar:
+  - the judge's [whereabouts] caught 5 breaches of 8, where it had caught 6 of 8 twice, all its flags right in every run;
+  - the audit's [place] and [unsaid] each made one wrong flag, where they had made none.
+- **The pooled bar.** The model samples at its default, so one run's flip of a verdict is noise. A rule that a kind must pass every run would drop a kind near the bar on whichever run flipped it, and more as the runs went on. Authority is set by the bar on the counts summed over the runs made with the current judge sentences (`judges/pool.json`, `lib/judges.mjs poolScores`), the newest as the module ships. A run that changes a sentence starts the pool again. Pooled over the second and third runs:
+  - [whereabouts] stays in the judge: 11 flags, all right, 11 of 16 breaches caught.
+  - [place] and [unsaid] leave the audit: 6 right of 7 and 8 of 9, under ten flags, where the bar needs all right.
+- The fourth run (`judges-live-20261127-162743`, as the module ships; 237 calls, $0.02) is the one `judgeMeasure.test.js` replays:
+  - the judge's [fight] made one wrong flag, and [whereabouts] again caught 5 of 8;
+  - the audit passed all six kinds it acts on.
+- Pooled over the second, third and fourth runs, every kind that acts passes:
+  - the judge's [fight]: 12 of 13 flags right;
+  - [whereabouts]: 16 of 24 breaches caught; [price]: 6 of 9. Both are exactly on the bar.
+- On the 235 requests the third and fourth runs shared, 4 verdicts (1.7%) flipped between flagged and not. The four runs cost $0.17.
+- **The pre-post judge** is asked about [cost], [fight], [foe], [oracle], [premise], [price], [unsaid] and [whereabouts] (`JUDGE_KINDS_THAT_ACT.judge`), and a verdict on one asks again. These are the judge-class kinds.
+- [dice], [offer], [place] and [state] failed it in both runs and are retired to "logged" (D10): they trip no call. Their trip words went with them: `TRIPWIRES`' entries, `OFFER_WORDS`, `DOCKED_WORDS`, a [dice] line's `words`, `diceFactsOf`'s `words` and the paced call's `ctx.offer`.
+- **The audit** is asked about [cost], [fight], [offer], [premise], [price] and [state] (`JUDGE_KINDS_THAT_ACT.audit`), and a high-confidence finding on one posts its card. It is sent no other line (`auditObligationLines`). It had been sent every line but a certain one, and round 9's audit raised 44 findings on them, none right.
+- [dice] and [place] passed neither, so no judge reads them. Their judge sentences are gone with their trip words; the narrator is still told both. For whoever tries again, [dice]'s last sentence was "The narration says the opposite of what the dice decided. The dice decided: *subject* — *fact*. A narration that tells this as so, or does not mention it, breaks nothing.", and [place]'s is kept in a comment on its row.
+- A finding whose subject is the tag of a line the audit was not given is held, not carded as a truth. The audit prompt's example tag is "[premise]"; it was "[outcome]", a line the audit is no longer sent.
+- The tables are held together by tests:
+  - a pass is asked about a kind only where its verdict may act, and every kind either pass is asked about has a judge sentence (`judgeVerdictsByLine.test.js`, D10);
+  - a kind acts only where the pooled bar passes it, and the kept run asked each pass about those kinds alone (`judgeMeasure.test.js`).
+- **What the numbers are worth:**
+  - The set is small and leans on its seeds: most kinds have three or four breaches, three of them seeded, so one verdict can move a kind across the bar.
+  - The model samples at its default. Of the 235 requests the first two runs had in common, 9 (4%) flipped between flagged and not. Pooling evens that out; it does not add narrations.
+  - The second run's audit was given every line but a certain one, the later runs only the kinds it acts on, so the pool mixes two prompts for the audit.
+  - The sentences were written with the first run's wrong flags in view, so the set is not a test they had not seen.
+  - An unlabelled line counts as kept, and the audit is asked with no ledger beside its lines.
+  - The next live long haul is the first test outside the set.
+
+**The harm check, in code** (D9):
+- [sheet] is certain-class. Its harm clause is held in code before the narration posts (`checks.js harmViolations`, `CERTAIN_CHECKS.sheet`), in two cases read from the narration's lines alone:
+  - a beat of play whose TELL lines name no health lost, and none of whose moves tells a wound by design: Endure Harm and Face Death, the harm itself, or Heal and Sojourn, which treat one. The move narration passes its `moveId`, and a Batch Mode round its `moveIds` (`roundCheckContext`). Harm done now, said of "you", in the present, is a breach: a wound's verb on your body ("heat rakes your ribs"), or harm carried onto it ("scalding vapor across your forearm");
+  - a refused Heal's [premise] ("no wound is marked"): any wound told ("starts on the cuts").
+- Narrow by design: a wound from before, said in the past, breaks nothing, and nor does someone else's harm. The rest of [sheet] (supplies, repairs, bonds) is told, not held. A repair or purchase told as done is EFFECT-TOLD-BEFORE-APPLIED, its own row.
+- It was tuned on the set (`lib/judges.mjs codeScore`, kept with each run's results). It flags 10 narrations and all 10 are breaches: round 8's a40, a44 and a46; round 3's a58; round 4's a62, a63 and a69; round 1's a56 and a57; and the seeded premise-3. It flags none of the other 317, and leaves round 8's a41 and a45 alone, where health was lost and told.
+- Four of those labels were added once the check flagged them: round 1's a56 and a57, round 4's a69 and seed premise-3. Each was already labelled a [premise] breach for the same fault, a wound told on a character the sheet holds unhurt. "Scorched" was added for a56, the one it missed.
+- The reason: the judge never saw [sheet], and the audit raised nothing on round 9's a58. A check in code costs no call. It asks the narrator again only where it fires.
+
+**One setting, said plainly** (D8): `factContinuity.consistencyCheck`'s hint says it also checks a narration before it posts, and may ask the narrator again.
+
+**A narration on a player's key gets neither pass** (the audit's N25): the pre-post judge runs only on a GM's client (`obligationJudgeOn`), and the audit only on the canonical GM's. The help's Settings Reference says so.
 
 ---
 

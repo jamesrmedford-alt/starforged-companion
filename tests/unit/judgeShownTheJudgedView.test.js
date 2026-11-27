@@ -17,13 +17,15 @@
  *     trip words are read without it. The audit, built for each narration
  *     the run gave lines, is sent none, nor a line the code already held the
  *     narration to (D2), and a cutaway is not held to the characters' place;
- *   - D2: the [dice] sentence says the fact is what the dice decided;
+ *   - D2: the [dice] sentence said the fact is what the dice decided — and,
+ *     failing the measure in both passes, [dice] was retired (D10): no judge
+ *     reads it;
  *   - D5: the review card is no narration — no `narratorCard` — and its
  *     Retract button is still wired;
- *   - D7, holding: a judge verdict re-asks nothing and an obligation finding
- *     posts no card (narrationChecks, sceneObligationChecks,
- *     lineCannotOverruleTheDice, roundAndOracleNarrationsChecked and
- *     auditObligationKind pin those).
+ *   - D7: a verdict acts only for a kind that passed that pass's measure, and
+ *     a pass is asked only about those (D10; narrationChecks,
+ *     sceneObligationChecks, lineCannotOverruleTheDice,
+ *     roundAndOracleNarrationsChecked and auditObligationKind pin those).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -50,7 +52,7 @@ vi.mock('../../src/factContinuity/correctionDialog.js', async (importOriginal) =
 }));
 
 import { apiPost } from '../../src/api-proxy.js';
-import { judgedView, judgeNarration, trippedLines } from '../../src/moves/contracts/checks.js';
+import { judgedView, judgeNarration, trippedLines, checkClassOf, judgeMayAct } from '../../src/moves/contracts/checks.js';
 import { obligationsFor, OBLIGATION_KINDS } from '../../src/moves/contracts/obligations.js';
 import { runConsistencyCheck } from '../../src/factContinuity/consistencyCheck.js';
 import { openCorrectionDialog } from '../../src/factContinuity/correctionDialog.js';
@@ -167,48 +169,51 @@ describe('the pre-post judge is sent the judged view (D1)', () => {
     }
   });
 
-  it('a29: its three lines were tripped by the offer line\'s "fire" alone — read in the judged view, none trips and no judge is called', () => {
-    // a29's narration offered Enter the Fray to a line refused for "no fight is under way".
+  it('a29: its [premise] line was tripped by the offer line\'s "fire" alone — read in the judged view, it trips nothing and no judge is called', () => {
+    // a29's narration offered Enter the Fray to a line refused for "no fight is under way". Round 9
+    // tripped its [offer] and [state] lines too; the measure retired both from the pre-post judge (D10).
     const a29 = JUDGED.find(j => j.step === 'a29');
-    const ctx = { refusalCode: 'open-fight', offer: 'enter_the_fray' };
+    const ctx = { refusalCode: 'open-fight' };
     expect(offerLineOf(a29.narration)).toBe('*Meeting her fire in the berth would be an Enter the Fray.*');
-    expect(trippedLines(a29.narration, a29.lines, ctx).map(o => o.kind)).toEqual(['premise', 'offer', 'state']);
+    expect(a29.lines.map(o => o.kind)).toEqual(expect.arrayContaining(['premise', 'offer', 'state']));
+    expect(trippedLines(a29.narration, a29.lines, ctx).map(o => o.kind)).toEqual(['premise']);
     expect(trippedLines(judgedView(a29.narration).text, a29.lines, ctx)).toEqual([]);
   });
 
-  it('a70: Tamsin\'s own "A bond" still trips [offer], so the judge is asked — but not shown the offer line its verdict quoted', async () => {
+  it('a70: re-asked on its own offer line — [offer] is no longer judged before posting, and a judge is never shown that line', async () => {
     const a70 = JUDGED.find(j => j.step === 'a70');
     const verdict = JSON.parse(replyOf(EX.find(x => x.step === 'a70' && x.kind.startsWith('judgeNarration>'))));
     expect(verdict.violations).toEqual([{ tag: 'offer', quote: '*Binding her to you for good would be a Forge a Bond.*' }]);
     const offer = a70.lines.filter(o => o.kind === 'offer');
-    expect(trippedLines(judgedView(a70.narration).text, offer, { offer: 'forge_a_bond' }).map(o => o.kind)).toEqual(['offer']);
+    expect(checkClassOf('offer')).toBe('logged');
+    expect(trippedLines(judgedView(a70.narration).text, offer, {})).toEqual([]);
     await judgeNarration(a70.narration, offer, { apiKey: 'sk-test' });
     expect(apiPost.mock.calls.at(-1)[2].messages[0].content).not.toContain('Binding her to you for good');
   });
 });
 
-describe('D2 — the [dice] sentence, written for the judge', () => {
-  // Slice 3 (the audit's N1): written as the breach, and put to the judge as a BREACH, never under NOT SO.
-  it('a34\'s line as the judge reads it now: the breach is saying the opposite of what the dice decided', async () => {
+describe('D2, then D10 — the [dice] sentence, written for the judge, and retired by the measure', () => {
+  // Slice 3 put it as the breach (the audit's N1). Measured twice, it still flagged 21 and 22 narrations
+  // of 77, 3 of them right, and the audit missed or misread it: retired from both passes.
+  it('a34\'s line: round 9 sent it reading backwards; no judge reads it now, and the narrator is still told it', async () => {
     const a34 = JUDGED.find(j => j.step === 'a34');
     const recorded = a34.lines.find(o => o.kind === 'dice').text;
     // As round 9 sent it — the fact after the dash read as the thing denied (a34, a36, a54).
     const [, subject, fact] = /^The narration tells as true something this result of the dice denies — ([^:]+): (.+)\.$/.exec(recorded);
     expect([subject, fact]).toEqual(['Ashen Wake', 'has the better angle on the Kobayashi IV, which is pinned by the docking clamps']);
-    const lines = obligationsFor({ mode: 'paced', line: 'I hold the line', dice: [{ subject, fact, words: ['ashen', 'wake'] }] });
+    const lines = obligationsFor({ mode: 'paced', line: 'I hold the line', dice: [{ subject, fact }] });
     const dice = lines.find(o => o.kind === 'dice');
-    expect(dice.judge).toBe('The narration says the opposite of what the dice decided. The dice decided: Ashen Wake — has the better angle '
-      + 'on the Kobayashi IV, which is pinned by the docking clamps. A narration that tells this as so, or does not mention it, breaks nothing.');
-    await judgeNarration(a34.narration, [dice], { apiKey: 'sk-test' });
-    const sent = apiPost.mock.calls.at(-1)[2].messages[0].content;
-    expect(sent).toContain(`1. [dice] BREACH: ${dice.judge}`);
-    expect(sent).not.toContain('(NOT SO)');
-    expect(sent).not.toContain('denies');
+    expect(dice.judge).toBeUndefined();
+    expect(checkClassOf('dice')).toBe('logged');
+    expect(judgeMayAct('dice', 'audit')).toBe(false);
+    expect(trippedLines(judgedView(a34.narration).text, lines, {}).map(o => o.kind)).not.toContain('dice');
+    expect(dice.text).toBe('What the dice decided stands — Ashen Wake: has the better angle on the Kobayashi IV, which is pinned by the '
+      + 'docking clamps. A line that takes otherwise for granted does not make it so: tell what is there.');
   });
 });
 
 describe('the audit is sent the judged view, and no line the code already held the narration to (D1, D2)', () => {
-  it('built for each narration round 9 gave lines: no closing offer line, no certain-class line; every other line, in its judge words', async () => {
+  it('built for each narration round 9 gave lines: no closing offer line, no certain-class line, no line of a kind the audit may not act on (D10)', async () => {
     const given = NARRATIONS.filter(x => linesOf(x.user).length);
     expect(given.length).toBe(58);
     // Round 9's eleven audit findings on code-checked lines were on these.
@@ -224,17 +229,20 @@ describe('the audit is sent the judged view, and no line the code already held t
       const offer = offerLineOf(replyOf(x));
       if (offer) expect(system, x.step).not.toContain(offer);
       for (const kind of CERTAIN) expect(system, `${x.step} [${kind}]`).not.toContain(`[${kind}]`);
-      for (const o of lines.filter(l => !CERTAIN.includes(l.kind))) expect(system, `${x.step} [${o.kind}]`).toContain(`${o.list} [${o.kind}] ${o.text.trim()}`);
+      for (const o of lines.filter(l => !CERTAIN.includes(l.kind))) {
+        if (judgeMayAct(o.kind, 'audit')) expect(system, `${x.step} [${o.kind}]`).toContain(`${o.list} [${o.kind}] ${o.text.trim()}`);
+        else expect(system, `${x.step} [${o.kind}]`).not.toContain(`[${o.kind}]`);
+      }
     }
     expect(certainGiven).toBeGreaterThan(50);
   });
 
   it('a line with a judge sentence is sent the audit in it, not in the narrator\'s instruction', async () => {
-    const lines = obligationsFor({ mode: 'paced', line: 'I hold the line', dice: [{ subject: 'Ashen Wake', fact: 'has the better angle', words: ['ashen', 'wake'] }] });
-    const dice = lines.find(o => o.kind === 'dice');
-    await runConsistencyCheck('The Ashen Wake holds off.', sceneState(), { obligations: lines });
-    expect(auditPrompt()).toMatch(new RegExp(`\\d+\\. BREACH \\[dice\\] ${dice.judge.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
-    expect(auditPrompt()).not.toContain(dice.text);
+    const lines = obligationsFor({ mode: 'paced', line: 'I ask Tamsin to stand with me', offer: 'forge_a_bond' });
+    const offer = lines.find(o => o.kind === 'offer');
+    await runConsistencyCheck('Tamsin looks up from her ledger.', sceneState(), { obligations: lines });
+    expect(auditPrompt()).toMatch(new RegExp(`\\d+\\. BREACH \\[offer\\] ${offer.judge.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(auditPrompt()).not.toContain(offer.text);
   });
 });
 

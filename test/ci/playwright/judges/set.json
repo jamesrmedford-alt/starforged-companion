@@ -891,6 +891,33 @@
    "line": "harm",
    "breach": false,
    "why": "annotated-transcript:1036 — told, and health 4 → 3"
+  },
+  {
+   "run": "long-haul-live-20261123",
+   "step": "a56",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "its [premise] label: a wound told on a character the sheet holds unhurt (5 of 5, no wound marked)"
+  },
+  {
+   "run": "long-haul-live-20261123",
+   "step": "a57",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "its [premise] label: a wound told on a character the sheet holds unhurt (5 of 5, no wound marked)"
+  },
+  {
+   "run": "long-haul-live-20261124-213912",
+   "step": "a69",
+   "kind": "narratePacedInput",
+   "nth": 0,
+   "line": "harm",
+   "breach": true,
+   "why": "its [premise] label: a wound told on a character the sheet holds unhurt (5 of 5, no wound marked)"
   }
  ],
  "seeded": [
@@ -1143,6 +1170,9 @@
    ],
    "ctx": {
     "refusalCode": "recoverable-health"
+   },
+   "also": {
+    "harm": true
    }
   },
   {

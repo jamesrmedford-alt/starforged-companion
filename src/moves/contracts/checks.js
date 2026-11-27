@@ -122,19 +122,27 @@ export function judgedView(text, { kind = null } = {}) {
 }
 
 /**
- * The judge-class kinds whose verdicts may act, by pass (issue #399, D7:
- * authority follows the measure) — the pre-post judge's (`judge`) may re-ask
- * a narration before it posts, the audit's (`audit`) may post its review
- * card. Each pass is measured on its own (the audit's N3: the two read every
- * judge-class line with different prompts). A kind is added only once it
- * passes that pass's measure on the kept runs; until then its verdicts are
- * logged and counted, and the first draft posts. Empty: in round 9, the only
- * live sample, the judge was wrong in five verdicts of five and the audit in
- * six cards of six.
+ * The kinds whose verdicts may act, by pass (issue #399, D7: authority
+ * follows the measure) — the pre-post judge's (`judge`) may re-ask a
+ * narration before it posts, the audit's (`audit`) may post its review card.
+ * Each pass is measured on its own (the audit's N3: the two read every line
+ * with different prompts), on the labelled set of the kept runs
+ * (test/ci/playwright/judges.mjs; decisions.md → "Issue #399"). A kind is
+ * here only where it passes that pass's bar on the counts pooled over the
+ * runs made with the current judge sentences (judges/pool.json), the newest
+ * as the module ships: the model samples at its default, so one run's flip
+ * of a verdict is noise, and the pool is the measure.
+ * tests/unit/judgeMeasure.test.js holds the sets to it.
+ *
+ * A pass is asked about a kind only where its verdict may act (D10): the
+ * judge-class kinds are exactly the `judge` set (a kind that failed it was
+ * retired to "logged", so it trips no call), and the audit is sent the lines
+ * of the `audit` set's kinds and no others (consistencyCheck.js). [dice]
+ * and [place] passed neither, and no judge reads them.
  */
 const JUDGE_KINDS_THAT_ACT = Object.freeze({
-  judge: Object.freeze(new Set([])),
-  audit: Object.freeze(new Set([])),
+  judge: Object.freeze(new Set(["cost", "fight", "foe", "oracle", "premise", "price", "unsaid", "whereabouts"])),
+  audit: Object.freeze(new Set(["cost", "fight", "offer", "premise", "price", "state"])),
 });
 
 /**
@@ -191,6 +199,60 @@ function apparatusViolations(body) {
   return out;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Harm told where the sheet took none (issue #399, D9; HARM-TOLD-WITHOUT-A-COST)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A body's part, said as "your …".
+const BODY_PARTS = "shoulders?|arms?|forearms?|wrists?|hands?|palms?|fingers?|knuckles|elbows?|ribs|side|chest|back|neck|throat|face|"
+  + "cheeks?|jaw|lips?|scalp|head|temples?|brow|forehead|legs?|thighs?|knees?|shins?|calf|calves|ankles?|feet|foot|hips?|skin|flesh";
+const YOUR_PART = `your (?:left |right |good |bad |bare |outstretched )?(?:${BODY_PARTS})\\b`;
+// Harm done now, in the narration's present: a wound's verb on your body ("Something hot rakes your shoulder").
+const HARM_DONE = new RegExp(`\\b(?:rakes|burns|scalds|sears|singes|blisters|slices|cuts|gashes|grazes|bites|tears|splits|pierces|stabs|`
+  + `lacerates|cracks|breaks|crushes|lashes)(?: into| across| along| through| at| open)? ${YOUR_PART}`, "i");
+// …or harm carried onto it ("spits scalding vapor across your forearm").
+const HARM_CARRIED = new RegExp(`\\b(?:scalding|searing|burning|scorched|burnt|burned|white-hot|red-hot|blistering)\\b[^.!?\\n]{0,40}?\\b(?:across|along|into|over|`
+  + `through|on|down) ${YOUR_PART}`, "i");
+// A wound told: on a character whose sheet holds none, any is the prose's own.
+const WOUND_TOLD = new RegExp(`\\b(?:the|your|a|fresh|new) (?:cuts?|gash(?:es)?|wounds?|burns?|grazes?|scrapes?)\\b|${YOUR_PART} `
+  + "(?:bleeds?|throbs?|stings?|aches?|burns?)\\b|\\b(?:bandages?|dressings?|sealant|antiseptic|stitches)\\b", "i");
+// A move whose narration tells a wound by design: the harm itself, or its treatment.
+const WOUND_MOVES = new Set(["endure_harm", "face_death", "heal", "sojourn"]);
+// A TELL line that names health lost — a stated price, a chosen cost.
+const HEALTH_TOLD = /\bEndure Harm\b|\bhealth\b|\bharm\b/i;
+
+/**
+ * Words of bodily harm said of "you" where the sheet took no health (issue
+ * #399, D9). Two cases, each read from the narration's lines alone:
+ *   - a beat of play — its [sheet] line holds the sheet to what TELL names —
+ *     whose TELL lines name no health lost, and none of whose moves tells a
+ *     wound by design (Endure Harm, Face Death; Heal, Sojourn, whose
+ *     treatment does): harm done now, in the present ("heat rakes your ribs";
+ *     round 8's a40, a44, a46 — each price fell on the ship);
+ *   - a refused Heal's [premise], "no wound is marked": any wound told
+ *     ("starts on the cuts"; round 4's a62, a63).
+ * Narrow by design: a wound from before, said in the past, and someone
+ * else's harm break nothing. Pure.
+ *
+ * @param {string} body — the prose, its closing offer line left out
+ * @param {Array<Object>} lines — the narration's obligation lines
+ * @param {{ moveId?: string|null, moveIds?: string[] }} [ctx] — the move narrated; a round's, its moves
+ * @returns {Array<{ tag: "sheet", quote: string, note: string }>}
+ */
+export function harmViolations(body, lines, { moveId = null, moveIds = [] } = {}) {
+  const text = String(body ?? "");
+  const all = Array.isArray(lines) ? lines : [];
+  const noWound = all.some(o => o?.kind === "premise" && /no wound is marked/.test(String(o.text ?? "")));
+  const moves = [moveId, ...(Array.isArray(moveIds) ? moveIds : [])];
+  const beat = all.some(o => o?.kind === "sheet") && !moves.some(m => WOUND_MOVES.has(m))
+    && !all.some(o => o?.list === "TELL" && HEALTH_TOLD.test(String(o.text ?? "")));
+  const found = (noWound ? [HARM_DONE, HARM_CARRIED, WOUND_TOLD] : beat ? [HARM_DONE, HARM_CARRIED] : [])
+    .map(re => re.exec(text)).find(Boolean);
+  if (!found) return [];
+  return [{ tag: "sheet", quote: quoteAround(text, found.index, found[0].length),
+    note: noWound ? "the sheet holds no wound: tell none" : "the sheet took no health on this beat: tell no harm done to you" }];
+}
+
 /**
  * The certain checks, by kind (issue #399, D4) — each the certain-class
  * kind's check, run on the first line of its kind, in this order. Each reads
@@ -219,6 +281,10 @@ export const CERTAIN_CHECKS = Object.freeze({
     const again = quotedLinesOf(body).find(q => said.has(q));
     return again ? [{ tag: "quote", quote: again, note: "an earlier narration of this session already gave this line, word for word — say it new, or let it go unsaid" }] : [];
   },
+  // [sheet]: its harm clause — bodily harm said of "you" where the sheet took
+  // no health (issue #399 D9, HARM-TOLD-WITHOUT-A-COST). The rest of the line
+  // (supplies, repairs, bonds) is told, not held.
+  sheet: (body, _sidecar, _o, { lines, ctx }) => harmViolations(body, lines, ctx),
 });
 
 /**
@@ -227,17 +293,17 @@ export const CERTAIN_CHECKS = Object.freeze({
  *
  * @param {string} prose
  * @param {Array<{ kind: string }>} obligations
- * @param {{ sidecar?: Object|null }} [opts] — the reply's fact block ([here], [arrival])
+ * @param {{ sidecar?: Object|null, ctx?: Object }} [opts] — the reply's fact block ([here], [arrival]); the check's context ([sheet]: the move)
  * @returns {Array<{ tag: string, quote: string, note?: string }>}
  */
-export function certainViolations(prose, obligations, { sidecar = null } = {}) {
+export function certainViolations(prose, obligations, { sidecar = null, ctx = {} } = {}) {
   const lines = Array.isArray(obligations) ? obligations : [];
   const body = bodyOf(String(prose ?? ""));
   const out = [];
   for (const [kind, check] of Object.entries(CERTAIN_CHECKS)) {
     if (checkClassOf(kind) !== "certain") continue;
     const o = lines.find(l => l?.kind === kind);
-    if (o) out.push(...check(body, sidecar, o));
+    if (o) out.push(...check(body, sidecar, o, { lines, ctx: ctx ?? {} }));
   }
   return out;
 }
@@ -541,8 +607,6 @@ const FIGHT_WORDS = ["fire", "fires", "fired", "shot", "shoots", "salvo", "strik
 const FOE_DOWN_WORDS = ["dead", "dies", "died", "dying", "killed", "kills", "destroyed", "destroy", "destroys", "wreck", "wrecked", "wreckage",
   "hulk", "fled", "flee", "flees", "retreat", "retreats", "retreated", "surrender", "surrenders", "surrendered", "beaten", "defeated",
   "finished", "explode", "explodes", "exploded", "explosion", "crippled"];
-/** A ship told as still docked (overhaul 2 §6.2's [place]). */
-const DOCKED_WORDS = ["docked", "berth", "berthed", "clamps", "clamped", "moored"];
 const HEAL_WORDS  = ["cut", "cuts", "gash", "wound", "wounds", "blood", "bandage", "dressing", "stitch", "antiseptic", "medkit", "sealant", "binding"];
 const PREMISE_WORDS = Object.freeze({
   "recoverable-health": HEAL_WORDS,
@@ -552,17 +616,6 @@ const PREMISE_WORDS = Object.freeze({
   "open-fight":         FIGHT_WORDS,
   "their-connection":   ["bond", "bonded", "connection", "trust"],
 });
-const OFFER_WORDS = Object.freeze({
-  set_a_course: ["arrive", "arrives", "docks", "dock", "reach", "reaches", "land", "lands"],
-  undertake_an_expedition: ["arrive", "arrives", "reach", "reaches"],
-  finish_an_expedition: ["arrive", "arrives", "reach", "reaches"],
-  repair: ["patched", "repaired", "fixed", "welded"],
-  heal: HEAL_WORDS,
-  resupply: ["restock", "restocked", "supplies"],
-  enter_the_fray: FIGHT_WORDS,
-  forge_a_bond: ["bond", "bonded"],
-});
-
 /** Speech, said or told — what trips [unsaid] (a move pressed on a card gives the character no words). */
 const SPEECH_WORDS = ["tell", "tells", "told", "say", "says", "said", "ask", "asks", "asked", "promise", "promises", "promised",
   "admit", "admits", "confess", "confesses", "swear", "swears", "explain", "explains", "answer", "answers", "reply", "replies",
@@ -577,14 +630,10 @@ export const TRIPWIRES = Object.freeze({
   premise: (o, { refusalCode = null } = {}) => PREMISE_WORDS[o.refusalCode ?? refusalCode] ?? null,
   fight:   () => FIGHT_WORDS,
   foe:     () => FOE_DOWN_WORDS,
-  offer:   (o, { offer = null } = {}) => OFFER_WORDS[offer] ?? null,
   cost:    (o) => Object.entries(METER_WORDS).filter(([m]) => new RegExp(m === "supply" ? "supply|resources" : m === "health" ? "health|harm" : m === "spirit" ? "spirit|stress" : m, "i").test(o.text)).flatMap(([, w]) => w),
   price:   (o) => contentWords(o.text.replace(/^THE PRICE[^.]*\.\s*/, "")).slice(0, 12),
   oracle:  (o, { question = "" } = {}) => (o.list === "NOT SO" ? contentWords(question) : null),
-  state:   (o, { person = null } = {}) => (person && /not a bond/.test(o.text) ? ["bond", "bonded"] : (/No fight/.test(o.text) ? FIGHT_WORDS : null)),
-  place:   () => DOCKED_WORDS,
   unsaid:  () => SPEECH_WORDS,
-  dice:    (o) => (Array.isArray(o.words) && o.words.length ? o.words.flatMap(w => [w, `${w}'s`, `${w}’s`]) : null),
   whereabouts: (o) => (Array.isArray(o.words) && o.words.length ? o.words : null),
 });
 
@@ -600,18 +649,16 @@ function tripWords(o, ctx = {}) {
  *
  * @param {string} prose
  * @param {Array<Object>} obligations
- * @param {{ refusalCode?: string|null, offer?: string|null, question?: string }} [ctx]
+ * @param {{ refusalCode?: string|null, question?: string }} [ctx]
  * @returns {Array<Object>} the tripped obligations
  */
 export function trippedLines(prose, obligations, ctx = {}) {
   const words = String(prose ?? "").toLowerCase().split(/[^a-z0-9'’-]+/).filter(Boolean);
-  // A possessive's word is said too: "the hulk's guns" says "hulk" (issue #397,
-  // Code fix 4). [dice] still lists its possessive forms by hand.
+  // A possessive's word is said too: "the hulk's guns" says "hulk" (issue #397, Code fix 4).
   const said = new Set(words.flatMap(w => { const bare = w.replace(/['’]s$/, ""); return bare && bare !== w ? [w, bare] : [w]; }));
   return (obligations ?? []).filter((o) => {
     if (o?.list !== "NOT YET" && o?.list !== "NOT SO") return false;
-    const person = o.kind === "state" ? (/^(.+?) is .*connection/.exec(o.text)?.[1] ?? null) : null;
-    const trip = tripWords(o, { ...ctx, person });
+    const trip = tripWords(o, ctx);
     if (!Array.isArray(trip) || !trip.length) return false;
     return trip.some(w => said.has(w));
   });
@@ -809,7 +856,7 @@ export function redraftBlock(draft, violations, obligations) {
 function codeChecks(prose, sidecar, obligations, ctx, draft) {
   const floor = floorViolations(prose, obligations, ctx);
   return {
-    broken: [...certainViolations(prose, obligations, { sidecar }).map(v => ({ ...v, class: "certain", draft })),
+    broken: [...certainViolations(prose, obligations, { sidecar, ctx }).map(v => ({ ...v, class: "certain", draft })),
       ...floor.reask.map(v => ({ ...v, class: "floor", draft }))],
     logged: floor.logged.map(v => ({ ...v, class: "floor", action: "logged", draft })),
   };

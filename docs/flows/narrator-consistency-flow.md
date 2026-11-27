@@ -39,14 +39,17 @@ snapshot, so an X-Card played while the move waited handed the removed beat
 to the audit as binding, and a strike typed then was not under RETRACTED
 FACTS. When nothing is left to audit against, no audit is sent.
 
-Which client that is: move narration always runs on the canonical GM, and
-the Claude-calling commands (`@scene`, `!recap`, `!ship envision/history`,
-`!incite` — `RUN_ON.CLAUDE`) and oracle follow-ups (`requestOracleNarration`)
-run on the keyed canonical GM whenever one is connected, so their prose is
-audited too. Only the fallback — no keyed GM, so a keyed author narrates with
-their own key — runs off the canonical GM; there `applyNarratorSidecar`
-applies no side-data and fires no audit (the skip is debug-logged), and the
-prose is unaudited. See `narrator-context-flow.md` → "Where each call runs".
+Which client that is: move narration, the Claude-calling commands
+(`@scene`, `!recap`, `!ship envision/history`, `!incite` — `RUN_ON.CLAUDE`)
+and oracle follow-ups (`requestOracleNarration`) run on the keyed canonical
+GM whenever one is connected, so their prose is audited. The fallback — no
+keyed GM, so a keyed author narrates with their own key, a sheet roll among
+them — runs off the canonical GM. There `applyNarratorSidecar` relays the
+fact block to the GM (`relayNarratorSidecar`) and fires no audit, and the
+pre-post judge (§1b) is not called either, because it runs only on a GM: a
+narration on a player's key gets neither pass, and no telemetry row (issue
+#399's audit N25; the help says so). See `narrator-context-flow.md` →
+"Where each call runs".
 
 What it reads is the narration's **judged view** (`checks.js judgedView`,
 issue #399 D1) — the prose without its fact block and without its closing
@@ -68,18 +71,21 @@ the GM's, the premise's truths), RETRACTED FACTS (this scene's strikes and,
 since issue #286 B6, the session's earlier scenes' — never a truth the
 X-Card retracted, which `sessionRetractedFacts` leaves out so the removed
 content is not handed back; issue #321 U07), STANDING NOW (binding state),
-and WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND MUST NOT (overhaul 4,
-D9's logged class — the narration's obligation lines, one a line with its
-list and tag, handed in by the narrator through `applyNarratorSidecar`'s
-`obligations`: the move's, the paced line's, the round's, the oracle
-follow-up's; they ride an audit the ledger calls for and make no call of
-their own; `formatAuditObligations` sends them numbered, each a judge
-sentence as the breach itself (`BREACH`, `checks.js judgedLine`) or else its
-list and the narrator's words, and never a certain-class line — the code held
-the narration to those before it posted, and eleven of round 9's audit
-findings were on them, issue #399 D2 — under the judge's own rule for them,
-`JUDGED_LINES_RULE`: a thing about to happen, feared, offered or merely
-possible breaks nothing) —
+and WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND MUST NOT (overhaul 4 —
+the narration's obligation lines, handed in by the narrator through
+`applyNarratorSidecar`'s `obligations`: the move's, the paced line's, the
+round's, the oracle follow-up's; they ride an audit the ledger calls for and
+make no call of their own). Since issue #399 (D10) the audit is sent only the
+lines of the kinds its measure passed — [cost], [fight], [offer], [premise],
+[price], [state] (`checks.js JUDGE_KINDS_THAT_ACT.audit`,
+`auditObligationLines`; the bar on the counts pooled over the runs made with
+the current judge sentences, `judges/pool.json`) — and no other: it was
+sent every line but a certain-class one, and round 9's audit raised 44
+findings on them, none right. `formatAuditObligations` sends them numbered,
+each its judge sentence as the breach itself (`BREACH`, `checks.js
+judgedLine`), under the judge's own rule for them, `JUDGED_LINES_RULE`: a
+thing about to happen, feared, offered or merely possible breaks nothing.
+With none to send, the section reads "(none)" —
 via one Haiku call (the model `consistencyCheck.js` names, `MAX_TOKENS`
 1300, with a `stop_reason` truncation warning, through `api-proxy.js`). What the
 narration described — its colour, and the frame's Where and Now — is not
@@ -92,7 +98,8 @@ with confidence high/medium/low; parsing is
 fence-and-preamble tolerant and never throws. A finding is an obligation one
 by its line number, or by a subject that is exactly a line's tag, whatever
 `kind` the model wrote (`withObligationLine`, issue #399's audit N19/N20 —
-"truth" or a missing kind posted a truth card); one whose evidence is not the
+"truth" or a missing kind posted a truth card) — or the tag of a line the
+audit was not given, which is held; one whose evidence is not the
 narration's own words is held. Whether the audit ran is logged with it:
 `audited` false and `error` for a failed call or a reply that did not parse
 (N18 — both were logged as a clean audit).
@@ -109,15 +116,23 @@ longer special-cases them).
 
 Before a narration posts, `narrateKeepingObligations` (`checks.js`) holds it
 to its obligation lines by class: a certain or floor failure is asked once
-more (YOUR DRAFT — NOT POSTED). A NOT YET / NOT SO judge line whose trip
-words appear in the judged view goes to one Haiku call (`judgeNarration`,
-label `obligationJudge`, 4 s, fail-open), sent the judged view too — it was
-sent the whole prose, and re-asked a70 on its own offer line. It runs only on
-a GM, with this audit's setting on (`narrator.js obligationJudgeOn`). **A
-judge verdict acts only for a kind that has passed the measure**
-(`judgeMayAct(kind, "judge")`; none has yet, issue #399 D7): until then it is
-logged — `action: "logged"` on the telemetry row — and the first draft posts.
-Round 9's four re-asks were all on wrong verdicts. Since slice 3 (D3) its
+more (YOUR DRAFT — NOT POSTED). Since issue #399 D9 a certain check holds
+[sheet]'s harm clause: bodily harm said of "you" on a beat whose TELL lines
+name no health lost, or any wound on a refused Heal's character
+(`harmViolations`). A NOT YET / NOT SO judge line whose trip words appear in
+the judged view goes to one Haiku call (`judgeNarration`, label
+`obligationJudge`, 4 s, fail-open), sent the judged view too — it was sent
+the whole prose, and re-asked a70 on its own offer line. It runs only on a
+GM, with this audit's setting on (`narrator.js obligationJudgeOn`); a
+narration on a player's key gets neither pass. **The judge-class kinds are
+the ones that passed its measure** (issue #399 D7, D10): [cost], [fight],
+[foe], [oracle], [premise], [price], [unsaid], [whereabouts]
+(`JUDGE_KINDS_THAT_ACT.judge`, on the pooled bar), and a verdict on one asks
+again. [dice], [offer], [place] and [state] failed it and are "logged": no
+trip, no call.
+A verdict on a judge-class kind outside the set would be logged — `action:
+"logged"` — and the first draft posted; the tables are kept equal by test.
+Round 9's four re-asks were all on kinds that had not been measured. Since slice 3 (D3) its
 lines are numbered, and it answers by number with the narration's own words:
 a verdict that names no line, or quotes words the judged view does not hold
 (`quoteInNarration`), is dropped as a row with `why`. Each judge sentence is
@@ -156,10 +171,11 @@ class list is in `narrator-context-flow.md` (the obligations block).
   runner counted each card as its line narrated twice. The correction hook
   (`index.js`) reads `factContinuityReview`; the ring's defensive exclude
   (`worldJournalContradiction`) stays.
-  **An obligation finding posts no card** until its kind has passed the
-  audit's measure (issue #399 D7, `judgeMayAct(kind, "audit")`): it is
+  **An obligation finding posts a card only for a kind that passed the
+  audit's measure** (issue #399 D7, `judgeMayAct(kind, "audit")`), and the
+  audit is sent no other kind's lines; a finding that names none of them is
   returned and logged with `action: "held"`, as every finding is logged.
-  Round 9's six obligation cards were all wrong.
+  Round 9's six obligation cards, on kinds never measured, were all wrong.
   The card carries the narration it is about (`reviewOf`): the X-Card's
   finish withdraws it (`worldJournal.js withdrawReviewCards`, from
   `safety.js finishXCardRemoval`), and one posted while the X-Card was

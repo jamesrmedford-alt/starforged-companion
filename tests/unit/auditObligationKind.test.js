@@ -5,11 +5,11 @@
  * Overhaul 4 (design §8, D9's logged class): the post-narration audit
  * (factContinuity/consistencyCheck.js) is given the narration's obligation
  * lines — what it was told it must tell and must not — and may answer kind
- * `obligation`: the lines its own check before posting does not hold it to
- * (an outcome, the stakes, the sheet) are audited after. Since issue #399 a
- * finding of kind `obligation` is returned and logged but posts no ◈
- * Narrative Review card until its kind passes the measure (D7), and the
- * lines the code already held the narration to are not sent (D2).
+ * `obligation`. Since issue #399 it is given only the lines of the kinds
+ * that passed its measure, and a finding on one of them posts a ◈ Narrative
+ * Review card (D7, D10); a finding naming any other line is returned and
+ * logged, and posts none. Round 9's audit was given every line but a
+ * certain-class one, and its six obligation cards were all wrong.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -58,12 +58,10 @@ describe('the audit reads a narration\'s obligations', () => {
     expect(c).toMatchObject({ kind: 'obligation', subject: '[outcome]', confidence: 'high' });
   });
 
-  // Issue #399: the audit is not sent the lines the code already held the
-  // narration to (D2 — [apparatus] is certain), and a finding on an
-  // obligation line posts no card until its kind passes the measure (D7) —
-  // round 9's six obligation cards were all wrong. It is still returned and
-  // logged.
-  it('an audit the ledger calls for carries the lines the code has not checked; a high-confidence breach of one is logged, and no card', async () => {
+  // Issue #399, D10: the audit is asked only what its measure passed. A
+  // plain move's lines — [outcome], [sheet] (certain since D9), [apparatus]
+  // (certain) — are none of them, and a finding that names one is held.
+  it('an audit the ledger calls for is sent no line of a kind it may not act on; a finding naming one is logged, and no card', async () => {
     apiPost.mockResolvedValueOnce({ content: [{ type: 'text', text:
       '{"contradictions":[{"subject":"[outcome]","violated":"the weak hit\'s cost","evidence":"without a scratch","kind":"obligation","confidence":"high"}]}' }] });
     const state = campaignState();
@@ -72,13 +70,28 @@ describe('the audit reads a narration\'s obligations', () => {
     const out = await withAuditOn(() => runConsistencyCheck('She is through without a scratch.', state, { obligations: moveLines() }));
     expect(apiPost).toHaveBeenCalledTimes(1);
     const system = apiPost.mock.calls[0][2].system;
-    const lines = moveLines();
-    expect(lines.map(o => o.kind)).toEqual(['outcome', 'sheet', 'apparatus']);
-    for (const o of lines.filter(o => o.kind !== 'apparatus')) expect(system).toContain(`${o.list} [${o.kind}] ${String(o.judge ?? o.text).trim()}`);
-    expect(system).not.toContain('[apparatus]');
+    expect(moveLines().map(o => o.kind)).toEqual(['outcome', 'sheet', 'apparatus']);
+    expect(system).toMatch(/AND MUST NOT — numbered lines\.\n[^\n]*\n[^\n]*\n\(none\)\n/);
+    for (const kind of ['outcome', 'sheet', 'apparatus']) expect(system).not.toContain(`[${kind}] `);
     expect(out.contradictions).toEqual([expect.objectContaining({ kind: 'obligation', subject: '[outcome]', confidence: 'high' })]);
     expect(out.dispatched).toBe(false);
     expect(applyStateTransition).not.toHaveBeenCalled();
+  });
+
+  it('a line of a kind the audit\'s measure passed is sent in its judge sentence, and a high-confidence breach of it posts the card', async () => {
+    const lines = obligationsFor({ mode: 'move', resolution: { moveId: 'face_danger', outcome: 'weak_hit', openChoice: { kind: 'any', count: 1, amount: 1 } } });
+    const cost = lines.find(o => o.kind === 'cost');
+    expect(cost).toBeTruthy();
+    apiPost.mockResolvedValueOnce({ content: [{ type: 'text', text: JSON.stringify({ contradictions: [{ line: 1, subject: '[cost]',
+      violated: 'the cost is the player\'s to choose', evidence: 'the effort costs you a gash along your arm', kind: 'obligation', confidence: 'high' }] }) }] });
+    const state = campaignState();
+    applySidecar({ newTruths: [{ subject: 'scene', fact: 'the bay doors are sealed' }], stateChanges: [] }, { campaignState: state, basisOf: () => 'player' });
+    const out = await withAuditOn(() => runConsistencyCheck('You are through, and the effort costs you a gash along your arm.', state, { obligations: lines }));
+    const system = apiPost.mock.calls[0][2].system;
+    expect(system).toContain(`1. BREACH [cost] ${cost.judge}`);
+    expect(system).not.toContain(cost.text);
+    expect(out.dispatched).toBe(true);
+    expect(applyStateTransition).toHaveBeenCalledWith(expect.objectContaining({ kind: 'obligation', change: 'contradicted' }), expect.anything());
   });
 
   it('control: a high-confidence breach of what binds still posts the review card', async () => {

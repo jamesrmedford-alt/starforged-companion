@@ -35,11 +35,10 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
-import { judgedView, judgeNarration, trippedLines, checkClassOf } from "../../../../src/moves/contracts/checks.js";
+import { judgedView, judgeNarration, trippedLines, checkClassOf, harmViolations, judgeMayAct } from "../../../../src/moves/contracts/checks.js";
 import { obligationLine, OBLIGATION_KINDS } from "../../../../src/moves/contracts/obligations.js";
 import { auditObligationSection, auditRequestBody, buildAuditPrompt, classifyAuditFindings, parseAuditResponse } from "../../../../src/factContinuity/consistencyCheck.js";
 import { elsewhereWords } from "../../../../src/factContinuity/whereabouts.js";
-import { diceWords } from "../../../../src/narration/narrator.js";
 import { MOVES } from "../../../../src/schemas.js";
 import { moveDisplayName } from "../../../../src/system/i18n.js";
 import { apiPost } from "../../../../src/api-proxy.js";
@@ -49,8 +48,15 @@ export const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 /** The narrator calls a judge reads: a beat's, a round's, a set-piece's, an oracle's. */
 export const NARRATION_KINDS = /^callNarratorAPI>(narratePacedInput|narrateResolution|narrateSessionVignette|narrateOracleFollowup|narrateRound)$/;
 
-/** The judge-class kinds, by their rows. */
-export const JUDGE_KINDS = Object.freeze(Object.entries(OBLIGATION_KINDS).filter(([, r]) => r.check === "judge").map(([k]) => k).sort());
+/**
+ * The kinds a judge may be asked about: each row with a judge sentence. A
+ * pass asks about one only where its verdict may act (checks.js
+ * JUDGE_KINDS_THAT_ACT); one it does not ask about is scored as retired there.
+ */
+export const JUDGE_KINDS = Object.freeze(Object.entries(OBLIGATION_KINDS).filter(([, r]) => typeof r.judge === "function").map(([k]) => k).sort());
+
+/** Whether `pass` asks about `kind` as the module ships: the judge, a judge-class line; the audit, a kind it may act on. */
+const askedIn = (pass, kind) => (pass === "judge" ? checkClassOf(kind) === "judge" : judgeMayAct(kind, "audit"));
 
 /** The bar (D7): of a kind's flags, at least 9 in 10 right — all, with fewer than 10 — and at least 2 breaches in 3 caught. */
 export const BAR = Object.freeze({ rightShare: 0.9, smallFlags: 10, caughtShare: 2 / 3 });
@@ -123,21 +129,46 @@ const MOVE_ID_BY_NAME = (() => {
   return byName;
 })();
 
-/** Each kind's words the recorded text holds, for its row's builders (null when they cannot be read). */
+const uncap = (s) => String(s ?? "").replace(/^\s*(\S)/, (m, c) => m.replace(c, c.toLowerCase()));
+
+/**
+ * Each kind's words the recorded text holds, for its row's builders (null
+ * when they cannot be read). `ctx` is the narration's (contextOf): an
+ * [oracle] NOT SO line holds no question, and its TELL sibling does.
+ */
 const INPUTS_OF = Object.freeze({
-  dice: (text) => {
-    const m = /^What the dice decided stands — ([^:]+): ([\s\S]+?)\. A line that takes otherwise for granted/.exec(text);
-    return m ? { subject: m[1].trim(), fact: m[2].trim() } : null;
+  premise: (text) => {
+    const m = /^([\s\S]+?) is not so — ([\s\S]+?) The line sets about it: narrate the attempt meeting the facts, never the premise as real(?:: never ([\s\S]+?))?\.\s*$/.exec(text);
+    return m ? { refusal: { premise: { claim: uncap(m[1]), never: m[3] ?? null }, why: m[2] } } : null;
   },
+  offer: (text) => {
+    const id = MOVE_ID_BY_NAME.get(/^(.+?) is only offered\./.exec(text)?.[1]?.toLowerCase() ?? "");
+    return id ? { offer: id } : null;
+  },
+  state: (text) => ({ fact: text }),
+  oracle: (text, ctx = {}) => {
+    const tell = /^The answer is (YES|NO)\b/.exec(text);
+    const not = /^Nothing in the prose may say, show or imply (yes|no), or leave it open\./.exec(text);
+    if (!tell && !not) return null;
+    const asked = (tell ? /to "([^"]+)", the oracle says/.exec(text)?.[1] : null) ?? (ctx.question || null);
+    return { oracle: { answer: tell ? tell[1] : (not[1] === "yes" ? "NO" : "YES"), asked }, part: tell ? "tell" : "not" };
+  },
+  fight: (text) => ({ resolution: { fightOffer: { status: /^THE FIGHT WAS NOT BEGUN\./.test(text) ? "declined" : "offered" } } }),
+  cost: (text) => {
+    if (/This result costs/.test(text)) return { resolution: { openChoice: { kind: "any" } } };
+    const options = [...text.matchAll(/^\s+- (.+)$/gm)].map(m => m[1].trim());
+    return options.length ? { resolution: { openChoice: { options } } } : null;
+  },
+  price: (text) => ({ resolution: { priceChoice: {
+    status: /^THE PRICE WAS NOT PAID\./.test(text) ? "declined" : "pending",
+    price: /The price it offers: ([\s\S]+?) (?=Show |Do not )/.exec(text)?.[1] ?? null,
+    stated: /the miss stated before the roll does not come to pass/.test(text),
+  } } }),
   whereabouts: (text) => {
     const places = [...text.matchAll(/(?:^|\. )([A-Z][^.:]*?) (?:is another place|are other places)/g)]
       .flatMap(m => m[1].split(/, | and /).map(n => n.trim()).filter(Boolean)).map(name => ({ name }));
     const people = [...text.matchAll(/([A-Z][\w'’ -]+?) is ([^.]+?), not here\./g)].map(m => ({ name: m[1].trim(), where: m[2].trim() }));
     return { places, people };
-  },
-  place: (text) => {
-    const m = /^(.+?) is docked at (.+?) by the ship's record\./.exec(text);
-    return m ? { ship: m[1].trim(), at: m[2].trim() } : null;
   },
   foe: (text) => {
     const m = /^THE FIGHT(?:'S TRACK IS FULL| IS NOT DECIDED) \(([^)]+)\)/.exec(text);
@@ -148,19 +179,19 @@ const INPUTS_OF = Object.freeze({
 
 /**
  * A recorded line as the module builds it now: its kind's judge sentence
- * where the row has one, and the trip words a [dice] or [whereabouts] line
- * carries — rebuilt from the words the recorded text holds. Any other line is
+ * where the row has one, and the trip words a [whereabouts] line carries —
+ * rebuilt from the words the recorded text holds. Any other line is
  * kept as recorded.
  *
  * @param {{ kind: string, list: string, text: string }} o
+ * @param {Object} [ctx] — the narration's context (contextOf), for an [oracle] NOT SO line's question
  * @returns {Object}
  */
-export function asBuiltNow(o) {
-  const read = INPUTS_OF[o.kind]?.(o.text);
+export function asBuiltNow(o, ctx = {}) {
+  const read = INPUTS_OF[o.kind]?.(o.text, ctx);
   if (!read) return { ...o };
   const built = obligationLine(o.kind, read);
   const line = { ...o, ...(built.judge ? { judge: built.judge } : {}) };
-  if (o.kind === "dice") line.words = [...new Set(diceWords(read.subject))];
   if (o.kind === "whereabouts") line.words = elsewhereWords({ places: read.places, people: read.people });
   return line;
 }
@@ -185,13 +216,23 @@ export function contextOf(lines) {
   return { refusalCode, offer: offerName ? (MOVE_ID_BY_NAME.get(offerName) ?? null) : null, question };
 }
 
-/** A line written by hand in set.json: `{ kind, input }` built by its row, or a literal `{ kind, list, text }`. */
-function handLine(spec) {
+/** The move a narrator request tells (its MOVE OUTCOME's "[MOVE: Clash +edge]"), by id, or null. */
+function moveIdOf(user) {
+  const name = /\[MOVE: ([^\]]+?)(?: \+\w+)?\]/.exec(String(user ?? ""))?.[1]?.toLowerCase() ?? "";
+  return MOVE_ID_BY_NAME.get(name) ?? null;
+}
+
+/**
+ * A line written by hand in set.json: `{ kind, input }` built by its row, or a
+ * literal `{ kind, list, text }` — a line as a run recorded it, rebuilt as one
+ * (asBuiltNow).
+ */
+function handLine(spec, ctx = {}) {
   if (spec?.input !== undefined) {
     const built = obligationLine(spec.kind, spec.input);
     return { ...built, ...(spec.words ? { words: spec.words } : {}) };
   }
-  return { ...spec };
+  return asBuiltNow({ ...spec }, ctx);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,9 +256,10 @@ export function buildSet({ explorations, set }) {
   const missing = [];
   const entryOf = (n) => {
     if (!entries.has(n.id)) {
-      const lines = recordedLines(n.user).map(asBuiltNow);
-      entries.set(n.id, { id: n.id, run: n.run, step: n.step, kind: n.kind, nth: n.nth, raw: n.raw, lines, ctx: contextOf(lines),
-        labels: {}, seeded: false, source: null });
+      const recorded = recordedLines(n.user);
+      const ctx = { ...contextOf(recorded), moveId: moveIdOf(n.user) };
+      entries.set(n.id, { id: n.id, run: n.run, step: n.step, kind: n.kind, nth: n.nth, raw: n.raw, lines: recorded.map(o => asBuiltNow(o, ctx)),
+        ctx, labels: {}, seeded: false, source: null });
     }
     return entries.get(n.id);
   };
@@ -229,7 +271,7 @@ export function buildSet({ explorations, set }) {
     const n = all.get(id);
     if (!n) { missing.push(id); continue; }
     const e = entryOf(n);
-    for (const spec of label.add ?? []) if (!e.lines.some(o => o.kind === spec.kind)) e.lines.push(handLine(spec));
+    for (const spec of label.add ?? []) if (!e.lines.some(o => o.kind === spec.kind)) e.lines.push(handLine(spec, e.ctx));
     if (label.ctx) e.ctx = { ...e.ctx, ...label.ctx };
     // `null`: a breach the reviews dispute — its line is not scored.
     e.labels[label.line] = label.breach === null ? null : label.breach === true;
@@ -240,11 +282,14 @@ export function buildSet({ explorations, set }) {
     const from = seed.from ?? {};
     const n = all.get(`${from.run}:${from.step}:${from.kind}:${from.nth ?? 0}`);
     if (!n) { missing.push(`seed ${seed.id}`); continue; }
-    const recorded = recordedLines(n.user).map(asBuiltNow);
-    const lines = seed.lines === "recorded" ? recorded.filter(o => o.kind === seed.line) : (seed.lines ?? []).map(handLine);
-    const ctx = { ...contextOf(seed.lines === "recorded" ? recorded : lines), ...(seed.ctx ?? {}) };
+    const asRecorded = recordedLines(n.user);
+    const recorded = asRecorded.map(o => asBuiltNow(o, contextOf(asRecorded)));
+    const lines = seed.lines === "recorded" ? recorded.filter(o => o.kind === seed.line)
+      : (seed.lines ?? []).map(spec => handLine(spec, contextOf(seed.lines ?? [])));
+    const ctx = { ...contextOf(seed.lines === "recorded" ? recorded : lines), moveId: moveIdOf(n.user), ...(seed.ctx ?? {}) };
     entries.set(`seed:${seed.id}`, { id: `seed:${seed.id}`, run: n.run, step: n.step, kind: n.kind, nth: n.nth, raw: seed.narration,
-      lines, ctx, labels: { [seed.line]: true }, seeded: true, source: "seeded", edit: seed.edit ?? "" });
+      // `also`: another line the edit breaks, by its own label ([premise]'s cut at full health is harm too).
+      lines, ctx, labels: { [seed.line]: true, ...(seed.also ?? {}) }, seeded: true, source: "seeded", edit: seed.edit ?? "" });
   }
   return { entries: [...entries.values()], missing };
 }
@@ -303,19 +348,21 @@ export async function auditPass(entry, { apiKey }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * One pass's score by kind: for each judge-class kind the set gives a line,
- * `lines` (entries with one), `flags`, `right` (flags on a labelled breach),
- * `breaches`, `caught`, `wrongOnLabelled` (flags on a line a review found
- * kept), and whether it passed the bar. An unlabelled line is a kept one.
+ * One pass's score by kind: for each kind with a judge sentence the set gives
+ * a line, `lines` (entries with one), `flags`, `right` (flags on a labelled
+ * breach), `breaches`, `caught`, `wrongOnLabelled` (flags on a line a review
+ * found kept), whether the pass asks about it as the module ships (`asked`),
+ * and whether it passed the bar. An unlabelled line is a kept one.
  *
  * @param {Array<Object>} entries
  * @param {Map<string, { flagged: string[] }>} results — by entry id
+ * @param {"judge"|"audit"} pass
  * @returns {Object<string, Object>}
  */
-export function scorePass(entries, results) {
+export function scorePass(entries, results, pass) {
   const score = {};
   for (const kind of JUDGE_KINDS) {
-    const row = { lines: 0, flags: 0, right: 0, breaches: 0, caught: 0, wrongOnLabelled: 0 };
+    const row = { lines: 0, flags: 0, right: 0, breaches: 0, caught: 0, wrongOnLabelled: 0, asked: askedIn(pass, kind) };
     for (const e of entries) {
       if (!e.lines.some(o => o.kind === kind) || e.labels[kind] === null) continue;
       row.lines += 1;
@@ -334,14 +381,70 @@ export function scorePass(entries, results) {
   return score;
 }
 
-/** A kind's row, said in a line of the report. */
-const rowLine = (kind, r) => `| [${kind}] | ${r.lines} | ${r.flags} | ${r.right} | ${r.breaches} | ${r.caught} | ${r.wrongOnLabelled} | ${r.passed ? "**passed**" : "failed"} |`;
+/**
+ * The checks written in code, scored on the set with no model call (D6): for
+ * each, by its label in set.json (`harm`, D9), the same row as a pass's kind.
+ *
+ * @param {Array<Object>} entries
+ * @returns {{ harm: Object }}
+ */
+export function codeScore(entries) {
+  const row = { lines: 0, flags: 0, right: 0, breaches: 0, caught: 0, wrongOnLabelled: 0, flagged: [] };
+  for (const e of entries) {
+    if (e.labels.harm === null) continue;
+    row.lines += 1;
+    const breach = e.labels.harm === true;
+    const flagged = harmViolations(judgedView(e.raw).text, e.lines, e.ctx).length > 0;
+    if (breach) row.breaches += 1;
+    if (flagged) { row.flags += 1; row.flagged.push(e.id); }
+    if (flagged && breach) { row.right += 1; row.caught += 1; }
+    if (flagged && e.labels.harm === false) row.wrongOnLabelled += 1;
+  }
+  row.rightOk = row.flags < BAR.smallFlags ? row.right === row.flags : row.right / row.flags >= BAR.rightShare;
+  row.caughtOk = row.breaches > 0 && row.caught / row.breaches >= BAR.caughtShare;
+  row.passed = row.rightOk && row.caughtOk;
+  return { harm: row };
+}
 
 /**
- * The report, in markdown: what was run, each pass's table, and the
- * assumptions.
+ * The bar over several runs (D7, D10): for each pass and kind, the counts
+ * summed over the runs that asked that pass about the kind (`asked` not
+ * false), and whether the sums meet the bar. The runs are the ones made with
+ * the current judge sentences (judges/pool.json): the model samples at its
+ * default, so a verdict can flip between runs, and one run's flip is noise.
  *
- * @param {{ judge: Object, audit: Object }} score
+ * @param {Array<{ judge: Object, audit: Object }>} scores — each run's `score`
+ * @returns {{ judge: Object, audit: Object }}
+ */
+export function poolScores(scores) {
+  const pooled = { judge: {}, audit: {} };
+  for (const pass of ["judge", "audit"]) {
+    for (const score of scores) {
+      for (const [kind, r] of Object.entries(score?.[pass] ?? {})) {
+        if (r.asked === false) continue;
+        const row = pooled[pass][kind] ?? (pooled[pass][kind] = { runs: 0, flags: 0, right: 0, breaches: 0, caught: 0, wrongOnLabelled: 0 });
+        row.runs += 1;
+        for (const k of ["flags", "right", "breaches", "caught", "wrongOnLabelled"]) row[k] += r[k] ?? 0;
+      }
+    }
+    for (const row of Object.values(pooled[pass])) {
+      row.rightOk = row.flags < BAR.smallFlags ? row.right === row.flags : row.right / row.flags >= BAR.rightShare;
+      row.caughtOk = row.breaches > 0 && row.caught / row.breaches >= BAR.caughtShare;
+      row.passed = row.rightOk && row.caughtOk;
+    }
+  }
+  return pooled;
+}
+
+/** A kind's row, said in a line of the report. */
+const rowLine = (kind, r) => `| [${kind}] | ${r.lines} | ${r.flags} | ${r.right} | ${r.breaches} | ${r.caught} | ${r.wrongOnLabelled} | `
+  + `${r.asked === false ? "retired: not asked" : r.passed ? "**passed**" : "failed"} |`;
+
+/**
+ * The report, in markdown: what was run, each pass's table, the checks in
+ * code, and the assumptions.
+ *
+ * @param {{ judge: Object, audit: Object, code?: Object }} score
  * @param {{ runId: string, commit?: string, entries: number, seeded: number, labelled: number, calls: number, usd?: number|null }} meta
  * @returns {string}
  */
@@ -363,10 +466,14 @@ export function renderReport(score, meta) {
     "",
     table("audit"),
     "",
+    ...(score.code ? ["## The checks in code", "", "| Check | Narrations | Flags | Right | Breaches | Caught | Wrong on a labelled kept line | Bar |",
+      "|---|---|---|---|---|---|---|---|", ...Object.entries(score.code).map(([k, r]) => rowLine(k, r)), ""] : []),
     "## Assumptions",
     "",
     "- An unlabelled line is counted kept: a flag on it counts as wrong. A review that missed a breach makes a right flag look wrong.",
     "- The audit is asked about the lines alone, with no ledger beside them; in play it is given the scene's ledger too.",
-    "- A [dice] or [whereabouts] line's trip words, and the judge sentences, are rebuilt from the recorded text as the module builds them now.",
+    "- A [whereabouts] line's trip words, and the judge sentences, are rebuilt from the recorded text as the module builds them now.",
+    "- Each request is asked once, and the model samples at its default: an identical request can be answered otherwise in another run.",
+    "- The judge sentences and the harm check were written with the set's earlier results in view, so the set is not a test they have not seen.",
   ].join("\n");
 }

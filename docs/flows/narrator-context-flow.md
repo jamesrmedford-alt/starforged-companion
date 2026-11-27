@@ -1309,18 +1309,26 @@ present holding in person someone the record has at one, a sentence taking
 "you" or their craft there — each with the note the re-ask carries; the data
 from `whereabouts.js hereOf`, `extras.here`; CHARACTERS-MOVED-BY-THE-NARRATION,
 round 7 — a [here] re-ask on a paced line makes its card's Roll Set a Course
-for the place it found, `journeyOfferOf`); **floor** — [vow]
+for the place it found, `journeyOfferOf`) — and [sheet]'s harm clause (issue
+#399 D9, `harmViolations`: bodily harm said of "you" on a beat whose TELL
+lines name no health lost and none of whose moves tells a wound by design —
+Endure Harm, Face Death, Heal, Sojourn; the move narration passes its
+`moveId`, a round its `moveIds` — or any wound on a refused Heal's
+character, "no wound is marked"; round 8's a40, a44, a46 and round 4's
+"starts on the cuts"); **floor** — [vow]
 (a word of the vow's name, or what is still not known) and [chosen]
-(logged); **tripwire → judge** — a NOT YET / NOT SO line whose words appear
-in the prose ([premise] by its refusal's code — "starts on the cuts" under
-a refused Heal; [fight] — "your first salvo"; [cost], [price], [offer],
-[oracle], [state]; [unsaid] by speech words, on a move made from a button or
+(logged); **tripwire → judge** — a NOT YET / NOT SO line of a kind that
+passed the judge's measure whose words appear in the prose ([premise] by its
+refusal's code — "starts on the cuts" under a refused Heal is caught in code
+first; [fight] — "your first salvo"; [foe]; [cost]; [price]; [oracle] by its
+question's words; [unsaid] by speech words, on a move made from a button or
 the map — its line the table's own (`madeLine`), shown as "THE MOVE — made
-from a button or the map; the player wrote no line", issue #388 #10; [dice]
-by a word of its subject's name, or of what a name change says it is, the
-possessive too) sends one Haiku call (`api-proxy.js`, label
+from a button or the map; the player wrote no line", issue #388 #10;
+[whereabouts] by its names) sends one Haiku call (`api-proxy.js`, label
 `obligationJudge`, 4 s, fail-open; only on a GM, with fact continuity's
-consistency check on). The trip words and the judge both read the
+consistency check on). [dice], [offer], [place] and [state] failed the
+judge's measure and are **logged** (issue #399 D10): told to the narrator,
+tripping no call. The trip words and the judge both read the
 narration's judged view (`checks.js judgedView`, issue #399 D1): no fact
 block and no closing offer line — round 9's a29 tripped three lines on its
 offer line's "fire" alone, and a70 was re-asked on its own offer line. Since
@@ -1333,21 +1341,20 @@ each held to their own). The judge's lines are numbered and its verdicts name
 their line (D3). A certain or floor failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels
 `narrateResolution:reask`, `narratePacedInput:reask`, `narrateRound:reask`,
-`narrateOracleFollowup:reask`); **a judge verdict is asked again only for a
-kind that has passed the measure** (`judgeMayAct`, issue #399 D7 — none has
-yet): until then it is logged, `action: "logged"`, and the first draft
-posts. The second reply is
+`narrateOracleFollowup:reask`); **a judge verdict is asked again** — the
+judge-class kinds are exactly those that passed its measure (`judgeMayAct`,
+`JUDGE_KINDS_THAT_ACT.judge`, issue #399 D7, D10). The second reply is
 held to the certain and floor checks and posted whatever they say (a reply
 with no prose keeps the first draft); its breaches are reported, each row
 marked with the draft it describes (`draft` 1 or 2). At most one
 judge call and one re-ask a narration. Each verdict is a row on the
 Consistency Check telemetry page (`kind: "obligation"`, mode `move` /
-`paced` / `round` / `oracle`). The lines the check does not hold a narration
-to ([outcome], [stakes], [sheet], …) go to the post-narration audit with it
-(`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`, kind
-`obligation`) — every line but a certain-class one, each in its judge
-sentence where its kind has one (issue #399 D2); a finding there is logged
-and posts no card until its kind passes the measure (D7).
+`paced` / `round` / `oracle`). The lines of the kinds that passed the audit's
+measure — [cost], [fight], [offer], [premise], [price], [state]
+(`JUDGE_KINDS_THAT_ACT.audit`) — go to the post-narration audit
+with it (`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`,
+kind `obligation`), each in its judge sentence, and no other line (issue
+#399 D10); a high-confidence finding on one posts its review card (D7).
 **After round 8** (issue #396; decisions.md → "After the eighth live round"):
 - **certain [quote]:** a quoted sentence of six words or more that an earlier
   narration of the session gave. `proseVariety.js linesAlreadySaid` reads every
@@ -1404,7 +1411,8 @@ of the record's name changes says it is ("the cutter's wreck" names the Cinder
 Wren, "raider cutter") — the latest first, at most four. A paced line and a
 typed move's narration carry it (a move made from a card has no line, and
 none); Batch Mode rounds do not yet. The fact block's rules say the same: what
-a line takes for granted against the dice is not tagged "line". NOT SO
+a line takes for granted against the dice is not tagged "line". No judge
+reads it: it failed the measure in both passes (issue #399 D10). NOT SO
 `[whereabouts]` (issue #393 D6, overhaul 8): what the line names elsewhere —
 "The characters are at Bleakhold Station. Hollow Spire is another place: they
 reach it only by a journey's move — never narrate them walking or arriving

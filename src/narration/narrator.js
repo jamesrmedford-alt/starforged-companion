@@ -133,15 +133,14 @@ const DICE_FACTS_PER_SUBJECT = 2;
 const DICE_STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'into', 'their', 'there', 'where', 'what', 'have',
   'been', 'were', 'they', 'them', 'your', 'about', 'over', 'down', 'back', 'still', 'then', 'than', 'just', 'some']);
 /**
- * The words of a [dice] fact's subject that trip its line: lowercased, the
- * possessive off, four letters or more, none of the stop words. Exported for
- * the judges' measure (test/ci/playwright/lib/judges.mjs, issue #399 D6),
- * which rebuilds a recorded line's trip words as this file builds them.
+ * The words of a [dice] fact's subject, one of which the player's line must
+ * say for the fact to be told (diceFactsOf): lowercased, the possessive off,
+ * four letters or more, none of the stop words.
  *
  * @param {string} s
  * @returns {string[]}
  */
-export const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
+const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
   .filter(w => w.length >= 4 && !DICE_STOP.has(w));
 
 /**
@@ -163,7 +162,7 @@ export const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b
  * @param {string} line
  * @param {{ source?: Object, own?: string[], sceneId?: string|null }} [opts] — the record to read (default: the
  *   stored pages); the table's own names (meterOwnersOf); the current scene's id
- * @returns {Array<{ subject: string, fact: string, words: string[] }>}
+ * @returns {Array<{ subject: string, fact: string }>}
  */
 export function diceFactsOf(line, { source, own = [], sceneId = null } = {}) {
   try {
@@ -198,7 +197,7 @@ export function diceFactsOf(line, { source, own = [], sceneId = null } = {}) {
         if (seen.has(key)) continue;
         seen.add(key);
         perSubject.set(subject.toLowerCase(), (perSubject.get(subject.toLowerCase()) ?? 0) + 1);
-        facts.push({ subject, fact, words });
+        facts.push({ subject, fact });
         if (facts.length >= DICE_FACTS_MAX) return facts;
       }
     }
@@ -1656,7 +1655,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
     const kept = await narrateKeepingObligations(
       ask,
       moveObligations,
-      { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line },
+      { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line, moveId: resolution?.moveId ?? null },
         stopped: () => xCard.stopped(),
         onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
     );
@@ -1710,7 +1709,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
         }));
         const raw = (await narrateKeepingObligations(ask,
           moveObligations,
-          { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line },
+          { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line, moveId: resolution?.moveId ?? null },
             stopped: () => xCard.stopped(),
             onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
         )).raw;
@@ -5663,7 +5662,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         ask,
         pacedObligations,
         { apiKey, judge: obligationJudgeOn(),
-          ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
+          ctx: { refusalCode: options.refusal?.code ?? null, line: playerText },
           stopped: () => xCard.stopped(),
           onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
       );
@@ -5713,7 +5712,7 @@ export async function narratePacedInput(playerText, campaignState, options = {},
           const keptAgain = await narrateKeepingObligations(ask,
             pacedObligations,
             { apiKey, judge: obligationJudgeOn(),
-              ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
+              ctx: { refusalCode: options.refusal?.code ?? null, line: playerText },
               stopped: () => xCard.stopped(),
               onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
           );
@@ -6967,14 +6966,16 @@ function roundObligationsFor(entries, chosenSince) {
 /**
  * The round's check's context: the vow a fulfilment in it names, the code of a
  * move it could not make, the round's player words (its [letgo] floor —
- * overhaul 2 §10.3).
+ * overhaul 2 §10.3), and its moves ([sheet]'s harm clause: a round that holds
+ * an Endure Harm tells a wound by design — checks.js harmViolations).
  */
 function roundCheckContext(entries) {
   const inputs = (entries ?? []).map(e => e?.input ?? {});
   const fulfil = inputs.find(i => i.kind === 'move' && i.moveId === 'fulfill_your_vow');
   const refused = inputs.find(i => i.kind !== 'move' && i.refusal?.code);
   return { vowName: fulfil?.moveTarget ?? null, refusalCode: refused?.refusal?.code ?? null,
-    line: groundOf({ lines: (entries ?? []).map(e => e?.text) }).line };
+    line: groundOf({ lines: (entries ?? []).map(e => e?.text) }).line,
+    moveIds: inputs.filter(i => i.kind === 'move' && typeof i.moveId === 'string').map(i => i.moveId) };
 }
 
 /**

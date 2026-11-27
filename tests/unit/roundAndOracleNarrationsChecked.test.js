@@ -66,10 +66,10 @@ beforeEach(() => {
 });
 
 describe("the oracle follow-up's narration is checked", () => {
-  // Issue #399, D7: the judge is asked, and its verdict is logged — the first
-  // draft posts until [oracle] passes the measure (round 3's a46 and round
-  // 8's a53 are among its real breaches, D6).
-  it('a NO told as a yes: the judge says so; its verdict is logged and the answer posts — no re-ask yet', async () => {
+  // Issue #399, D7: [oracle] passed the measure in the pre-post judge — round
+  // 3's a46 and round 8's a53 are among its real breaches (D6) — so the
+  // judge's verdict asks again.
+  it('a NO told as a yes: the judge says so, and the answer is asked once more — the second reply posts', async () => {
     answer(
       'A thin voice answers — someone is left alive aboard the wreck.' + SIDECAR,
       '{"violations":[{"tag":"oracle","quote":"someone is left alive aboard"}]}',
@@ -79,9 +79,11 @@ describe("the oracle follow-up's narration is checked", () => {
       kind: 'oracle_yes_no', oracleName: 'Ask the Oracle (likely)', question: 'Is anyone left alive aboard the wreck?',
       rolledLine: 'd100 = 97 → NO', campaignState: game.settings.get(MODULE_ID, 'campaignState'),
     });
-    expect(apiPost.mock.calls.map(labelOf)).toEqual(['narrator:narrateOracleFollowup', 'obligationJudge']);
-    expect(text).toBe('A thin voice answers — someone is left alive aboard the wreck.');
-    expect(kinds).toEqual(['callNarratorAPI>narrateOracleFollowup', 'judgeNarration>narrateOracleFollowup']);
+    expect(apiPost.mock.calls.map(labelOf)).toEqual(['narrator:narrateOracleFollowup', 'obligationJudge', 'narrator:narrateOracleFollowup:reask']);
+    // The judge reads the line as the breach, with the question it answers.
+    expect(userOf(apiPost.mock.calls[1])).toContain('[oracle] BREACH: The narration says, shows or implies the opposite of the oracle\'s answer to "Is anyone left alive aboard the wreck?": the oracle answered NO.');
+    expect(text).toBe('The comm stays dead; nothing aboard the wreck answers.');
+    expect(kinds).toEqual(['callNarratorAPI>narrateOracleFollowup', 'judgeNarration>narrateOracleFollowup', 'callNarratorAPI>narrateOracleFollowup']);
   });
 });
 

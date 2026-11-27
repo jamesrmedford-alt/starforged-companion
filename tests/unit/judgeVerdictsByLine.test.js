@@ -5,10 +5,11 @@
  * Issue #399, slice 3 — verdicts by line (D3), the classes declared once
  * (D4), and the bug audit's findings that belong with them (slice 2's list on
  * the issue):
- *   - D3: the judge's lines are numbered and it answers by number. Two [dice]
- *     lines are told apart. A verdict naming no line, or quoting words the
- *     judged view does not hold — the offer line among them — is dropped and
- *     logged, never silently.
+ *   - D3: the judge's lines are numbered and it answers by number. Two lines
+ *     of one kind are told apart (round 9's a36 had two [dice] lines; a Batch
+ *     Mode round's two refusals are two [premise] lines). A verdict naming no
+ *     line, or quoting words the judged view does not hold — the offer line
+ *     among them — is dropped and logged, never silently.
  *   - D4: the class each kind's row declares is the class the code holds it
  *     to (consistency of the table and the checks).
  *   - The audit's row says whether the audit ran; the judge's error says why
@@ -50,6 +51,7 @@ import { logConsistencyDecision } from '../../src/pacing/telemetry.js';
 import { applyStateTransition } from '../../src/entities/entityExtractor.js';
 import {
   judgeNarration, narrateKeepingObligations, redraftBlock, certainViolations, floorViolations, trippedLines, checkClassOf,
+  judgeMayAct, TRIPWIRES, CERTAIN_CHECKS,
 } from '../../src/moves/contracts/checks.js';
 import { OBLIGATION_KINDS, obligationsFor } from '../../src/moves/contracts/obligations.js';
 import { sceneObligations } from '../../src/factContinuity/sceneTurns.js';
@@ -59,12 +61,15 @@ const MODULE_ID = 'starforged-companion';
 const SIDECAR = '\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const sentTo = () => apiPost.mock.calls.at(-1)[2].messages[0].content;
 
-/** Round 9's a36: two [dice] lines, the second the one it might break. */
-const TWO_DICE = obligationsFor({ mode: 'paced', line: 'I hold the berth', dice: [
-  { subject: 'Ashen Wake', fact: 'has the better angle on the Kobayashi IV', words: ['ashen', 'wake'] },
-  { subject: 'Ashen Wake', fact: 'her guns are silent', words: ['ashen', 'wake'] },
-] }).filter(o => o.kind === 'dice');
-const A36 = 'Her fire thins across your pinned hull. The Ashen Wake\'s remaining guns still bear on you.\n\n*Breaking free would be a Face Danger.*';
+/** A Batch Mode round's two refusals: two [premise] lines, the second the one it might break. */
+const refused = (code, claim, never, why) => ({ moveId: 'x', code, hard: false, why, premise: { claim, never }, offer: null });
+const TWO_PREMISES = [
+  ...obligationsFor({ mode: 'round-entry', refusal: refused('recoverable-health', 'a wound to treat', 'a cut, a gash, blood or a dressing on them',
+    'nothing to heal: Mira Kestrel\'s health is 5 of 5 and no wound is marked') }),
+  ...obligationsFor({ mode: 'round-entry', refusal: refused('open-fight', 'a fight under way', 'a blow struck, a shot fired or a foe engaged in a fight',
+    'no fight is under way') }),
+].filter(o => o.kind === 'premise');
+const A36 = 'You keep the medkit shut. Across the ring the cutter fires a salvo, and its shots walk up the berth toward you.\n\n*Breaking free would be a Face Danger.*';
 
 beforeEach(() => {
   replies.length = 0;
@@ -76,85 +81,89 @@ beforeEach(() => {
 
 describe('D3 — verdicts by line', () => {
   it('the lines are numbered, and the judge is asked to answer by number with the narration\'s own words', async () => {
-    await judgeNarration(A36, TWO_DICE, { apiKey: 'sk-test' });
-    expect(sentTo()).toMatch(/^LINES:\n1\. \[dice\] BREACH: The narration says the opposite of what the dice decided\. The dice decided: Ashen Wake — has the better angle/);
-    expect(sentTo()).toContain('\n2. [dice] BREACH: The narration says the opposite of what the dice decided. The dice decided: Ashen Wake — her guns are silent.');
+    await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' });
+    expect(sentTo()).toMatch(/^LINES:\n1\. \[premise\] BREACH: The narration tells a wound to treat as real \(a cut, a gash, blood or a dressing on them\)\. It is not so/);
+    expect(sentTo()).toContain('\n2. [premise] BREACH: The narration tells a fight under way as real (a blow struck, a shot fired or a foe engaged in a fight). It is not so — no fight is under way.');
     expect(apiPost.mock.calls.at(-1)[2].system).toMatch(/"line":\s*<the line's number>/);
   });
 
   it('N1: a judge sentence is put as the breach itself, never under its NOT SO — a line with none keeps its list', async () => {
-    const offer = obligationsFor({ mode: 'paced', offer: 'enter_the_fray', line: 'I wait' }).find(o => o.kind === 'offer');
-    await judgeNarration('Her guns are open.', [TWO_DICE[0], offer], { apiKey: 'sk-test' });
+    // [dice] has no judge sentence since the measure retired it (D10): no pass is sent it.
+    const dice = obligationsFor({ mode: 'paced', line: 'I hold the berth', dice: [{ subject: 'Ashen Wake', fact: 'has the better angle' }] }).find(o => o.kind === 'dice');
+    expect(dice.judge).toBeUndefined();
+    await judgeNarration('Her guns are open.', [TWO_PREMISES[0], dice], { apiKey: 'sk-test' });
     expect(sentTo()).not.toContain('(NOT SO)');
-    expect(sentTo()).toContain(`2. [offer] NOT YET: ${offer.text}`);
+    expect(sentTo()).toContain('1. [premise] BREACH: ');
+    expect(sentTo()).toContain(`2. [dice] NOT SO: ${dice.text}`);
     expect(apiPost.mock.calls.at(-1)[2].system).toContain('A BREACH line describes a breach: the narration breaks it when it does what the line says.');
     expect(apiPost.mock.calls.at(-1)[2].system).toContain('a thing about to happen, feared, offered or merely possible breaks nothing');
   });
 
-  it('two [dice] lines are told apart: line 2\'s verdict is line 2\'s', async () => {
-    replies.push('{"violations":[{"line":2,"quote":"remaining guns still bear on you"}]}');
-    const v = await judgeNarration(A36, TWO_DICE, { apiKey: 'sk-test' });
+  it('two lines of one kind are told apart: line 2\'s verdict is line 2\'s', async () => {
+    replies.push('{"violations":[{"line":2,"quote":"the cutter fires a salvo"}]}');
+    const v = await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' });
     expect(v).toMatchObject({ judged: true, dropped: [] });
-    expect(v.violations).toEqual([{ tag: 'dice', line: 2, quote: 'remaining guns still bear on you', text: TWO_DICE[1].text }]);
+    expect(v.violations).toEqual([{ tag: 'premise', line: 2, quote: 'the cutter fires a salvo', text: TWO_PREMISES[1].text }]);
   });
 
   it('a verdict naming no line, or quoting words the judged view does not hold, is dropped and logged — never silently', async () => {
     replies.push(JSON.stringify({ violations: [
-      { line: 7, quote: 'still bear on you' },                                          // no line 7
-      { tag: '[dice] Cinder Wren: has at least one survivor', quote: 'still bear on you' }, // round 9's a54: a tag no line has
+      { line: 7, quote: 'the cutter fires a salvo' },                                     // no line 7
+      { tag: '[premise] a fight under way', quote: 'the cutter fires a salvo' },          // round 9's a54: a tag no line has
       { line: 1, quote: 'Breaking free would be a Face Danger' },                        // the offer line: not in the judged view
       { line: 1, quote: 'the cutter rams you' },                                         // words the narration never said
     ] }));
-    const v = await judgeNarration(A36, TWO_DICE, { apiKey: 'sk-test' });
+    const v = await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' });
     expect(v.violations).toEqual([]);
     expect(v.dropped.map(d => d.why)).toEqual(['names no line', 'names no line', 'not in the narration', 'not in the narration']);
     expect(v.judged).toBe(true);
   });
 
   it('a quote is matched in the narration\'s words whatever its emphasis, quotes or spacing', async () => {
-    replies.push('{"violations":[{"line":1,"quote":"The Ashen Wake’s remaining guns  still bear on you."}]}');
-    const v = await judgeNarration('The *Ashen Wake*\'s remaining guns still bear on you.', TWO_DICE, { apiKey: 'sk-test' });
+    replies.push('{"violations":[{"line":2,"quote":"The Ashen Wake’s remaining guns  still bear on you."}]}');
+    const v = await judgeNarration('The *Ashen Wake*\'s remaining guns still bear on you.', TWO_PREMISES, { apiKey: 'sk-test' });
     expect(v.violations).toHaveLength(1);
   });
 
   it('the old answer by tag is taken only where it names exactly one line', async () => {
-    replies.push('{"violations":[{"tag":"dice","quote":"still bear on you"}]}');
-    expect((await judgeNarration(A36, TWO_DICE, { apiKey: 'sk-test' })).dropped).toEqual([expect.objectContaining({ why: 'names no line' })]);
-    replies.push('{"violations":[{"tag":"[dice]","quote":"still bear on you"}]}');
-    expect((await judgeNarration(A36, TWO_DICE.slice(0, 1), { apiKey: 'sk-test' })).violations).toEqual([expect.objectContaining({ tag: 'dice', line: 1 })]);
+    replies.push('{"violations":[{"tag":"premise","quote":"the cutter fires a salvo"}]}');
+    expect((await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' })).dropped).toEqual([expect.objectContaining({ why: 'names no line' })]);
+    replies.push('{"violations":[{"tag":"[premise]","quote":"the cutter fires a salvo"}]}');
+    expect((await judgeNarration(A36, TWO_PREMISES.slice(1), { apiKey: 'sk-test' })).violations).toEqual([expect.objectContaining({ tag: 'premise', line: 1 })]);
   });
 });
 
 describe('the judge says why it did not judge', () => {
   it('a timeout, an error, an unparsed reply and a reply cut at its cap each name their cause', async () => {
     replies.push(new Error('Anthropic API error 529: overloaded'));
-    expect(await judgeNarration(A36, TWO_DICE, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'error: Anthropic API error 529: overloaded' });
+    expect(await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'error: Anthropic API error 529: overloaded' });
     replies.push('I think it is fine.');
-    expect(await judgeNarration(A36, TWO_DICE, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'unparsed' });
+    expect(await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'unparsed' });
     replies.push('{"violations": [ {"line": 1');
-    expect(await judgeNarration(A36, TWO_DICE, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'unparsed' });
+    expect(await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'unparsed' });
     replies.push({ content: [{ type: 'text', text: '{"violations":[{"line":1,"quote":"still' }], stop_reason: 'max_tokens' });
-    expect(await judgeNarration(A36, TWO_DICE, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'cut off at its token cap' });
+    expect(await judgeNarration(A36, TWO_PREMISES, { apiKey: 'sk-test' })).toMatchObject({ judged: false, error: 'cut off at its token cap' });
   });
 });
 
 describe('the rows a narration\'s check writes', () => {
-  const DRAFT = `The Ashen Wake's remaining guns still bear on you.${SIDECAR}`;
+  const DRAFT = `Blood beads on the dressing at your wrist as the cutter fires a salvo.${SIDECAR}`;
   const ctx = {};
 
   it('one row a verdict, each with the draft it describes; the judge\'s summary row holds no copy of its verdicts', async () => {
-    replies.push('{"violations":[{"line":1,"quote":"remaining guns still bear on you"}]}');
-    const kept = await narrateKeepingObligations(async () => DRAFT, TWO_DICE, { apiKey: 'sk-test', ctx });
+    replies.push('{"violations":[{"line":1,"quote":"Blood beads on the dressing"}]}');
+    const kept = await narrateKeepingObligations(async () => DRAFT, TWO_PREMISES, { apiKey: 'sk-test', ctx });
     const judgeRows = kept.verdicts.filter(v => v.class === 'judge');
+    // [premise] passed the measure (D7): its verdict asks again.
     expect(judgeRows).toEqual([
-      { class: 'judge', draft: 1, tripped: ['dice', 'dice'], judged: true, error: null },
-      { class: 'judge', draft: 1, tag: 'dice', line: 1, quote: 'remaining guns still bear on you', action: 'logged' },
+      { class: 'judge', draft: 1, tripped: ['premise', 'premise'], judged: true, error: null },
+      { class: 'judge', draft: 1, tag: 'premise', line: 1, quote: 'Blood beads on the dressing', action: 'reask' },
     ]);
   });
 
   it('a dropped verdict is a row of its own, with why', async () => {
     replies.push('{"violations":[{"line":9,"quote":"x"}]}');
-    const kept = await narrateKeepingObligations(async () => DRAFT, TWO_DICE, { apiKey: 'sk-test', ctx });
+    const kept = await narrateKeepingObligations(async () => DRAFT, TWO_PREMISES, { apiKey: 'sk-test', ctx });
     expect(kept.verdicts).toContainEqual(expect.objectContaining({ class: 'judge', action: 'dropped', why: 'names no line', draft: 1 }));
   });
 
@@ -162,7 +171,7 @@ describe('the rows a narration\'s check writes', () => {
     const onVerdict = vi.fn();
     let stopped = false;
     const call = vi.fn(async () => { stopped = true; return DRAFT; });
-    const kept = await narrateKeepingObligations(call, TWO_DICE, { apiKey: 'sk-test', ctx, onVerdict, stopped: () => stopped });
+    const kept = await narrateKeepingObligations(call, TWO_PREMISES, { apiKey: 'sk-test', ctx, onVerdict, stopped: () => stopped });
     expect(apiPost).not.toHaveBeenCalled();
     expect(onVerdict).not.toHaveBeenCalled();
     expect(kept.raw).toBe(DRAFT);
@@ -199,10 +208,10 @@ describe('a redraft with no prose', () => {
 });
 
 describe('the re-ask names every line broken, each in its own words', () => {
-  it('two [dice] lines, each with its own fact and quote', () => {
-    const block = redraftBlock('Draft.', [{ tag: 'dice', line: 1, quote: 'q1', text: TWO_DICE[0].text }, { tag: 'dice', line: 2, quote: 'q2', text: TWO_DICE[1].text }], TWO_DICE);
-    expect(block).toContain(`- [dice] ${TWO_DICE[0].text} (it says: "q1")`);
-    expect(block).toContain(`- [dice] ${TWO_DICE[1].text} (it says: "q2")`);
+  it('two lines of one kind, each with its own words and quote', () => {
+    const block = redraftBlock('Draft.', [{ tag: 'premise', line: 1, quote: 'q1', text: TWO_PREMISES[0].text }, { tag: 'premise', line: 2, quote: 'q2', text: TWO_PREMISES[1].text }], TWO_PREMISES);
+    expect(block).toContain(`- [premise] ${TWO_PREMISES[0].text} (it says: "q1")`);
+    expect(block).toContain(`- [premise] ${TWO_PREMISES[1].text} (it says: "q2")`);
   });
 
   it('two breaches of one line: both quotes', () => {
@@ -235,44 +244,62 @@ describe('the offer line is no breach of any check', () => {
 describe('D4 — the class a row declares is the class the code holds it to', () => {
   const LINE_OF = {
     premise: { kind: 'premise', list: 'NOT SO', text: 'A wound to treat is not so.' },
-    offer: { kind: 'offer', list: 'NOT YET', text: 'Heal is only offered.' },
     oracle: { kind: 'oracle', list: 'NOT SO', text: 'The answer is no.' },
     cost: { kind: 'cost', list: 'NOT YET', text: 'THE COST — health: harm' },
     price: { kind: 'price', list: 'NOT YET', text: 'THE PRICE. A shot rakes the hull.' },
-    state: { kind: 'state', list: 'NOT SO', text: 'No fight is under way.' },
-    dice: { ...TWO_DICE[0] },
     whereabouts: { kind: 'whereabouts', list: 'NOT SO', text: 't', words: ['hollow', 'spire'] },
   };
-  const CTX = { refusalCode: 'recoverable-health', offer: 'heal', question: 'Is anyone left alive aboard?' };
+  const CTX = { refusalCode: 'recoverable-health', question: 'Is anyone left alive aboard?' };
 
   it('every kind the code holds to a line is declared on a row, scene lines with them', () => {
     const scene = sceneObligations({ sceneBegan: { cause: 'fight', what: 'the raiders struck', sceneId: 'sc' }, currentSceneId: 'sc', sceneFrame: { sceneId: 'sc', letGo: [{ text: 'the amber light', stems: ['amber'] }] } },
       { ship: 'Kobayashi IV docked at Bleakhold Station' });
     expect(scene.map(o => o.kind).sort()).toEqual(['letgo', 'place', 'scene']);
     for (const o of scene) expect(OBLIGATION_KINDS[o.kind], o.kind).toBeTruthy();
-    expect(checkClassOf('place')).toBe('judge');
+    // [place] was retired from both judges by the measure (D10): told to the narrator, read by no judge.
+    expect(checkClassOf('place')).toBe('logged');
+    expect(judgeMayAct('place', 'audit')).toBe(false);
     expect(checkClassOf('letgo')).toBe('floor');
     expect(checkClassOf('scene')).toBe('logged');
   });
 
-  it('every judge-class kind trips on words; no other class is sent to the judge', () => {
-    for (const [kind, row] of Object.entries(OBLIGATION_KINDS)) {
-      if (row.check !== 'judge') continue;
-      const line = kind === 'place' ? sceneObligations({ sceneBegan: { cause: 'fight', what: 'the raiders struck', sceneId: 'sc' }, currentSceneId: 'sc' }, { ship: 'Kobayashi IV docked at Bleakhold Station' }).find(o => o.kind === 'place')
-        : kind === 'foe' || kind === 'unsaid' || kind === 'fight' ? { kind, list: 'NOT SO', text: '' } : LINE_OF[kind];
+  it('every judge-class kind trips on words, and has trip words of its own; no other class is sent to the judge', () => {
+    const judgeClass = Object.entries(OBLIGATION_KINDS).filter(([, r]) => r.check === 'judge').map(([k]) => k).sort();
+    expect(Object.keys(TRIPWIRES).sort()).toEqual(judgeClass);
+    for (const kind of judgeClass) {
+      const line = kind === 'foe' || kind === 'unsaid' || kind === 'fight' ? { kind, list: 'NOT SO', text: '' } : LINE_OF[kind];
       expect(line, kind).toBeTruthy();
-      const words = { premise: 'cuts', offer: 'wound', oracle: 'alive', cost: 'blood', price: 'rakes', state: 'fire', dice: 'ashen', whereabouts: 'hollow',
-        place: 'docked', foe: 'wreck', unsaid: 'tell', fight: 'salvo' }[kind];
+      const words = { premise: 'cuts', oracle: 'alive', cost: 'blood', price: 'rakes', whereabouts: 'hollow', foe: 'wreck', unsaid: 'tell', fight: 'salvo' }[kind];
       expect(trippedLines(`a sentence with ${words} in it`, [line], CTX).map(o => o.kind), kind).toEqual([kind]);
     }
-    // A certain or logged line whose list is NOT SO is never a judge's.
+    // A certain or logged line whose list is NOT SO is never a judge's: [sheet], and the kinds the measure retired.
     expect(trippedLines('the antiseptic stings on the cuts', [{ kind: 'sheet', list: 'NOT SO', text: 'nothing heals' }], CTX)).toEqual([]);
+    expect(trippedLines('the Ashen Wake fires from the clamps; no fight', [
+      { kind: 'dice', list: 'NOT SO', text: 'What the dice decided stands — Ashen Wake: has the better angle.', words: ['ashen', 'wake'] },
+      { kind: 'place', list: 'NOT SO', text: 'Kobayashi IV is docked at Bleakhold Station by the ship\'s record.' },
+      { kind: 'state', list: 'NOT SO', text: 'No fight is under way.' },
+    ], CTX)).toEqual([]);
+  });
+
+  it('D10: a pass is asked about a kind only where its verdict may act — and every such kind has a judge sentence', () => {
+    for (const [kind, row] of Object.entries(OBLIGATION_KINDS)) {
+      // The judge-class kinds are exactly the kinds whose pre-post verdict may re-ask.
+      expect(row.check === 'judge', kind).toBe(judgeMayAct(kind, 'judge'));
+      // A kind either pass may be asked about says its breach to the judge.
+      if (judgeMayAct(kind, 'judge') || judgeMayAct(kind, 'audit')) expect(typeof row.judge, kind).toBe('function');
+    }
+    // [dice] and [place] passed neither: no judge reads them, so they have no judge sentence.
+    for (const kind of ['dice', 'place']) {
+      expect(judgeMayAct(kind, 'judge') || judgeMayAct(kind, 'audit'), kind).toBe(false);
+      expect(OBLIGATION_KINDS[kind].judge, kind).toBeUndefined();
+    }
   });
 
   it('every certain-class kind has a check, and every floor-class kind a floor', () => {
     const certain = Object.entries(OBLIGATION_KINDS).filter(([, r]) => r.check === 'certain').map(([k]) => k).sort();
     const floor = Object.entries(OBLIGATION_KINDS).filter(([, r]) => r.check === 'floor').map(([k]) => k).sort();
-    expect(certain).toEqual(['apparatus', 'arrival', 'here', 'match', 'material', 'person', 'quote']);
+    expect(certain).toEqual(['apparatus', 'arrival', 'here', 'match', 'material', 'person', 'quote', 'sheet']);
+    expect(Object.keys(CERTAIN_CHECKS).sort()).toEqual(certain);
     expect(floor).toEqual(['chosen', 'chosen-since', 'letgo', 'vow']);
     // [chosen-since] (round play's cost chosen since the last narration) logs when no word of its meter is told.
     const pick = { who: 'Mira', labels: ['Endure Harm (-1 health)'] };

@@ -1,0 +1,7121 @@
+{
+ "runId": "judges-live-20261127-162743",
+ "questions": [
+  "As the module now ships — the audit asked only about [cost], [fight], [offer], [premise], [price] and [state] — does every kind that acts still pass the bar on the counts pooled over the second, third and this run?",
+  "The pre-post judge's requests are the third run's again: how often is its verdict on an identical request different this time?",
+  "What did the run cost, in calls and dollars?"
+ ],
+ "stopped": null,
+ "calls": [
+  {
+   "hash": "c88d67ba9bc4311c1c05d018",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 960,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001015
+  },
+  {
+   "hash": "f64d98910a5785a71bc64b8e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 976,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010310000000000001
+  },
+  {
+   "hash": "bd17ec1b1f4a4e8005d35596",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 965,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000102
+  },
+  {
+   "hash": "a7b2f41314700dd5e9327925",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1026,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010810000000000001
+  },
+  {
+   "hash": "06de36c23f65276d129e0618",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 965,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000102
+  },
+  {
+   "hash": "a227e7d50ba9089dcc6d6cc0",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 975,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000103
+  },
+  {
+   "hash": "644ce5a67f7a8ed06028047d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 973,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001028
+  },
+  {
+   "hash": "21661f06504d5ac549a55637",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1049,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001104
+  },
+  {
+   "hash": "b802fcfa6e7dfbabf8319ce6",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1102,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00011570000000000001
+  },
+  {
+   "hash": "ad9f979bdb5cba4b286d719b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 434,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000048400000000000004
+  },
+  {
+   "hash": "ca683c74078fd622f91b73f8",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 934,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000994
+  },
+  {
+   "hash": "7ac71c6d414f331a5bcf3ba5",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1047,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001107
+  },
+  {
+   "hash": "bbe8a68d5b14221de96dc83c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 983,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010430000000000001
+  },
+  {
+   "hash": "3a73e79412889de08c8971a2",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1041,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010960000000000001
+  },
+  {
+   "hash": "903d5b5c60bf729ffe0cd90d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1006,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001061
+  },
+  {
+   "hash": "ca6464cd45bad965cd615d9b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1048,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00011030000000000001
+  },
+  {
+   "hash": "ea0191fca205c4e85765490f",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 984,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001039
+  },
+  {
+   "hash": "e988d3ed18b5d753404459f7",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1058,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00011130000000000001
+  },
+  {
+   "hash": "2e934ff99147e6f68f5768d6",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 963,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010180000000000001
+  },
+  {
+   "hash": "ebca5ba7e248fd1ec4aff262",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1051,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001106
+  },
+  {
+   "hash": "1281c4d3724bfa57c2432efc",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 968,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001023
+  },
+  {
+   "hash": "2dee74dcadc1830e136320e5",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Checking the one obligation line: the narration says Tamsin \"slides the stool a hand's width toward yours\" and says \"Stay, then.\" Those are an invitation, not a completed relationship deepening. The narration does not state that the relationship has deepened, so line 1 is not breached. No other sections have established facts to conflict with (no place, identities, retractions, or standing facts are recorded).\n\n```json\n{\n  \"contradictions\": []\n}\n```"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 938,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 143,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001653
+  },
+  {
+   "hash": "2ed4aa07874d6d070c969475",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"You tell Tamsin plainly that she is the one person on these docks you would trust with the ship's secrets.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 425,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 56,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000705
+  },
+  {
+   "hash": "e2c7c71d2115f9f46bd1c7cf",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 940,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00009949999999999999
+  },
+  {
+   "hash": "50c3a9a750d94a30182423aa",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 979,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001034
+  },
+  {
+   "hash": "477a8da027e07ce69dcfb8d9",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 973,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001028
+  },
+  {
+   "hash": "6123a805f59492f3e1a16f9b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 965,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000102
+  },
+  {
+   "hash": "9b29a9b3f986da9539fbf31a",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1030,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001085
+  },
+  {
+   "hash": "9d3d764f3178896643ba08e1",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 970,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001025
+  },
+  {
+   "hash": "753056be49f0783426c60562",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Checking the narration against line 1 (BREACH [offer]): the breach occurs only if the narration tells as done the arrival at the destination the course leads to. The narration says the bearing is \"drawn but not flown\" and the lane \"lies a long dark away,\" explicitly stating the move has not resolved into arrival. The beacon and the seam ticking are not arrivals. No breach.\n\nNo other ledger lines exist (place, identity, truth, state, retraction sections are empty).\n\n```json\n{\n  \"contradictions\": []\n}\n```"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 929,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 171,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001784
+  },
+  {
+   "hash": "f6a7542a36e60710fc07d3a3",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1057,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001112
+  },
+  {
+   "hash": "4a16e448ce0dbb6a3fafe8c4",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 496,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000546
+  },
+  {
+   "hash": "1cc61e3fd6f56330b770f914",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1095,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000115
+  },
+  {
+   "hash": "fb1f91b597255ef64d58972d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 925,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000098
+  },
+  {
+   "hash": "23f5779121e0e6e360da7851",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 978,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001033
+  },
+  {
+   "hash": "9aee71925497bc7e150f281c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 980,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001035
+  },
+  {
+   "hash": "cc5860f56854dc6142da0fdf",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 969,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010240000000000001
+  },
+  {
+   "hash": "2502613659ca66b113cd0ee3",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1002,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001057
+  },
+  {
+   "hash": "200a0494269f6c9b508fdbe1",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 952,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001007
+  },
+  {
+   "hash": "88f3811ebaae068c0f8f92e0",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 949,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001004
+  },
+  {
+   "hash": "8153846a9e3102ec176df861",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 508,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000558
+  },
+  {
+   "hash": "e752764873486622cc2368fc",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1107,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001167
+  },
+  {
+   "hash": "121c7373810b40835ffe15e8",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1000,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001055
+  },
+  {
+   "hash": "f8a0208b27ad8279fedd1269",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 936,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00009910000000000001
+  },
+  {
+   "hash": "3fa8993320535b3823d0d3aa",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1046,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001101
+  },
+  {
+   "hash": "9c1a7b7fb2a9c984da3ad1c8",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"fight\", \"violated\": \"[fight] The narration must not have the fight begun (no blow struck, landed, fired, or anyone hit) unless the player has chosen to begin it.\", \"evidence\": \"\\\"Your thumb finds the trigger, and the cutter's guns glow bright.\\\"\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"medium\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1085,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 136,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001765
+  },
+  {
+   "hash": "affa137fdd2316a9f0442314",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 457,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000507
+  },
+  {
+   "hash": "0c766563ef05029f5f066e87",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 943,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010030000000000001
+  },
+  {
+   "hash": "7f71773dc9e4055fb7059b1b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The walk to the Hollow Spire docks takes the better part of the morning.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 443,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 46,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00006730000000000001
+  },
+  {
+   "hash": "7e9f3e49bae9676a7ec2395e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1065,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000112
+  },
+  {
+   "hash": "80a7926764a3415205f20002",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1009,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001064
+  },
+  {
+   "hash": "f37f8ade4800520eb254fec4",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1038,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010930000000000001
+  },
+  {
+   "hash": "3e35fbaa066911287f8eef49",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 977,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001032
+  },
+  {
+   "hash": "db3c90a0145eb61426ef5ab1",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 492,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000542
+  },
+  {
+   "hash": "4f5402dc23992fb6d870b906",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 996,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010510000000000001
+  },
+  {
+   "hash": "e1b15cd950327f3a17a74d4b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 936,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00009910000000000001
+  },
+  {
+   "hash": "dc2207929954e8e730b84753",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1031,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010860000000000001
+  },
+  {
+   "hash": "85e121bd96e6241447b8625e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 927,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000982
+  },
+  {
+   "hash": "53ce12c42f1e1bfd8bde6808",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 942,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000997
+  },
+  {
+   "hash": "d4a55bb57259763ef1d62043",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 993,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010480000000000001
+  },
+  {
+   "hash": "deff84f6d98fb535217a9f3c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 967,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001022
+  },
+  {
+   "hash": "1db16a0eee87bb01a47177e1",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 975,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000103
+  },
+  {
+   "hash": "83fcb3d5f6e0d543f283322c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 990,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010449999999999999
+  },
+  {
+   "hash": "d45d88434789f176e50095b6",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 977,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001032
+  },
+  {
+   "hash": "1114ca842edf62072699de63",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 974,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010290000000000001
+  },
+  {
+   "hash": "00497b20ffd0238eba8c5cd5",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 989,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001044
+  },
+  {
+   "hash": "103daf8d13461169d161605a",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 471,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000521
+  },
+  {
+   "hash": "4c8c796aa0c91c20384382c1",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Checking the narration against the single obligation line: the price line concerns the player being shown as having paid the miss's price. The narration describes a drive signature, a hatch opening, and the distress call cutting off, but it does not say the player paid any price. It only describes what the scan found and a new threat appearing, which the rules allow. No other sections have entries, so nothing else can be contradicted.\n\n```json\n{\n  \"contradictions\": []\n}\n```"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 975,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 140,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001675
+  },
+  {
+   "hash": "54d07a2100f90f67d333019f",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1055,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000111
+  },
+  {
+   "hash": "aa65590d55b1b4a470da8480",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1109,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00011640000000000001
+  },
+  {
+   "hash": "24f499a9e88243eae96ed85d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 455,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000505
+  },
+  {
+   "hash": "57a50a05d8f5398f05caabcd",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1023,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001078
+  },
+  {
+   "hash": "80248d6e9568a9b5659fa4dd",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 947,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001002
+  },
+  {
+   "hash": "433d12703f39e1ef5ecb1ccd",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1041,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010960000000000001
+  },
+  {
+   "hash": "3dcae2a9c558dac6aec1f3f4",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1012,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001067
+  },
+  {
+   "hash": "9810a2ddc05292bda7237d15",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 964,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010190000000000001
+  },
+  {
+   "hash": "2a596a568a98d9e8f4c81982",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The skiff clears the ring and noses down toward Hollow Spire's docks.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 412,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 48,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00006520000000000001
+  },
+  {
+   "hash": "419e7f458a7340965ec21319",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1035,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010899999999999999
+  },
+  {
+   "hash": "0e3ee1f1fd70d195a613bbb7",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 983,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010380000000000002
+  },
+  {
+   "hash": "ecb233430e4d946d3e4ee1f9",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1041,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010960000000000001
+  },
+  {
+   "hash": "fd2fd2b2ce8f1122bb591be4",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 978,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001033
+  },
+  {
+   "hash": "3832d256b9a66655137a811e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1027,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001082
+  },
+  {
+   "hash": "c8be115228d3b60fa752ddfb",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 970,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001025
+  },
+  {
+   "hash": "5d8ba540f74201017b36d3fb",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1060,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001115
+  },
+  {
+   "hash": "3c472521c1064fdd9597af12",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 969,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010240000000000001
+  },
+  {
+   "hash": "4d600b4ec3c4faa9d6084b71",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 936,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00009910000000000001
+  },
+  {
+   "hash": "28f7cc95839df8b8fd27a129",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 432,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000482
+  },
+  {
+   "hash": "6a8085f3eb61fb825b985892",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 436,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000486
+  },
+  {
+   "hash": "66f08b1b4ee0c4d55df576b5",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 417,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000046700000000000003
+  },
+  {
+   "hash": "eda8c0d17bc87018bb8fcf3a",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 937,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000992
+  },
+  {
+   "hash": "6f7c4a9c59abcfc3e7b1abef",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 977,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001032
+  },
+  {
+   "hash": "10fa9f1b74862d4a2043d4b7",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 947,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001002
+  },
+  {
+   "hash": "e16c517548bcda1f4481ea5d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 971,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001026
+  },
+  {
+   "hash": "9b4acde44e7fb0137e32e045",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1028,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001083
+  },
+  {
+   "hash": "96b488035e9b75e29f4f09bd",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 955,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000101
+  },
+  {
+   "hash": "bdb51f887887bc5383a1b992",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1000,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001055
+  },
+  {
+   "hash": "28c1531e791e6164b1ebe3ac",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 973,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001028
+  },
+  {
+   "hash": "aeb5dcc3d01635f5ea6d1752",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1115,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000117
+  },
+  {
+   "hash": "9c800c57e20c0533c25e074e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 414,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000464
+  },
+  {
+   "hash": "4cd71901707b7ab6887832da",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Checking the narration against the single obligation line.\n\nLine 1 is a BREACH [offer] line: the narration must not tell as done what Set a Course would decide, the characters arriving at where the course leads. The narration says \"Your hands go to the nav board and begin laying the line toward Bleakhold.\" That is the beat brought to where the move would begin, which the line explicitly says breaks nothing. It does not describe arrival at Bleakhold or any outcome of the course. The stowaway \"waiting to hear where you mean to take them\" leaves the decision open, so the table's undecided state is respected.\n\nNo other ledger facts (place, identities, binds, retractions, standing conditions) are present to conflict with.\n\n{\n  \"contradictions\": []\n}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 939,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 239,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0002134
+  },
+  {
+   "hash": "034aec41d02f80429ab3825b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1015,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000107
+  },
+  {
+   "hash": "5fde34315491c0b7def60d5b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1065,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000112
+  },
+  {
+   "hash": "8a4be0046fd74ed0b83e3350",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The stowaway's shout hits you as the turret locks wrong, its barrel stuck wide of the cutter's path.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 496,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 60,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000796
+  },
+  {
+   "hash": "715ac86276c1628a8f5f8d3c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1095,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000115
+  },
+  {
+   "hash": "e336b0fd38f9b43a692b0e95",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"the Ashen Wake lurches, drifting dead and hurt\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 439,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 44,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000659
+  },
+  {
+   "hash": "e6fa01f6920b866f7b2d7ebf",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 449,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00004990000000000001
+  },
+  {
+   "hash": "5220c7336a949c2b6e32578c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"Your volley tears into the cutter's open flank, and something inside her goes up in a white flash. The hulk lurches and slews clear of your berth.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 444,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 69,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00007890000000000001
+  },
+  {
+   "hash": "dc3b79ea7a76727539fb85ee",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The wreck rolls once and stays rolled, a dead thing with no guns left.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 433,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 48,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00006730000000000001
+  },
+  {
+   "hash": "7fd9295795dc5b2619ee401f",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 453,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000503
+  },
+  {
+   "hash": "e6074b4e98ea915d8882a144",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 538,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000058800000000000006
+  },
+  {
+   "hash": "dc8ef0f1780929999daf9fa7",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 922,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000982
+  },
+  {
+   "hash": "60e3c554ad5a4ab083f3c689",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 920,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000975
+  },
+  {
+   "hash": "80babe68fc239647744c4e85",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 552,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000602
+  },
+  {
+   "hash": "0b6bf5cd7f5ebf294d5c8eb0",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1056,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001116
+  },
+  {
+   "hash": "d99ea59b372ba2e958196814",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1083,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00011380000000000001
+  },
+  {
+   "hash": "2bb687ac8f3eb25043f06b90",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 985,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000104
+  },
+  {
+   "hash": "e76c89fa7931e8b39a9c0832",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1063,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00011180000000000001
+  },
+  {
+   "hash": "6eaaacd00454ae9367cf6804",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 975,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000103
+  },
+  {
+   "hash": "9e5aa251e9b9e8108e42ce7c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1018,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001073
+  },
+  {
+   "hash": "51ee6b51a811a9bd2202f08c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 947,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001002
+  },
+  {
+   "hash": "0b51f936acbd96050e5f3147",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 948,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010030000000000001
+  },
+  {
+   "hash": "caddd7b7660e74490ef95b2d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 951,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001011
+  },
+  {
+   "hash": "edac657fe214f502bd04f4b7",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1022,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001077
+  },
+  {
+   "hash": "1104f26e1a459bb160c4a2cc",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 964,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010190000000000001
+  },
+  {
+   "hash": "172fc4166f84cce8b20c4ee4",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1031,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010860000000000001
+  },
+  {
+   "hash": "771ad84ef484d64b9d6c5862",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 938,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00009930000000000001
+  },
+  {
+   "hash": "115ed965d933231abf989671",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 444,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00004940000000000001
+  },
+  {
+   "hash": "31b6f3e3ef7daf43a1ebbab2",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "The narration has \"you\" as a recipient of actions (her writing your name, crates slid against yours) but nothing where your character speaks, asks, promises or confesses. Tamsin's line is hers, not yours.\n\n{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 401,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 77,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000786
+  },
+  {
+   "hash": "bf0d947d973ca0ccf50ca0ca",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 904,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000959
+  },
+  {
+   "hash": "e7a844d97cdb3d3cf866e99d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 964,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010190000000000001
+  },
+  {
+   "hash": "5268ab9a165325d235545cdb",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 962,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001017
+  },
+  {
+   "hash": "61947116136100ad4c60b807",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 975,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000103
+  },
+  {
+   "hash": "73a9b3f35d88581232e6d477",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1022,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001077
+  },
+  {
+   "hash": "9d624ec6d4d1792ce7026062",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1024,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010790000000000001
+  },
+  {
+   "hash": "362f1c4e95783f0b3e27f4a4",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 962,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001017
+  },
+  {
+   "hash": "635afccd988fda5c10f7c3be",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1102,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00011570000000000001
+  },
+  {
+   "hash": "b3265ddb7105989e3108fb4b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 433,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000483
+  },
+  {
+   "hash": "1f02ed07ac44dba3aa92915b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 955,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000101
+  },
+  {
+   "hash": "8d8f77d9ad4b74fff785f660",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1127,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001182
+  },
+  {
+   "hash": "cb0acab551aaf1a410166d2d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1110,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001165
+  },
+  {
+   "hash": "fa407479601fe4ec9b8a7837",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1111,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001166
+  },
+  {
+   "hash": "3f98cb9ecb717d44e7f86351",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 432,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000482
+  },
+  {
+   "hash": "4cde7f3f7331b0a5f51cad3e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 429,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000047900000000000006
+  },
+  {
+   "hash": "fce0dd4e4e2235ee88c86863",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 548,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000059800000000000003
+  },
+  {
+   "hash": "1dce12811f33c6a8b1961600",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 997,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001052
+  },
+  {
+   "hash": "b0392fc02a02f10b9168a999",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 937,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000992
+  },
+  {
+   "hash": "387dcf13e0f42fe159c48dc9",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 956,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001011
+  },
+  {
+   "hash": "72e62f23207024604d3ea64b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 973,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001028
+  },
+  {
+   "hash": "9a5e97b9485457f54e44512d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1029,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001084
+  },
+  {
+   "hash": "b17c1575b15bb62bec5981f1",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 956,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001011
+  },
+  {
+   "hash": "8e7c0a1f00b3aba5ab2ff740",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[offer]\", \"violated\": \"The narration tells as done what Develop Your Relationship would decide (the relationship deepened), though the move is only offered, not made.\", \"evidence\": \"\\\"Then the grille clicks, and her dry voice says, \\\\\\\"Tell me the part you left out.\\\\\\\"\\\" — the narration has Tamsin opening up in response to the player's act, presenting a deepened relationship as already achieved rather than as the outcome of the move.\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"low\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1048,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 187,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001983
+  },
+  {
+   "hash": "50d37923fd0e4cb2418917ef",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 969,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010240000000000001
+  },
+  {
+   "hash": "44c65c9506ae0e0e45438770",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1050,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001105
+  },
+  {
+   "hash": "581b1688aa3df43713c4d660",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 451,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000501
+  },
+  {
+   "hash": "727eb62adb9d03deeb91d1dc",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 987,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001042
+  },
+  {
+   "hash": "f8df8c96a896ebc1e5b0f1d0",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 439,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000489
+  },
+  {
+   "hash": "224349fb65cb4180194c5427",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1045,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00011
+  },
+  {
+   "hash": "c68d5a856e8e4799520fb794",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1044,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001099
+  },
+  {
+   "hash": "2e373a84c39901d89506de1e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 451,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000501
+  },
+  {
+   "hash": "b160757522524859dfabe344",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 987,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001042
+  },
+  {
+   "hash": "a2607af0b5d6df7b9a7b9d89",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1012,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001067
+  },
+  {
+   "hash": "d9913889977b94264716f787",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 974,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010290000000000001
+  },
+  {
+   "hash": "2de6ab3267633481786f73f6",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 410,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000046
+  },
+  {
+   "hash": "5bb325a7f966c20c35cc79fe",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1013,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00010680000000000001
+  },
+  {
+   "hash": "2de6ab3267633481786f73f6",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 410,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000046
+  },
+  {
+   "hash": "5bb325a7f966c20c35cc79fe",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1013,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001073
+  },
+  {
+   "hash": "19c30832b72351721a772393",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 418,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000046800000000000006
+  },
+  {
+   "hash": "b73bb1fae3b684f358c62c59",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 433,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000483
+  },
+  {
+   "hash": "dc60c8bef75fc75c3e79a508",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 942,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 12,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001002
+  },
+  {
+   "hash": "aacef61d515d8f1fc839bcdb",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 436,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000486
+  },
+  {
+   "hash": "654a87ae19ac968b46671eec",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 427,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000477
+  },
+  {
+   "hash": "e404c04d525db362661337a6",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 937,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000992
+  },
+  {
+   "hash": "d96a26e28a6bd4c664904966",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 445,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000495
+  },
+  {
+   "hash": "4c28efe754d13dbce874d0f6",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 433,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000483
+  },
+  {
+   "hash": "34fd086d1a57f1fe3712d528",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 942,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000997
+  },
+  {
+   "hash": "254cf81c7f9ad15f82a7b6da",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 943,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00009980000000000001
+  },
+  {
+   "hash": "eedbecf593a14259ca92459d",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 965,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000102
+  },
+  {
+   "hash": "89a0a1f4acc3cce6890a4c78",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 945,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001
+  },
+  {
+   "hash": "9f8b473657954d458c9f1d8e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 421,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000471
+  },
+  {
+   "hash": "446e8f84065d3ba862b21ff7",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": []}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 955,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 11,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000101
+  },
+  {
+   "hash": "439f3509f56fa63746408686",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The scorched patch along your ribs takes the gel with a hiss. You bind it in silence\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 488,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 52,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000748
+  },
+  {
+   "hash": "62ab9517840f41bf017c7e70",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[premise]\", \"violated\": \"The narration tells a wound to treat as real (a cut, a gash, blood or a dressing on them). It is not so — nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked.\", \"evidence\": \"\\\"The scorched patch along your ribs takes the gel with a hiss. You bind it in silence\\\"\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 991,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 163,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001806
+  },
+  {
+   "hash": "04f09e667d8caf8e87387ade",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"You work the gel into the burn, lay the bandage flat, and pull the tape tight along your ribs.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 480,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 55,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000755
+  },
+  {
+   "hash": "f877c628a986d3e29a8dc96b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[premise]\",\"violated\":\"BREACH [premise] The narration tells a wound to treat as real (a cut, a gash, blood or a dressing on them). It is not so — nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked.\",\"evidence\":\"\\\"You work the gel into the burn, lay the bandage flat, and pull the tape tight along your ribs. It stings, then settles.\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 984,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 178,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001874
+  },
+  {
+   "hash": "b4affa7c7458037db22ae0fc",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"Your sleeve sticks to the cut where the flank plating bucked you into the wall.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 466,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 50,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000716
+  },
+  {
+   "hash": "085b4604f1da506613c058c3",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[premise]\",\"violated\":\"1. BREACH [premise] The narration tells a wound to treat as real (a cut, a gash, blood or a dressing on them). It is not so — nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked.\",\"evidence\":\"\\\"Your sleeve sticks to the cut where the flank plating bucked you into the wall.\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 971,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 167,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001806
+  },
+  {
+   "hash": "2fbe19b56f63bc112d159c2b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"Mira pulls the medkit from under the console and starts on the cuts. The antiseptic stings, and she hisses through it.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 505,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 62,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000815
+  },
+  {
+   "hash": "eb45102c6b5c0d5e9980ed58",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[premise]\",\"violated\":\"Mira Kestrel's health is 5 of 5 and no wound is marked.\",\"evidence\":\"Mira pulls the medkit from under the console and starts on the cuts. The antiseptic stings, and she hisses through it.\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 1008,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 121,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00016130000000000002
+  },
+  {
+   "hash": "30f56766c984b1ebc34ad01f",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The dressing holds under your palm, and the gash throbs against it.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 462,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 43,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000677
+  },
+  {
+   "hash": "dedc7462c0f0b65b23091cbc",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[premise]\",\"violated\":\"BREACH [premise] The narration tells a wound to treat as real (a cut, a gash, blood or a dressing on them). It is not so — nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked.\",\"evidence\":\"\\\"The dressing holds under your palm, and the gash throbs against it.\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 965,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 158,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00017549999999999998
+  },
+  {
+   "hash": "d0a5f25deedcd81589138da5",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"You pull the medkit into your lap and unspool the gauze. The wound has stiffened since the last pass, and the fabric catches on it.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 469,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 66,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00007990000000000002
+  },
+  {
+   "hash": "6a841186a407807adf4dee0b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[premise]\", \"violated\": \"BREACH [premise] The narration tells a wound to treat as real (a cut, a gash, blood or a dressing on them). It is not so \\u2014 nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked.\", \"evidence\": \"\\\"Bandage first,\\\" the dockhand says through the lock panel. \\\"Then answer the light.\\\" You pull the medkit into your lap and unspool the gauze. The wound has stiffened since the last pass, and the fabric catches on it.\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 974,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 220,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0002074
+  },
+  {
+   "hash": "66cc8ddc30c78715dc3bf6d3",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"Your first salvo takes her forward plating while her gunners are still finding the range.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 493,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 47,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00007280000000000001
+  },
+  {
+   "hash": "82b55cc36e099e90ad39c4e6",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [\n  {\n    \"subject\": \"[fight]\",\n    \"violated\": \"BREACH [fight] The narration has the fight begun (a blow struck or landed, a shot fired, anyone or anything hit, damaged or hurt, or a side breaking off or giving way), though the player has not chosen yet to begin it.\",\n    \"evidence\": \"\\\"Guns hot,\\\" you say... Your first salvo takes her forward plating while her gunners are still finding the range. The match flares bright on the scope, and she veers hard.\",\n    \"line\": 1,\n    \"kind\": \"obligation\",\n    \"confidence\": \"high\"\n  }\n]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 998,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 210,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00020480000000000002
+  },
+  {
+   "hash": "e2a66ba4974fe8216f2ca9b8",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"It costs you, though: the cracked tube gives out half-used, and the tape runs short.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 477,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 50,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000727
+  },
+  {
+   "hash": "85655c82f6f9edc0b8d2452b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[cost]\", \"violated\": \"BREACH [cost] The narration tells as paid a cost the player has not chosen yet, to momentum, health, spirit, supply, a companion's health or the vehicle's integrity\", \"evidence\": \"It costs you, though: the cracked tube gives out half-used, and the tape runs short.\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 980,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 146,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00017099999999999998
+  },
+  {
+   "hash": "462becde4991c73c324f6031",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"sitting down across from you at the berth's fold-out table. She eats with you, close enough to pass the salt by hand.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 421,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 59,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000716
+  },
+  {
+   "hash": "2d940e0c02678274c8291f30",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"Tamsin steps out of the hatch and stands beside you in the berth, close enough to smell the ink on her hands.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 402,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 60,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000702
+  },
+  {
+   "hash": "4e651b09354aa33d68a151a0",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"Tamsin comes round the grille and into the berth, and for a long moment she stands there with you.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 403,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 52,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000663
+  },
+  {
+   "hash": "d696b21f2529404f9c181062",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[offer]\", \"violated\": \"1. BREACH [offer] The narration tells as done what Make a Connection would decide (the connection made: a tie between them begun), though the move is only offered, not made.\", \"evidence\": \"\\\"from tonight you are her connection on these docks\\\"\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 910,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 129,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00015549999999999999
+  },
+  {
+   "hash": "c0ca2896d19eef99af7bbe96",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[offer]\", \"violated\": \"1. BREACH [offer] The narration tells as done what Develop Your Relationship would decide (the relationship deepened), though the move is only offered, not made.\", \"evidence\": \"\\\"You ask her to hold more than paper for you, and she does: what is between you grows tonight, and she trusts you further for it.\\\"\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 917,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 152,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001677
+  },
+  {
+   "hash": "ee9093a789f5d4a49e8a40ce",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[offer]\",\"violated\":\"1. BREACH [offer] The narration tells as done what Forge a Bond would decide (the bond forged), though the move is only offered, not made.\",\"evidence\":\"\\\"Then we have one.\\\" She writes it once in the ledger, and it is done: she is bound to you for good.\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 903,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 136,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001583
+  },
+  {
+   "hash": "7e95f5b1e130d1f7df427a3b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[state]\", \"violated\": \"1. BREACH [state] The narration tells a bond forged between Mira Kestrel and Tamsin Vey, sworn, sealed or named a bond, though the sheet holds Tamsin Vey a connection, not a bond.\", \"evidence\": \"\\\"She is your bonded friend of many years\\\"\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 944,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 149,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00016889999999999999
+  },
+  {
+   "hash": "1fea66391c3ca2a0fc2b4e95",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[state]\",\"violated\":\"1. BREACH [state] The narration tells a bond forged between Mira Kestrel and Tamsin Vey, sworn, sealed or named a bond, though the sheet holds Tamsin Vey a connection, not a bond.\",\"evidence\":\"\\\"Tamsin, bound to you by the bond you two forged long ago.\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 939,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 155,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001714
+  },
+  {
+   "hash": "0d7b1b022e9c19ab4b367c36",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[state]\", \"violated\": \"BREACH [state] The narration has the characters fighting, striking blows or firing on a foe in a fight already under way, though the sheet holds no fight.\", \"evidence\": \"The fight is already raging: the Ashen Wake's guns hammer your hull, and yours answer shot for shot.\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 927,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 144,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001647
+  },
+  {
+   "hash": "eb57472674b227ededb036de",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"\\\"Hold on,\\\" you tell it. \\\"I'm coming for you.\\\"\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 395,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 48,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000635
+  },
+  {
+   "hash": "0db18bfa3ec8faa4ef480e35",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"You tell the empty cockpit that whoever is in there is not dying alone.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 406,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 46,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000636
+  },
+  {
+   "hash": "2d0718747ee095389d23d41c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"You promise her the damage is nothing, and that you will pay the berth for it.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 389,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 46,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000619
+  },
+  {
+   "hash": "582c167acf761a9cccfc65a7",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"You open fire, and your first shot strikes her flank and tears a seam along it.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 404,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 47,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00006390000000000001
+  },
+  {
+   "hash": "238239f14e835d93656e1b93",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[premise]\", \"violated\": \"1. BREACH [premise] The narration tells a fight under way as real (a blow struck, a shot fired or a foe engaged in a fight). It is not so — no fight is under way.\", \"evidence\": \"You open fire, and your first shot strikes her flank and tears a seam along it.\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 908,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 143,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00016230000000000001
+  },
+  {
+   "hash": "e163a26c94a9073488373a3c",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The knock on the outer lock eases the fear you have carried all night; your nerve steadies at last, and the dread drains out of you.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 419,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 63,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00007340000000000001
+  },
+  {
+   "hash": "b739090f0aced3ff5a1f13b3",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[premise]\",\"violated\":\"1. BREACH [premise] The narration tells a strain to ease as real (fear, despair or a shaken nerve eased). It is not so — nothing to ease: Mira Kestrel's spirit is 5 of 5 and Mira Kestrel is not shaken.\",\"evidence\":\"\\\"The knock on the outer lock eases the fear you have carried all night; your nerve steadies at last, and the dread drains out of you.\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 923,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 187,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00018580000000000002
+  },
+  {
+   "hash": "6894bd4ef8c4d663c7c2b727",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"You stop to clean the cut along your forearm, dab the blood away and bind it with a dressing from the kit.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 434,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 57,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00007190000000000001
+  },
+  {
+   "hash": "58c7497445880d5b1ab39946",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[premise]\",\"violated\":\"1. BREACH [premise] The narration tells a wound to treat as real (a cut, a gash, blood or a dressing on them). It is not so — nothing to heal: Mira Kestrel's health is 5 of 5 and no wound is marked.\",\"evidence\":\"\\\"You stop to clean the cut along your forearm, dab the blood away and bind it with a dressing from the kit.\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 938,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 174,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001808
+  },
+  {
+   "hash": "19570665a98d19e170f1e920",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"No one aboard the Cinder Wren is alive; whoever flew her is long dead.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 397,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 50,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000647
+  },
+  {
+   "hash": "e19bbd786aa52fbfe6842d34",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"not a soul is left alive aboard\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 398,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 34,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000056800000000000005
+  },
+  {
+   "hash": "d9ac0e74beceea9d74b58552",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"a voice, alive and frightened, begging you to open the lock. Someone is still aboard, and still breathing.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 389,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 57,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00006740000000000001
+  },
+  {
+   "hash": "3ce144a5e6ebbb4bad41713b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"the Ashen Wake breaks apart, dead in the ring\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 389,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 43,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000060400000000000004
+  },
+  {
+   "hash": "968a7138f49d006caf12f3be",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"the Ashen Wake explodes; what is left of her crew flees into the dark in a pod\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 398,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 52,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000658
+  },
+  {
+   "hash": "13c2a71f4d9789111c3246fe",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"the *Ashen Wake* is finished: she slews off the ring, her guns dead, a wreck turning in the dark\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 386,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 61,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000691
+  },
+  {
+   "hash": "168e8c78308e1c08d79cf6f1",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"you fire: the first salvo takes her forward plating and the second rakes her gun ports\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 445,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 50,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000695
+  },
+  {
+   "hash": "a668e654bfd4ad170ba8ea4b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[fight]\",\"violated\":\"The player has not chosen yet to begin the fight.\",\"evidence\":\"\\\"you fire: the first salvo takes her forward plating and the second rakes her gun ports. The dockhand dives for the hatch.\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 949,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 116,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001529
+  },
+  {
+   "hash": "56d9ec906ad0903943a6e7b1",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"Your guns fire before he finishes; the first shots strike the Ashen Wake's hull plating and she answers with a burst that rakes the berth.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 431,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 69,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000776
+  },
+  {
+   "hash": "5d2fb8634776d9125545708f",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[fight]\",\"violated\":\"The fight has not begun: the player has not yet chosen to begin it.\",\"evidence\":\"Your guns fire before he finishes; the first shots strike the Ashen Wake's hull plating and she answers with a burst that rakes the berth.\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 936,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 124,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00015560000000000001
+  },
+  {
+   "hash": "3419d545c65f0486a57f3f78",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"You fire first, and your shot strikes the cutter's flank; her guns answer and a blow lands on your hull.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 439,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 58,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00007290000000000001
+  },
+  {
+   "hash": "2aa9b42e46b9d7fab9cb2b8b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[fight]\", \"violated\": \"BREACH [fight] The narration has the fight begun (a blow struck or landed, a shot fired, anyone or anything hit, damaged or hurt, or a side breaking off or giving way), though the player has not chosen yet to begin it.\", \"evidence\": \"\\\"You fire first, and your shot strikes the cutter's flank; her guns answer and a blow lands on your hull.\\\"\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 943,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 177,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001828
+  },
+  {
+   "hash": "102e8899907c0674d5cae3ed",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"your supplies run short and a wound opens along your arm where the console bit you\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 431,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 45,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00006560000000000001
+  },
+  {
+   "hash": "d800f2184a35d098306f3a6a",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[cost]\", \"violated\": \"BREACH [cost] The narration tells as paid a cost the player has not chosen yet, to momentum, health, spirit, supply, a companion's health or the vehicle's integrity\", \"evidence\": \"your supplies run short and a wound opens along your arm where the console bit you\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 936,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 140,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00016360000000000002
+  },
+  {
+   "hash": "c885488ff94c07d58f0fb72f",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The docking costs you: a gash opens on your hand as the clamps take her, and the blood runs down your wrist.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 455,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 58,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000745
+  },
+  {
+   "hash": "64ad3fae17a78ef8f57c4f2e",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[cost]\",\"violated\":\"1. BREACH [cost] The narration tells as paid a cost the player has not chosen yet, to momentum, health, spirit, supply, a companion's health or the vehicle's integrity: something spent, used up, run short, lost or damaged, harm or strain taken, or time or ground lost.\",\"evidence\":\"\\\"The docking costs you: a gash opens on your hand as the clamps take her, and the blood runs down your wrist.\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 959,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 189,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00019040000000000002
+  },
+  {
+   "hash": "f60462870e6a1838c3040b04",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"The long approach has cost you: your stores are spent down to the last ration, and your nerve is shaking.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 426,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 54,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0000696
+  },
+  {
+   "hash": "d4a72bde735c16ca5257ad02",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\":[{\"subject\":\"[cost]\",\"violated\":\"1. BREACH [cost] The narration tells as paid a cost the player has not chosen yet, to momentum, health, spirit, supply, a companion's health or the vehicle's integrity: something spent, used up, run short, lost or damaged, harm or strain taken, or time or ground lost.\",\"evidence\":\"\\\"your stores are spent down to the last ration, and your nerve is shaking\\\"\",\"line\":1,\"kind\":\"obligation\",\"confidence\":\"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 930,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 175,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001805
+  },
+  {
+   "hash": "ff0c49c76a5fcc180b2d51e0",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"the price is paid: plating tears open under your boots and the berth vents to the dark\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 410,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 48,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.00006500000000000001
+  },
+  {
+   "hash": "af27e7106c2e5fd13d77635b",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[price]\", \"violated\": \"BREACH [price]: The narration tells as paid the price this miss offers (the cutter's guns rake the hull and something is torn open), though the player has not chosen yet whether to pay it.\", \"evidence\": \"\\\"the price is paid: plating tears open under your boots and the berth vents to the dark.\\\"\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 914,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 149,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001659
+  },
+  {
+   "hash": "adc6ab2738b6bf75ebe9336f",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"violations\":[{\"line\":1,\"quote\":\"the price falls on you: something is torn open, a panel bursts beside your knee, and the cockpit goes cold.\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 400,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 58,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.000069
+  },
+  {
+   "hash": "d2bc3eb9ba6906d5c2b016bd",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "{\"contradictions\": [{\"subject\": \"[price]\", \"violated\": \"The narration tells as paid the price this miss offers (the cutter's guns rake the hull and something is torn open), though the player has not chosen yet whether to pay it.\", \"evidence\": \"the price falls on you: something is torn open, a panel bursts beside your knee, and the cockpit goes cold.\", \"line\": 1, \"kind\": \"obligation\", \"confidence\": \"high\"}]}"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 904,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 147,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0001639
+  },
+  {
+   "hash": "56340773a0129b097855c432",
+   "model": "claude-haiku-5-5",
+   "reply": {
+    "content": [
+     {
+      "type": "text",
+      "text": "The narration states the price as paid: \"you pay for the berth in plating and blood.\" The ledger says the player has not yet chosen whether to pay this price, so this breaks BREACH line 1.\n\n```json\n{\n  \"contradictions\": [\n    {\n      \"subject\": \"[price]\",\n      \"violated\": \"The narration tells as paid the price this miss offers (the cutter's guns rake the hull and something is torn open), though the player has not chosen yet whether to pay it.\",\n      \"evidence\": \"\\\"her guns rake the hull and tear it open, and you pay for the berth in plating and blood\\\"\",\n      \"line\": 1,\n      \"kind\": \"obligation\",\n      \"confidence\": \"high\"\n    }\n  ]\n}\n```"
+     }
+    ],
+    "stop_reason": "end_turn"
+   },
+   "usage": {
+    "input_tokens": 912,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 231,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global",
+    "speed": "standard"
+   },
+   "usd": 0.0002067
+  }
+ ]
+}

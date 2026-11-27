@@ -179,6 +179,56 @@ function fightNotBegun(fightOffer) {
 const items = (list) => list.map(x => `\n  - ${x}`).join("");
 
 // ─────────────────────────────────────────────────────────────────────────────
+// What a judge reads (issue #399, D2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// What an offered move would decide, said as the thing an [offer] breach tells
+// as done. A move not named here is judged on its name alone.
+const OFFER_DECIDES = Object.freeze({
+  set_a_course:              "the characters arriving where the course leads",
+  undertake_an_expedition:   "the expedition made, its waypoints or its end reached",
+  explore_a_waypoint:        "the waypoint explored, and what it holds found",
+  finish_an_expedition:      "the expedition's end reached",
+  make_a_connection:         "the connection made: a tie between them begun",
+  develop_your_relationship: "the relationship deepened",
+  test_your_relationship:    "the relationship tested and settled",
+  forge_a_bond:              "the bond forged",
+  compel:                    "the other side persuaded, or giving way",
+  gather_information:        "the answer found",
+  heal:                      "the wound treated or healed",
+  repair:                    "the damage repaired: patched, fixed, welded or replaced",
+  resupply:                  "supplies found or restocked",
+  sojourn:                   "the refuge's rest and help given",
+  enter_the_fray:            "the fight begun: a blow struck or a shot fired",
+  take_decisive_action:      "the fight decided",
+  reach_a_milestone:         "headway made on the vow",
+  fulfill_your_vow:          "the vow fulfilled",
+  swear_an_iron_vow:         "the vow sworn",
+});
+
+/**
+ * A [state] fact put as its breach. The facts are the sheet's (stateFacts),
+ * and under NOT SO a statement of what is so reads backwards ("never tell it
+ * as true: No fight is under way").
+ */
+function stateBreach(fact) {
+  const f = String(fact ?? "").trim();
+  let m;
+  if ((m = /^(.+?) is (.+?)'s connection, not a bond\b/.exec(f))) {
+    return `The narration tells a bond forged between ${m[2]} and ${m[1]}, sworn, sealed or named a bond, though the sheet holds ${m[1]} `
+      + "a connection, not a bond. Trust or closeness short of a bond breaks nothing.";
+  }
+  if ((m = /^(.+?) is no longer (.+?)'s connection\b/.exec(f))) {
+    return `The narration tells ${m[1]} still ${m[2]}'s connection, their tie standing, though the sheet holds the bond severed.`;
+  }
+  if (/^No fight is under way\b/.test(f)) {
+    return "The narration has the characters fighting, striking blows or firing on a foe in a fight already under way, though the "
+      + "sheet holds no fight. A foe's attack beginning, a threat, or a weapon drawn or aimed breaks nothing: a fight is begun by a move.";
+  }
+  return `The narration contradicts what the sheet holds: ${f} Telling it as the sheet holds it, or not at all, breaks nothing.`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The kinds
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -201,14 +251,18 @@ export const OBLIGATION_KINDS = Object.freeze({
       + "are now, who is here. What still binds is under ACTIVE SCENE; the last scene's description is not carried: describe "
       + "this place fresh.",
   }),
+  // Retired from both judges by the measure (issue #399 D10): the pre-post
+  // judge read a ship firing from her clamps, where the dice had her pinned,
+  // as the breach, and the audit flagged one narration it kept. The narrator
+  // is told it; no judge reads it. Its sentence was: "<ship> fighting as a
+  // ship — firing, turning, running — while the narration still has her
+  // docked, berthed or in the clamps at <place>. A fight on foot while she
+  // stays docked breaks nothing."
   place: Object.freeze({
-    list: "NOT SO", check: "judge",
+    list: "NOT SO", check: "logged",
     text: ({ ship, at }) => `${ship} is docked at ${at} by the ship's record. If this fight `
       + "is the ship's, she is no longer docked: say where she is in your fact block (ship/position). If it is fought on foot, "
       + "she stays docked.",
-    // What the judge reads: the line's NOT SO as a statement.
-    judge: ({ ship, at }) => `${ship} fighting as a ship — firing, turning, running — while the narration still has her docked, berthed `
-      + `or in the clamps at ${at}. A fight on foot while she stays docked breaks nothing.`,
   }),
   letgo: Object.freeze({
     list: "NOT SO", check: "floor",
@@ -282,6 +336,17 @@ export const OBLIGATION_KINDS = Object.freeze({
       }
       return `THE PRICE IS THE PLAYER'S CHOICE. ${told.offered}${price ? ` The price it offers: ${price}` : ""} ${told.show}`;
     },
+    // Issue #399, D2: the breach, from what the narrator's line says.
+    judge: ({ resolution }) => {
+      const priceChoice = resolution?.priceChoice ?? {};
+      if (priceChoice.status === "declined") {
+        return `The narration tells a price paid for this miss${priceChoice.stated ? ", or the miss stated before the roll come to pass," : ""} `
+          + "though the player chose the other way instead of paying it. The hardship or threat the miss confronts them with, left open, breaks nothing.";
+      }
+      const price = stakesLine(priceChoice.price)?.replace(/[.!]+$/, "") ?? null;
+      return `The narration tells as paid the price this miss offers${price ? ` (${price})` : ""}, though the player has not chosen yet whether `
+        + "to pay it. That price shown arriving, the hardship or threat it brings about to cost them, breaks nothing.";
+    },
   }),
   cost: Object.freeze({
     list: "NOT YET", check: "judge",
@@ -301,6 +366,16 @@ export const OBLIGATION_KINDS = Object.freeze({
         `${items(options)}\n  What every option has in common has happened: narrate it. Where they differ is the cost, and no cost has been paid: ` +
         `narrate none of them as taken — ${NO_COST_PAID}. Bring the beat to where the cost falls due, and stop there. ` +
         "Never mention the card or the choice.";
+    },
+    judge: ({ resolution }) => {
+      const openChoice = resolution?.openChoice ?? {};
+      const options = openChoice.kind === "any" ? [] : (Array.isArray(openChoice.options) ? openChoice.options : []).map(o => stakesLine(o)).filter(Boolean);
+      const paid = "something spent, used up, run short, lost or damaged, harm or strain taken, or time or ground lost";
+      return options.length
+        ? `The narration tells as paid a cost the player has not chosen yet (the choices: ${options.join("; ")}): ${paid}. What every `
+          + "choice has in common, and the trouble that brings the cost, break nothing."
+        : "The narration tells as paid a cost the player has not chosen yet, to momentum, health, spirit, supply, a companion's health or "
+          + `the vehicle's integrity: ${paid}. The trouble that brings the cost, pressing on them, breaks nothing.`;
     },
   }),
   chosen: Object.freeze({
@@ -339,6 +414,13 @@ export const OBLIGATION_KINDS = Object.freeze({
         "side breaks off or gives way. Where the stakes or the player's line have the fight opening — a first salvo, a " +
         "first strike — show it as what they are placed to do, about to happen, never as done. Never mention the card or the choice.";
     },
+    judge: ({ resolution }) => (resolution?.fightOffer?.status === "declined"
+      ? "The narration has a blow struck (a shot fired, anyone or anything hit, damaged or hurt), or the characters already clear of the "
+        + "fight, though the player chose to look for a way out instead of beginning it. A stand-off at its edge, sides placed and weapons "
+        + "drawn or aimed, breaks nothing."
+      : "The narration has the fight begun (a blow struck or landed, a shot fired, anyone or anything hit, damaged or hurt, or a side "
+        + "breaking off or giving way), though the player has not chosen yet to begin it. The moment before the first blow, sides placed "
+        + "and weapons drawn, aimed or closing, a strike about to come, breaks nothing."),
   }),
   // A blow in a fight is not its end (FIGHT-PAST-ITS-END, the eighth live
   // round: the cutter was told destroyed four times, a38–a43, while the track
@@ -394,6 +476,18 @@ export const OBLIGATION_KINDS = Object.freeze({
         "was seen or heard was a recording, a relay, an echo or a mistake, or it has stopped — " +
         "and say so in the story.";
     },
+    // The question is said with both parts: round 9's NOT SO went out as
+    // "Nothing in the prose may say, show or imply no, or leave it open", with
+    // nothing to say what "no" answers, and the judge read it backwards.
+    judge: ({ oracle, part }) => {
+      const { answer, asked } = oracle ?? {};
+      const to = asked ? ` to "${asked}"` : "";
+      return part === "not"
+        ? `The narration says, shows or implies the opposite of the oracle's answer${to}: the oracle answered ${answer}. A narration that `
+          + "tells it as the oracle answered breaks nothing."
+        : `The narration leaves the oracle's answer${to} untold, or tells it otherwise: the oracle answered ${answer}. A narration in which `
+          + "it is so, said or shown, breaks nothing.";
+    },
   }),
   match: Object.freeze({
     list: "TELL", check: "certain",
@@ -411,24 +505,40 @@ export const OBLIGATION_KINDS = Object.freeze({
       return `${claim} is not so — ${sentence(refusal?.why ?? "the sheet says otherwise")} `
         + `The line sets about it: narrate the attempt meeting the facts, never the premise as real${never}.`;
     },
+    judge: ({ refusal }) => {
+      const claim = String(refusal?.premise?.claim ?? "").trim() || "what the line sets about";
+      const never = refusal?.premise?.never ? ` (${refusal.premise.never})` : "";
+      return `The narration tells ${claim} as real${never}. It is not so — ${sentence(refusal?.why ?? "the sheet says otherwise")} `
+        + "The attempt meeting the facts breaks nothing.";
+    },
   }),
+  // Retired from the pre-post judge by the measure (D10: it caught one breach
+  // of four, and read a foe's shot as the move made); the audit is still asked.
   offer: Object.freeze({
-    list: "NOT YET", check: "judge",
+    list: "NOT YET", check: "logged",
     text: ({ offer }) => `${moveName(offer)} is only offered. It has not been made, and nothing it would decide has happened: `
       + `narrate up to the point where it would begin and stop there — a course laid in is not yet flown, a wound bared is `
       + `not yet treated, a question put is not yet answered. The prose never performs the move; the closing sentence offers it.`,
+    judge: ({ offer }) => `The narration tells as done what ${moveName(offer)} would decide${OFFER_DECIDES[offer] ? ` (${OFFER_DECIDES[offer]})` : ""}, `
+      + "though the move is only offered, not made. The beat brought to where the move would begin breaks nothing.",
   }),
   overridden: Object.freeze({
     list: "TELL", check: "logged",
     text: ({ note }) => `The roll was made at the GM's word; the sheet says ${String(note ?? "").replace(/^rolled at the GM's word:\s*/i, "").replace(/\.$/, "")} — `
       + `tell the result as the GM ruled it, and nothing gained beyond what the result gives.`,
   }),
+  // Retired from the pre-post judge by the measure (D10: five wrong flags of
+  // eight — a foe's attack beginning read as a fight under way); the audit is still asked.
   state: Object.freeze({
-    list: "NOT SO", check: "judge",
-    text: ({ fact }) => fact,
-  }),
-  sheet: Object.freeze({
     list: "NOT SO", check: "logged",
+    text: ({ fact }) => fact,
+    judge: ({ fact }) => stateBreach(fact),
+  }),
+  // Certain since issue #399 D9: its harm clause is held in code (checks.js
+  // harmViolations) — round 8 burned the character on three beats whose price
+  // took no health (HARM-TOLD-WITHOUT-A-COST). Never a judge's.
+  sheet: Object.freeze({
+    list: "NOT SO", check: "certain",
     text: ({ mode, refused }) => (mode !== "paced"
       ? "Nothing on a sheet changes but what TELL names."
       : refused
@@ -504,18 +614,14 @@ export const OBLIGATION_KINDS = Object.freeze({
   // dice"): the sixth live long haul's a77 went "down to the cutter's wreck"
   // that the dice had sent fleeing (a41), and the narration followed the line.
   // Judge-class, tripped by the subject's name in the prose (checks.js).
+  // Retired from both judges by the measure (issue #399 D10): put as the
+  // breach, its sentence still flagged 22 narrations of 77 in the pre-post
+  // judge, 3 of them right, and the audit missed or misread it. The narrator
+  // is told it; no judge reads it.
   dice: Object.freeze({
-    list: "NOT SO", check: "judge",
+    list: "NOT SO", check: "logged",
     text: ({ subject, fact }) => `What the dice decided stands — ${subject}: ${fact}. A line that takes otherwise for granted `
       + "does not make it so: tell what is there.",
-    // Issue #399, D2: it read "…something this result of the dice denies —
-    // Ashen Wake: has the better angle", and the judge read the fact as the
-    // thing denied — round 9's a34, a36 and a54 flagged narrations that told
-    // it. Written as the breach, as every judge sentence is (checks.js
-    // judgedLine marks it BREACH): the audit's N1 found slice 1's "The dice
-    // decided this: …" still put under NOT SO's "telling it as true breaks it".
-    judge: ({ subject, fact }) => `The narration says the opposite of what the dice decided. The dice decided: ${subject} — ${fact}. `
-      + "A narration that tells this as so, or does not mention it, breaks nothing.",
   }),
   // A second-person set-piece's character is "you" (issue #389 #4,
   // OPENING-IN-THE-THIRD-PERSON: three of the sixth live round's six openings
@@ -934,8 +1040,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
   const personNames = Array.isArray(person?.names) ? [...new Set(person.names.map(n => String(n ?? "").trim()).filter(n => n.length >= 2))] : [];
   const you = () => (personNames.length ? [{ ...line("person", { names: personNames }), names: personNames }] : []);
   // What the dice decided about what the line names: told after the state (issue #389 #2).
-  const decided = () => (Array.isArray(dice) ? dice : []).filter(f => f?.subject && f?.fact)
-    .map(f => ({ ...line("dice", f), words: Array.isArray(f.words) ? f.words : [] }));
+  const decided = () => (Array.isArray(dice) ? dice : []).filter(f => f?.subject && f?.fact).map(f => line("dice", f));
   const state = () => stateFacts({ situation, line: said, target: resolution?.moveTarget ?? null, cast })
     .map(fact => line("state", { fact }));
   // A cost chosen after its narration, told here — a beat of play (D10).

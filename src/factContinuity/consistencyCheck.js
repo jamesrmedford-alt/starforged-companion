@@ -96,11 +96,11 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // section.
   const identities = buildRecordedIdentitiesBlock(options.matchedEntityIds ?? []);
 
-  // What the narration was told it must tell and must not (overhaul 4, D9's
-  // logged class): the lines its own check does not hold it to — an
-  // outcome, the stakes, the sheet — are audited here, kind `obligation`.
-  // They ride an audit the ledger already calls for; they make no call of
-  // their own (an empty ledger is still not audited).
+  // What the narration was told it must tell and must not (overhaul 4): the
+  // lines of the kinds the audit's measure passed (issue #399, D10 —
+  // auditObligationSection) are audited here, kind `obligation`. They ride
+  // an audit the ledger already calls for; they make no call of their own
+  // (an empty ledger is still not audited).
   const { lines: auditLines, text: obligations } = auditObligationSection(options.obligations);
 
   // A cutaway is somewhere else by design: not held to the characters' place
@@ -272,7 +272,7 @@ export function buildAuditPrompt(truthsBlock, stateBlock, narration, extra = {})
     '',
     'WHAT THIS NARRATION WAS TOLD IT MUST TELL, AND MUST NOT — numbered lines.',
     `${JUDGED_LINES_RULE} A broken line IS a contradiction: kind "obligation",`,
-    '"line" its number, "subject" its tag as written (e.g. "[outcome]"), "violated" the line:',
+    '"line" its number, "subject" its tag as written (e.g. "[premise]"), "violated" the line:',
     extra.obligations?.trim() || '(none)',
     '',
     'NARRATION:',
@@ -515,10 +515,13 @@ function normaliseKind(v) {
 }
 
 /**
- * The obligation lines the audit is given (overhaul 4): every line with words
- * but a certain-class one — enforced in code before the narration posted
- * (issue #399, D2: round 9's audit re-judged [apparatus], [person], [here]
- * and [arrival] eleven times). Their order is their numbers.
+ * The obligation lines the audit is given: the lines of the kinds its finding
+ * may act on, and no others (issue #399, D10 — a pass is asked only what it
+ * has been shown to judge: checks.js JUDGE_KINDS_THAT_ACT.audit, by the
+ * measure). Overhaul 4 gave it every line but a certain-class one, and round
+ * 9's audit raised 44 findings on them, none right: 13 on the closing offer
+ * line, 11 on lines the code had held, 12 on TELL lines. Their order is their
+ * numbers.
  *
  * @param {Array<{ list?: string, kind?: string, text?: string, judge?: string }>|undefined} obligations
  * @returns {Array<Object>}
@@ -527,7 +530,7 @@ function auditObligationLines(obligations) {
   if (!Array.isArray(obligations)) return [];
   return obligations
     .filter(o => o && typeof o.text === 'string' && o.text.trim())
-    .filter(o => OBLIGATION_KINDS[o.kind]?.check !== 'certain');
+    .filter(o => judgeMayAct(o.kind, 'audit'));
 }
 
 /**
@@ -578,7 +581,8 @@ const tagOf = (subject) => /^\[([a-z-]+)\]$/i.exec(String(subject ?? '').trim())
  * line's tag — whatever `kind` the model gave it ("truth", "obligations", a
  * missing one), it is an obligation finding, and `obligationKind` is its
  * line's kind. A finding labelled "obligation" that names no line stays one,
- * with no kind (held, never carded). The quote check (D3): an obligation
+ * with no kind (held, never carded); so does one whose subject is the tag of
+ * a line the audit was not given. The quote check (D3): an obligation
  * finding whose evidence is not the narration's own words is dropped from
  * the cards — held, `why` saying so. Pure.
  *
@@ -592,7 +596,10 @@ function withObligationLine(c, lines, text) {
   const tag = tagOf(c.subject);
   const byTag = !byNumber && tag ? lines.filter(o => o?.kind === tag) : [];
   const line = byNumber ?? (byTag.length ? byTag[0] : null);
-  if (!line && c.kind !== 'obligation') return c;
+  // A subject that is a line's tag is no truth, given that line or not: the
+  // audit is given only the kinds it may act on (D10), and a finding on
+  // "[outcome]" is still about the narrator's lines.
+  if (!line && c.kind !== 'obligation' && !(tag && Object.hasOwn(OBLIGATION_KINDS, tag))) return c;
   const out = { ...c, kind: 'obligation', obligationKind: line?.kind ?? '' };
   if (line && c.evidence && !quoteInNarration(text, c.evidence)) out.why = 'not in the narration';
   if (out.why) out.obligationKind = '';

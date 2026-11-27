@@ -19,8 +19,10 @@
  *   - narrator.js diceFactsOf: the record's truths of the dice whose subject
  *     the line names — by its name now, or by what a name change says it is;
  *   - a paced line's and a typed move's narration carry NOT SO [dice]: what
- *     the dice decided stands, and the line does not make otherwise so —
- *     judge-class, tripped by the subject's name in the prose;
+ *     the dice decided stands, and the line does not make otherwise so. It
+ *     was judge-class, tripped by the subject's name in the prose, until
+ *     issue #399's measure retired it from both judges (D10): the narrator is
+ *     told it, and no judge reads it;
  *   - the world snapshot and the Lore block are sent in the names the table
  *     uses now, and NAMES THE TABLE CHANGED is still told;
  *   - the fact block's rules: what a line takes for granted against the dice
@@ -39,7 +41,7 @@ vi.mock('../../src/system/campaignTruths.js', async () => {
 import { apiPost } from '../../src/api-proxy.js';
 import { diceFactsOf, narratePacedInput } from '../../src/narration/narrator.js';
 import { obligationsFor, formatObligationsBlock } from '../../src/moves/contracts/obligations.js';
-import { trippedLines, judgeNarration } from '../../src/moves/contracts/checks.js';
+import { trippedLines } from '../../src/moves/contracts/checks.js';
 import { buildNarratorSystemBlocks, SNAPSHOT_BLOCK_HEADING } from '../../src/narration/narratorPrompt.js';
 import { NAME_CHANGES_HEADING } from '../../src/factContinuity/nameChanges.js';
 import { installJournalMock } from '../helpers/fullStateFixture.js';
@@ -80,7 +82,7 @@ describe('what the dice decided of what the line names (diceFactsOf)', () => {
 
   it('a77: "the cutter\'s wreck" names the Cinder Wren by what the correction says she is — a41\'s truth, in her name now', () => {
     const facts = diceFactsOf(A77_LINE);
-    expect(facts).toEqual([{ subject: 'Cinder Wren', fact: A41_FACT, words: expect.arrayContaining(['cinder', 'wren', 'raider', 'cutter']) }]);
+    expect(facts).toEqual([{ subject: 'Cinder Wren', fact: A41_FACT }]);
   });
 
   it('by her name, old or new, it is the same truth; the dice\'s alone — not colour, not a line\'s fact', () => {
@@ -135,16 +137,16 @@ describe('what the dice decided of what the line names (diceFactsOf)', () => {
 });
 
 describe('NOT SO [dice]: the line does not make otherwise so', () => {
-  const FACTS = [{ subject: 'Cinder Wren', fact: A41_FACT, words: ['cinder', 'wren', 'raider', 'cutter'] }];
+  const FACTS = [{ subject: 'Cinder Wren', fact: A41_FACT }];
 
   it('a paced line and a typed move carry it, after the sheet\'s state; no other mode does', () => {
     for (const mode of ['paced', 'move']) {
       const lines = obligationsFor({ mode, resolution: mode === 'move' ? { moveId: 'gather_information', outcome: 'strong_hit' } : null, line: A77_LINE, dice: FACTS });
       const dice = lines.find(o => o.kind === 'dice');
-      // Issue #399, D2: the fact is what the dice decided, never the thing denied.
-      expect(dice, mode).toMatchObject({ list: 'NOT SO', words: FACTS[0].words,
-        judge: `The narration says the opposite of what the dice decided. The dice decided: Cinder Wren — ${A41_FACT}. `
-          + 'A narration that tells this as so, or does not mention it, breaks nothing.' });
+      // Issue #399, D10: retired from both judges by the measure — no judge sentence, no trip words.
+      expect(dice, mode).toMatchObject({ list: 'NOT SO' });
+      expect(dice.judge, mode).toBeUndefined();
+      expect(dice.words, mode).toBeUndefined();
       expect(formatObligationsBlock(lines), mode).toContain(`- [dice] What the dice decided stands — Cinder Wren: ${A41_FACT}. `
         + 'A line that takes otherwise for granted does not make it so: tell what is there.');
     }
@@ -154,20 +156,10 @@ describe('NOT SO [dice]: the line does not make otherwise so', () => {
     expect(obligationsFor({ mode: 'paced', line: A77_LINE }).map(o => o.kind)).not.toContain('dice');
   });
 
-  it('a77\'s narration trips it to the judge by her name, the possessive too; a narration that does not name her does not', () => {
+  it('no judge is asked about it: a77\'s narration, naming her by her name or its possessive, trips no [dice] line (D10)', () => {
     const lines = obligationsFor({ mode: 'move', resolution: { moveId: 'gather_information', outcome: 'strong_hit' }, line: A77_LINE, dice: FACTS });
-    expect(trippedLines(A77_TOLD, lines).map(o => o.kind)).toContain('dice');
-    expect(trippedLines('The Cinder Wren\'s flight recorder is warm in your hands.', lines).map(o => o.kind)).toContain('dice');
-    expect(trippedLines('Debris turns slowly where the ring meets the dark.', lines).map(o => o.kind)).not.toContain('dice');
-  });
-
-  it('the judge is asked in its own words', async () => {
-    apiPost.mockResolvedValueOnce({ content: [{ type: 'text', text: '{"violations":[{"tag":"dice","quote":"The wreck of the Cinder Wren"}]}' }] });
-    const lines = obligationsFor({ mode: 'paced', line: A77_LINE, dice: FACTS });
-    const verdict = await judgeNarration(A77_TOLD, trippedLines(A77_TOLD, lines), { apiKey: 'sk-test' });
-    expect(apiPost.mock.calls.at(-1)[2].messages[0].content)
-      .toContain(`1. [dice] BREACH: The narration says the opposite of what the dice decided. The dice decided: Cinder Wren — ${A41_FACT}.`);
-    expect(verdict).toMatchObject({ violations: [{ tag: 'dice', line: 1, quote: 'The wreck of the Cinder Wren' }], dropped: [], judged: true });
+    expect(trippedLines(A77_TOLD, lines).map(o => o.kind)).not.toContain('dice');
+    expect(trippedLines('The Cinder Wren\'s flight recorder is warm in your hands.', lines).map(o => o.kind)).not.toContain('dice');
   });
 });
 
@@ -212,19 +204,17 @@ describe('a77, through the paced narration', () => {
     expect(narration.messages[0].content).toContain(`- [dice] What the dice decided stands — Cinder Wren: ${A41_FACT}.`);
   });
 
-  // Issue #399, D7: authority follows the measure. a77 is one of the
-  // measure's real [dice] breaches (D6); until [dice] passes, the judge's
-  // verdict on it is logged and counted, and the first draft posts.
-  it('a77\'s narration is judged; the verdict is logged and the draft posts — no re-ask until [dice] passes the measure', async () => {
+  // Issue #399, D10: a77 is one of the measure's real [dice] breaches (D6).
+  // [dice] failed the bar in both passes, so it is retired: no judge call, no
+  // re-ask, and the first draft posts. The narrator is still told it.
+  it('a77\'s narration is not judged on [dice]: no judge call, no re-ask, and the draft posts', async () => {
     const KEPT = 'Where the cutter fought, the ring holds only scorched plating and a drifting cargo tag.';
     replies({
       narrations: [`${A77_TOLD}${SIDECAR}`, `${KEPT}${SIDECAR}`],
       judge: '{"violations":[{"tag":"dice","quote":"The wreck of the Cinder Wren"}]}',
     });
     const out = await narratePacedInput(A77_LINE, game.settings.get(MODULE_ID, 'campaignState'), { speakerActorId: 'pc-mira' });
-    const judged = apiPost.mock.calls.filter(c => c[3]?.label === 'obligationJudge');
-    expect(judged.length, 'the judge was asked once').toBe(1);
-    expect(judged[0][2].messages[0].content).toContain('1. [dice] BREACH:');
+    expect(apiPost.mock.calls.filter(c => c[3]?.label === 'obligationJudge'), 'no judge call').toHaveLength(0);
     expect(narrationCalls().length, 'no re-ask').toBe(1);
     expect(JSON.stringify(out ?? '')).toContain('The wreck of the Cinder Wren');
     expect(JSON.stringify(out ?? '')).not.toContain(KEPT);

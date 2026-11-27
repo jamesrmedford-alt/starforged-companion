@@ -1,0 +1,8 @@
+{
+ "about": "The kept runs of the measure made with the current judge sentences (issue #399, D7). Authority is set by the bar on their counts pooled (lib/judges.mjs poolScores): the model samples at its default, and one run's flip of a verdict is noise. A run whose requests changed a sentence starts the pool again; a run that only stops asking a pass about a kind joins it. The newest run is the one tests/unit/judgeMeasure.test.js replays, and is as the module ships.",
+ "runs": [
+  "judges-live-20261127-155819",
+  "judges-live-20261127-162035",
+  "judges-live-20261127-162743"
+ ]
+}

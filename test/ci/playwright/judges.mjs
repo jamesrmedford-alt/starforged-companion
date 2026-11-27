@@ -19,12 +19,13 @@
 //   JUDGES_COMMIT     the commit the run is recorded at.
 //
 // Writes judges/runs/<runId>/: verdicts.json (each call's request
-// fingerprint and reply), results.json (the scores) and report.md.
+// fingerprint and reply), results.json (the scores, the checks in code's
+// with them) and report.md.
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSet, judgePass, auditPass, scorePass, renderReport, requestHash, ANTHROPIC_URL } from "./lib/judges.mjs";
+import { buildSet, judgePass, auditPass, scorePass, codeScore, renderReport, requestHash, ANTHROPIC_URL } from "./lib/judges.mjs";
 import { trippedLines, judgedView, checkClassOf } from "../../../src/moves/contracts/checks.js";
 import { auditObligationSection } from "../../../src/factContinuity/consistencyCheck.js";
 import { costOf } from "./lib/budget.mjs";
@@ -87,7 +88,7 @@ for (const e of entries) {
 const runId = `judges-live-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "-")}`;
 const dir = path.join(HERE, "judges", "runs", runId);
 fs.mkdirSync(dir, { recursive: true });
-const score = { judge: scorePass(entries, results.judge), audit: scorePass(entries, results.audit) };
+const score = { judge: scorePass(entries, results.judge, "judge"), audit: scorePass(entries, results.audit, "audit"), code: codeScore(entries) };
 const meta = { runId, commit: process.env.JUDGES_COMMIT ?? null, entries: entries.length, seeded: entries.filter(e => e.seeded).length,
   labelled: entries.filter(e => !e.seeded && Object.keys(e.labels).length).length, calls: calls.length, usd: spent };
 fs.writeFileSync(path.join(dir, "verdicts.json"), `${JSON.stringify({ runId, questions, stopped, calls }, null, 1)}\n`);
