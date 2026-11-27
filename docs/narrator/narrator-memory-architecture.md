@@ -349,7 +349,10 @@ Storage: `campaignState.sceneTruths` (append-only with retraction markers) and
 (`appendSidecarInstruction`) now *requires* emission — not at the model's
 discretion — for:
 - **stateChanges**: a named character's location / vessel / physical condition
-  whenever prose establishes or changes them;
+  whenever prose establishes or changes them — save a player character's own
+  place, which is the frame's `location` alone (`placeClaims.js` drops a state
+  change saying it, while the frame is on; RECAP-TOLD-A-PLACE-SHE-HAD-LEFT,
+  issue #397);
 - **newTruths**: why a character is somewhere, what they want, what is at
   stake, deadlines.
 
@@ -684,7 +687,10 @@ Bleakhold, the narration argued its own Where against the player's line
 pilot" after the cutter was renamed. Three stores, three facts: the
 characters' recorded place (`currentLocationId`), where the ship is (its
 position record), and where in that place the narration has them (the
-frame's Where — colour). THE SCENE composes them, each line saying whose it
+frame's Where — colour). No fourth store restates the third: a fact block's
+state change saying where a player character in the scene is, is not kept
+(`placeClaims.js`; two recaps had told a bound one after the frames moved her
+on — RECAP-TOLD-A-PLACE-SHE-HAD-LEFT, issue #397). THE SCENE composes them, each line saying whose it
 is, from one read (`sceneForReading`), which the pacing classifier is told
 by the same renderer (`formatSceneForReading` — its `formatScene`'s own
 current-location read and frame lines are gone). The frame rule asks for a

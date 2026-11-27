@@ -101,6 +101,7 @@ import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStor
 import { readRecord } from '../record/read.js';
 import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf, pendingPeopleOf, placeAtTime } from '../factContinuity/whereabouts.js';
 import { withoutMeterClaims } from '../factContinuity/sheetClaims.js';
+import { withoutPlaceClaims } from '../factContinuity/placeClaims.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
 
@@ -4957,6 +4958,12 @@ function storyNamesOf(campaignState) {
   return names;
 }
 
+/** The player characters' names (actorBridge getPlayerActors), for the fact block's place claims (placeClaims.js). Never throws. */
+function playerNamesOf() {
+  try { return (getPlayerActors() ?? []).map(a => String(a?.name ?? '').trim()).filter(Boolean); }
+  catch (err) { console.debug?.(`${MODULE_ID} | the player characters were not read for the fact block's places:`, err?.message ?? err); return []; }
+}
+
 /**
  * Whose meters a fact block may never record (sheetClaims.js): the player
  * characters, by name, and their command vehicle. Never throws.
@@ -7069,7 +7076,11 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // …and a character's meters are the sheet's (PRICE-TOLD-WITH-A-COST-NOT-PAID,
   // round 7: a25's "the effort cost Mira supply" was filed as the dice's, and
   // came back as a [dice] line and in the recap — a cost no one took).
-  const written = withoutMeterClaims(withoutUntoldTruths(parsedBlock.sidecar, prose), { owners: meterOwnersOf(campaignState) });
+  // Where a player character in the scene is, is the frame's alone
+  // (RECAP-TOLD-A-PLACE-SHE-HAD-LEFT, issue #397 Code fix 3): a state change
+  // saying it is not kept while the frame is on — it bound, and went stale.
+  const metered = withoutMeterClaims(withoutUntoldTruths(parsedBlock.sidecar, prose), { owners: meterOwnersOf(campaignState) });
+  const written = sceneFrameEnabledFromSettings() ? withoutPlaceClaims(metered, { pcs: playerNamesOf() }) : metered;
   // The forced reveals go first: the reveals are capped at
   // REVEALS_PER_SIDECAR, and a fact block that held four of its own cut the
   // step the beat was made to play — its clock then stayed full though the

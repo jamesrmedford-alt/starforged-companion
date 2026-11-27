@@ -6,6 +6,18 @@ rejected.
 
 ---
 
+## Issue #397's code review: what the round-8 fixes missed, before round 9 (2026-11-27)
+
+**Decision** (the maintainer: "Issue 397 now has additional comments. Please read them all, then apply the code fixes, then open a PR, then kick off long haul 9"). The six code fixes of the review comments on issue #397, each on its plan's defaults. Fixes 1, 2 and 5 amend entries of the section below; the rest are recorded here.
+
+**A player character's place within the scene is the frame's alone** (RECAP-TOLD-A-PLACE-SHE-HAD-LEFT; Code fix 3):
+- A fact block's state change is not kept when its subject is a player character (the whole name, a word of it, "you", "PC", "the PC"), its attribute a place (`location`, `vessel`, `aboard`, `whereabouts`), and that character is in the scene: the campaign has one player character, or the block's own frame has them present (`factContinuity/placeClaims.js`, in the chain after `sheetClaims.js`, while the frame is on). The instruction says the same: the frame's `location` says where the player characters are, and no state change does.
+- The reason: two recaps told the character somewhere she had left. Round 7's a71 and round 8's a87 wrote a `location` entry for her from her line, which binds. Nothing replaced it: the next beats were card presses with no line, while each frame moved her on. The recap's WHERE THINGS STAND, the narrator's STANDING NOW and the judge all read it, and round 9 runs with the judge on.
+- Rejected: *keep the entry and retire it when a later frame's location differs.* It keeps a place the player's line set as binding, but the retirement must be undone when the X-Card or a burn takes the later narration back. One store needs no undo.
+- Left: a player character not present in a split party keeps her place entry, which can still go stale. The GM's own `!state set` is never filtered.
+
+---
+
 ## After the eighth live round: a fight ends only by its move, a complication is the place's, the culprit is someone met, a quiet thread comes back, and the long haul's caps (2026-11-26)
 
 **Decision** (the maintainer: "Fix the fixable things. What needs my call? Also, raise the max calls from 100 to 400", then the recommended answer to each of four questions). Issue #396's findings were fixed where the record gives a definite answer. The four calls are recorded as decided.

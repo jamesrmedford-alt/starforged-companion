@@ -159,6 +159,14 @@ export function appendSidecarInstruction(options = {}) {
     '  { "subject": "Kael Dros", "fact": "holds the datapad the PC handed him",',
     '  "from": "line" } and { "subject": "Kael Dros", "attribute": "location",',
     '  "value": "in the cargo bay with the PC", "from": "line" }.',
+    // RECAP-TOLD-A-PLACE-SHE-HAD-LEFT (issue #397, Code fix 3): a player
+    // character's own place in a state change bound and went stale as the
+    // frames moved her on; the frame's location is its one store
+    // (placeClaims.js drops such an entry — the matched pair).
+    ...(sceneFrameEnabled ? [
+      '  Where the player characters themselves are is "sceneFrame"\'s',
+      '  "location" alone: no stateChange says it.',
+    ] : []),
     // Players can't overrule dice (issue #389 #2): the line binds the
     // character's own acts and words, never what the dice decided otherwise.
     '- A line that takes for granted what the dice decided otherwise — the',
@@ -166,7 +174,7 @@ export function appendSidecarInstruction(options = {}) {
     '  make it so: narrate what the dice made true, and tag none of what the',
     '  line assumed "line".',
     '- REQUIRED: when your prose establishes or changes WHERE a named',
-    '  character is (their location, the vessel or structure they are',
+    `  character${sceneFrameEnabled ? ' other than a player character' : ''} is (their location, the vessel or structure they are`,
     '  aboard) or their physical condition (wounded, dying, well), you MUST',
     '  emit a stateChange for that character recording it — e.g.',
     '  { "subject": "Vance", "attribute": "location", "value": "aboard his',

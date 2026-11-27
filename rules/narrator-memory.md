@@ -359,7 +359,12 @@ layers. This file is the never-break list.
    ship/position, the X-Card's restore); `sceneFrame.location`, where in that
    place the narration has them — the narration's own, no store's fact (the
    scene end's filing still reads it to say where a truth was asserted, issue
-   #326 D2). No store restates another's: THE SCENE composes them, and the
+   #326 D2). No store restates another's — nor does a state change: one that
+   says where a player character in the scene is, is not kept
+   (`factContinuity/placeClaims.js`, while the frame is on; the instruction
+   says the frame's `location` alone says it — RECAP-TOLD-A-PLACE-SHE-HAD-LEFT,
+   issue #397: a bound `location` entry from her line outlived the frames
+   that moved her on, and two recaps told it). THE SCENE composes them, and the
    reader is told the same read by the same renderer (`narratorPrompt.js
    sceneForReading` / `formatSceneForReading` — the pacing classifier's
    `formatScene`; the line reader, unwired, still reads its own place and
@@ -373,16 +378,14 @@ layers. This file is the never-break list.
    colour never moves her; one that restates where she already is keeps the
    record, so "docked at" is not read as "near" (issue #388 #2, D17 amended). A fight begun while the ship's line reads "docked at"
    tells the beat that opens its scene NOT SO [place]; no code infers
-   undocking (D9 — a crew may fight on the dock). A line walks the
-   characters to another recorded place only when the beat's frame names
-   exactly one and the beat's player words name it too — its name, or a
-   telling word of it no other recorded place in the active sector has
-   (`sceneLifecycle.js placeWalkedTo`): the current location moves in the
-   frame's persist and `place.arrived` is recorded `how: "line"`; the ship
-   stays where its record says (D17), and the next beat turns the scene. A
-   frame naming a place no line named moves nothing, and a Set a Course's
-   beat walks nowhere: its arrival is the move's own (the outcome decides it,
-   the auto-move or the GM's drag applies it with the ship). The names the table
+   undocking (D9 — a crew may fight on the dock). No line walks the
+   characters to another recorded place (issue #393 D3 — overhaul 2's
+   `placeWalkedTo` is retired): within their place the frame's `location`
+   names the spot, and a frame naming another place keeps the scene's last
+   (`sceneLifecycle.js framedAtThePlace`, D4). Only travel, `!at` and the
+   Entities panel move them; a Set a Course's arrival is the move's own (the
+   outcome decides it, the auto-move or the GM's drag applies it with the
+   ship). The names the table
    changed are written new in the frame's words as THE SCENE renders them;
    the stored frame is not rewritten.
 

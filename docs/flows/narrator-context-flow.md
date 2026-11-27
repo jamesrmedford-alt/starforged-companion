@@ -1530,7 +1530,9 @@ the session it ends is under way, is the same source, so its cache opens the
 next session when nothing else has changed. Then WHERE THINGS STAND, read
 live from the sheets and tracks (`standingLines`: each PC's meters and impacts,
 the vows and their progress, the connections, the open tracks, the current
-place, the open scene's state and its question, answered or not); THE PLAYERS'
+place, the open scene's state and its question, answered or not — the place is
+the settlement: no narrator state entry says where a PC in the scene is within
+it, issue #397 Code fix 3); THE PLAYERS'
 OWN NOTES (their Chronicle entries — written, edited or pinned by a player);
 and EARLIER SESSIONS, a session from before the record as its Session Log story
 and Chronicle entries had it, labelled. The role says a recap says only what
@@ -1649,7 +1651,10 @@ narration's own reveals before the ledger and the plans read them — and, after
 it, `sheetClaims.withoutMeterClaims`, which drops a new truth or state change
 telling a PC's (or their ship's) health, spirit, supply or momentum changing:
 the sheet is the only source of meters (PRICE-TOLD-WITH-A-COST-NOT-PAID, round
-7's "the effort cost Mira supply") — takes
+7's "the effort cost Mira supply") — and, while the frame is on,
+`placeClaims.withoutPlaceClaims`, which drops a state change saying where a PC
+in the scene is: the frame's `location` is its one store
+(RECAP-TOLD-A-PLACE-SHE-HAD-LEFT, issue #397 Code fix 3) — takes
 "truth" off a reveal whose prose has none of the truth's own words
 (`skeletons.proseTellsTruth`, the plan's subject and question left out; the
 reveal's clues, step and ending stand, and the GM's console names the plan).
@@ -1797,7 +1802,8 @@ since stays (`revertPayThePrice` → `worldJournal.undoPlansFiledFor`, issue
 #364 REVERTED-PRICE-PLAN-STAYS-WAITING); a relayed sidecar carries its plan requests,
 issue #353 Phase 1): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
-append — the correction stands) / state supersede per subject+attribute
+append — the correction stands) / state supersede per subject+attribute (a
+PC-in-the-scene's own place never arrives: `withoutPlaceClaims`, above)
 (`ledgers.js`), subjects resolved against `collectAllEntities` (passed
 through in its own shape — `entityId` is the host document id; entity state
 keys are `entity:<id>`; issue #286 A1 — a name several entities share led by
