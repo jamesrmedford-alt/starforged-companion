@@ -47,6 +47,7 @@
 
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "../sceneChallenge.js";
 import { legacyTrackNamed } from "../statEnrichment.js";
+import { positionReason } from "../combat.js";
 
 /** The sheet's health, spirit and supply run 0–5. */
 const METER_MAX = 5;
@@ -218,7 +219,7 @@ export function POSITION(position, { instead }) {
       const p = rollerPosition(s, r);
       return p ? p === position : null;
     },
-    why: () => (position === "in_control" ? "the character is in a bad spot" : "the character is in control"),
+    why: () => positionReason(position === "in_control" ? "bad_spot" : "in_control"),
     instead: () => instead,
   });
 }

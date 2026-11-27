@@ -349,7 +349,10 @@ Storage: `campaignState.sceneTruths` (append-only with retraction markers) and
 (`appendSidecarInstruction`) now *requires* emission — not at the model's
 discretion — for:
 - **stateChanges**: a named character's location / vessel / physical condition
-  whenever prose establishes or changes them;
+  whenever prose establishes or changes them — save a player character's own
+  place, which is the frame's `location` alone (`placeClaims.js` drops a state
+  change saying it, while the frame is on; RECAP-TOLD-A-PLACE-SHE-HAD-LEFT,
+  issue #397);
 - **newTruths**: why a character is somewhere, what they want, what is at
   stake, deadlines.
 
@@ -555,8 +558,11 @@ binding only).
 
 ## 4. Surface 3 — the scene frame
 
-`campaignState.sceneFrame = { location, present[], situation, question?,
-questionAnswered?, questionBeats?, sceneId, updatedAt }`. The narrator emits a
+`campaignState.sceneFrame = { location, present[], remote[], situation, question?,
+questionAnswered?, questionBeats?, letGo?, sceneId, narrationId, updatedAt }`.
+`present` is everyone here in person — each player character in the scene, each
+named character, an unnamed figure by a short handle — and `remote` anyone heard
+or seen over a comm (issue #397, Code fix 5). The narrator emits a
 **full-replacement snapshot** in every sidecar (`sceneFrame` key); an omitted
 frame keeps the previous one. The **scene question** (issue #353 R2) is the
 exception to full replacement: what the scene is deciding — what the player's
@@ -684,7 +690,10 @@ Bleakhold, the narration argued its own Where against the player's line
 pilot" after the cutter was renamed. Three stores, three facts: the
 characters' recorded place (`currentLocationId`), where the ship is (its
 position record), and where in that place the narration has them (the
-frame's Where — colour). THE SCENE composes them, each line saying whose it
+frame's Where — colour). No fourth store restates the third: a fact block's
+state change saying where a player character in the scene is, is not kept
+(`placeClaims.js`; two recaps had told a bound one after the frames moved her
+on — RECAP-TOLD-A-PLACE-SHE-HAD-LEFT, issue #397). THE SCENE composes them, each line saying whose it
 is, from one read (`sceneForReading`), which the pacing classifier is told
 by the same renderer (`formatSceneForReading` — its `formatScene`'s own
 current-location read and frame lines are gone). The frame rule asks for a

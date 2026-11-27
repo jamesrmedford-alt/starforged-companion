@@ -133,6 +133,8 @@ export async function narrateOracleFollowupOnGm(payload = {}, ctx = {}) {
     scope:          typeof spec.scope === "string" ? spec.scope : null,
     // A waypoint peril's expedition (issue #362 AC11).
     trackId:        typeof spec.trackId === "string" ? spec.trackId.slice(0, 64) : null,
+    // A chosen complication's cost card, which its narration tells (CHOSEN-COST-TOLD-TWICE).
+    sufferCardId:   typeof spec.sufferCardId === "string" ? spec.sufferCardId.slice(0, 64) : null,
     messageId,
   });
 }
@@ -226,6 +228,9 @@ async function runOracleFollowup(args) {
       // the move was on (issue #362 AC11).
       scope:          typeof args?.scope === "string" ? args.scope.slice(0, 32) : null,
       trackId:        typeof args?.trackId === "string" && args.trackId ? args.trackId.slice(0, 64) : null,
+      // The cost card a chosen complication was picked on: this narration
+      // tells its cost, and stamps it so (CHOSEN-COST-TOLD-TWICE).
+      toldCardId:     typeof args?.sufferCardId === "string" && args.sufferCardId ? args.sufferCardId.slice(0, 64) : null,
       // The raw card narrated: its follow-up card names it, so an X-Card on
       // the narration takes the card's result out of RECENT ORACLE RESULTS
       // (issue #345 AA01).

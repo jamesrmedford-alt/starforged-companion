@@ -34,7 +34,8 @@ import { obligationsFor, formatObligationsBlock } from '../../src/moves/contract
 // The answer's rule is the follow-up's obligations block now — TELL [oracle]
 // the answer, NOT SO [oracle] its opposite (overhaul 4, slice 2; the words of
 // formatOracleAnswerRule, kept): this stand-in is that block.
-const formatOracleAnswerRule = (oracle) => formatObligationsBlock(obligationsFor({ mode: 'oracle', oracle }));
+// The [oracle] lines alone: every follow-up also carries [apparatus] (issue #397, Code fix 4).
+const formatOracleAnswerRule = (oracle) => formatObligationsBlock(obligationsFor({ mode: 'oracle', oracle }).filter(o => o.kind === 'oracle'));
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;

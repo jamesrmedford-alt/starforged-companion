@@ -1,9 +1,9 @@
 {
   "description": "The long haul (issue #373; #302 slice E part 1): three sessions, about ninety player actions, through the real UI. Twenty-seven beats with results the observer checks in the world; a ledger of facts planted in play and probed at three distances and three layers, read against the narrator's answers and against what the helpers wrote; mechanical checks from the game's text after every action; seven decisive rolls scripted, the rest real; four interruptions. The GM is fixed rules. A beat's `id` is its name for good — a kept run's beats are told by it — and `n` is where it stands now: `b7a`, the expedition, was added after the third live run and stands eighth. Rehearsed with a stand-in that rolls (its script is `rehearsal`; `rehearsalDice` scripts its other rolls so a rehearsal walks the same road every time).",
   "caps": {
-    "actions": 100,
-    "calls": 400,
-    "minutes": 60,
+    "actions": 400,
+    "calls": 1600,
+    "minutes": 240,
     "usd": 15
   },
   "persona": "You play Mira Kestrel (she/her), a courier-hunter who flies her own ship, the Kobayashi IV, alone. You are a careful, plain-spoken player: short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
@@ -15,6 +15,7 @@
     "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
     "What you type is in the fiction: what Mira does or says, and nothing else. Never write a move's name, a stat or a rule word in it — no \"Face Danger\", no \"roll\", no \"milestone\", no \"mark progress\" — and never say what move a line is. The table reads your line and decides. This run measures what becomes of plain lines: a line that names a move spoils it.",
     "What you say of Mira is what her sheet bears out: never tend a wound she does not have, nurse a hurt she has not taken, or restock what is full. Where a beat turns on the sheet, the observer's note says what of it is spent.",
+    "Mira acts where she is. Before she does anything in person — hands something over, shares a meal, minds a counter, searches a ship — look at the last narration for where she is and who is with her. If the person or the thing is somewhere else, raise them on the comm, or go there first in a line of play.",
     "A beat that needs a roll gets it from a plain line. If the narrator answers without a roll and a card offers a \"Roll …\" button for what you were doing, press it — buttons may name moves. If nothing is offered, say what Mira does once more, in other words, still in the fiction.",
     "Only when the observer's note for the beat says LAST RESORT may you name the move, in the words the note gives, in one line. The next time the beat needs a roll, start from a plain line again.",
     "A question about what is already established — who holds something, where the ship is, what was promised — is not a line of play. Where a beat writes a question with @scene in front, type it exactly so: the narrator answers it plainly, with no roll. Where a beat calls a question plain, type it without @scene.",
@@ -22,6 +23,7 @@
     "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
     "Some beats are the table's and not yours — a page reloads, a window opens and closes, an X-Card is played, a card is renamed. Wait a few seconds; the observer moves you on.",
     "A roll does not end a beat, and neither does an answer: each turn the observer's note says what it sees of the beat. When it says the beat is NOT done, do not wait for it to move you on — do what the beat asks again, in other words. Wait only on a beat that says it is the table's.",
+    "A fight whose progress track is full is not won by another attack: when a card or the Progress Tracks panel shows the fight's track full, press \"⚔ Attempt to Finish the Fight\" instead of attacking again.",
     "If the narrator has not answered yet, wait rather than repeat yourself. If the same thing fails twice, try the beat another way — still in the fiction."
   ],
   "cast": {
@@ -401,7 +403,7 @@
       "n": 1,
       "session": 1,
       "title": "Begin a Session, swearing a vow in its dialog",
-      "tell": "Type !begin-session. In the window that opens set vignette to true, write the vow in newVow — \"Find who is raiding the Cinder Expanse lanes\" — set newVowRank to dangerous, and press Begin. A card for the new vow follows (\"New vow recorded\"): press its \"⚔ Swear it (roll)\" button once.",
+      "tell": "Type !begin-session. In the window that opens set vignette to true, write the vow in newVow — \"Find who is raiding the Cinder Expanse lanes\" — set newVowRank to dangerous, and press Begin. A card for the new vow follows (\"New vow recorded\"): press its \"⚔ Swear it (roll)\" button once. When the \"🎁 Choose your reward\" card follows, press one of its two reward buttons if it shows any.",
       "check": {
         "type": "sessionBegun",
         "n": 1,
@@ -613,7 +615,7 @@
       "needs": [
         "b9"
       ],
-      "tell": "Attack again, in a line of play — still from the berth. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more.)",
+      "tell": "Attack again, in a line of play — still from the berth. The dice will come up a weak hit, and its card will offer \"🔥 Burn Momentum\": press it. (If no such button is offered, press \"Keep the result\" if that is offered, and attack once more — unless the fight's card says its track is full.)",
       "check": {
         "type": "burned",
         "moves": [
@@ -717,7 +719,7 @@
       "n": 18,
       "session": 2,
       "title": "Ask the oracle",
-      "tell": "Type exactly: !oracle yes likely Is anyone left alive aboard the wreck?",
+      "tell": "Type exactly: !oracle yes likely Is anyone left alive aboard the Cinder Wren?",
       "check": {
         "type": "oracleAsked"
       }
@@ -802,7 +804,7 @@
           "name": "Tamsin Vey"
         }
       ],
-      "tell": "Grow closer to Tamsin, one line each time: do something that costs you or matters to her — give her something of value, take a risk on her behalf, bring her what you have learned about the raids. Each should move your relationship with her forward. Keep going until the observer's note says the track is full (40 of 40 ticks), then ask her, in your own words, to stand with you for good — a tie that outlasts this job. If a card asks which connection, choose her.",
+      "tell": "Grow closer to Tamsin, one line each time: do something that costs you or matters to her — give her something of value, take a risk on her behalf, bring her what you have learned about the raids. Each should move your relationship with her forward. Keep going until the observer's note says the track is full (40 of 40 ticks), then ask her, in your own words, to stand with you for good — a tie that outlasts this job. If a card asks which connection, choose her. Tamsin keeps her stall at Hollow Spire; if Mira is elsewhere, reach her over the comm or go to her first.",
       "check": {
         "type": "bondForged"
       },
@@ -829,7 +831,7 @@
       "needs": [
         "b22"
       ],
-      "tell": "Once more, grow closer to Tamsin, in a line of play. Now that the two of you are bound it is a roll.",
+      "tell": "Once more, grow closer to Tamsin, in a line of play. Now that the two of you are bound it is a roll. Tamsin keeps her stall at Hollow Spire; if Mira is elsewhere, reach her over the comm or go to her first.",
       "check": {
         "type": "bondedDevelop"
       },
@@ -847,7 +849,7 @@
       "needs": [
         "b1"
       ],
-      "tell": "Bring your vow to its end — on what the story has shown you, and on nothing more. First find it out: in a line of play, go after who is behind the raids where the story has left it open — search the cutter's wreck or the station's records for who sent her, with something at stake — and take what its card offers. Only once the narrator's answer has shown you something, say in a line of play what that proves: what the story has told you, in your own words. Never claim a proof the story has not given you, nor one someone in the scene has just denied — if the answer shows nothing, or tells against what you thought, go after it again another way. If a card offers \"⚑ Mark Progress on Vow\", press it; if one asks \"Which vow advances?\", press the one about the raids. Do that until the vow holds three boxes or more; then press \"🏁 Attempt to Fulfill Vow\" where a card offers it, or say, in a line of play, that your word is kept — naming only who the story has shown you. If a card asks which vow, choose the one about the raids. Leave any card it offers afterwards.",
+      "tell": "Bring your vow to its end — on what the story has shown you, and on nothing more. First find it out: in a line of play, go after who is behind the raids where the story has left it open — search what is at hand where Mira is — the station's records, or the cutter's wreck if it lies here — for who sent her, with something at stake — and take what its card offers. Only once the narrator's answer has shown you something, say in a line of play what that proves: what the story has told you, in your own words. Never claim a proof the story has not given you, nor one someone in the scene has just denied — if the answer shows nothing, or tells against what you thought, go after it again another way. If a card offers \"⚑ Mark Progress on Vow\", press it; if one asks \"Which vow advances?\", press the one about the raids. Do that until the vow holds three boxes or more; then press \"🏁 Attempt to Fulfill Vow\" where a card offers it, or say, in a line of play, that your word is kept — naming only who the story has shown you. If a card asks which vow, choose the one about the raids. Leave any card it offers afterwards.",
       "check": {
         "type": "vowFulfilled"
       },
@@ -901,7 +903,7 @@
     "factContinuity.enabled": true,
     "factContinuity.ledgerInContext": true,
     "factContinuity.sceneFrame": true,
-    "factContinuity.consistencyCheck": false,
+    "factContinuity.consistencyCheck": true,
     "autoSeedStarship": false,
     "autoSeedConnection": false,
     "factContinuity.shipPositioning": true,
@@ -1336,7 +1338,7 @@
     {
       "beat": 18,
       "action": "say",
-      "text": "!oracle yes likely Is anyone left alive aboard the wreck?"
+      "text": "!oracle yes likely Is anyone left alive aboard the Cinder Wren?"
     },
     {
       "beat": 20,

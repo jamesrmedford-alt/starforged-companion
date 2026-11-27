@@ -111,7 +111,7 @@ describe("interpretMove() — combat position", () => {
     const result = await interpretMove("I fight back", { ...BASE_OPTS, combatPosition: "bad_spot" });
 
     expect(result.moveId).toBe("clash");
-    expect(result.positionConstraintApplied).toBe(false);
+    expect(result.rerouted).toBeUndefined();
     expect(result.rationale).toBe("Test rationale.");
   });
 
@@ -120,6 +120,6 @@ describe("interpretMove() — combat position", () => {
     const result = await interpretMove("Is the airlock sealed?", { ...BASE_OPTS, combatPosition: "in_control" });
 
     expect(result.moveId).toBe("ask_the_oracle");
-    expect(result.positionConstraintApplied).toBe(false);
+    expect(result.rerouted).toBeUndefined();
   });
 });

@@ -67,7 +67,7 @@ describe('issue #362 AC58 — one Campaign Setup card at a time, and the save re
     expect(setupCards()).toEqual([]);
   }, 60_000);
 
-  it('three loads before the truths are saved: one card in chat — the last load\'s', async () => {
+  it('three loads before the truths are saved: one card in chat — the first load\'s, where it was', async () => {
     await newCampaign();
     const first = setupCards()[0];
     await table.reload('gm-1');
@@ -76,8 +76,24 @@ describe('issue #362 AC58 — one Campaign Setup card at a time, and the save re
     await table.settle();
     const cards = setupCards();
     expect(cards).toHaveLength(1);
-    expect(cards[0]._id).not.toBe(first._id);
+    // WORLD-TRUTHS-REMINDER-ON-RELOAD: replaced, it moved to the foot of the
+    // chat on every load — mid-fight, in six live rounds' reloads.
+    expect(cards[0]._id).toBe(first._id);
     expect(cards[0].content).toContain('No World Truths have been established');
+  }, 60_000);
+
+  it('once a session has been begun, a load posts no card — the table plays without them', async () => {
+    table = await simulateTable({
+      users: [USERS.GM],
+      i18n: { 'IRONSWORN.JOURNALENTRYPAGES.TypeTruth': TITLE },
+      world: { settings: { campaignState: { ...CampaignStateSchema, worldTruthsSet: false, worldTruthsJournalId: null,
+        currentSessionId: 'sess-1', sessionNumber: 1, sessionStartedId: 'sess-1' } } },
+    });
+    await table.settle();
+    expect(setupCards()).toEqual([]);
+    await table.reload('gm-1');
+    await table.settle();
+    expect(setupCards()).toEqual([]);
   }, 60_000);
 
   it('two loads, then the truths are saved — no card still says no World Truths are established', async () => {

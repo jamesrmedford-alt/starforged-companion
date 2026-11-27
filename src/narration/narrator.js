@@ -34,7 +34,7 @@ import { proseToHtml } from '../audio/segments.js';
 import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
-import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS, wornDetails } from './proseVariety.js';
+import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS, wornDetails, linesAlreadySaid } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { markSeedsUsed, rolledWordsOf } from '../session/sceneSeeds.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
@@ -48,6 +48,8 @@ import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, rolledMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
 import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
+import { contractFor } from '../moves/contracts/table.js';
+import { vowAsksWho } from '../world/tellingWords.js';
 import { readMoveSituation } from '../moves/situation.js';
 import { sceneObligations } from '../factContinuity/sceneTurns.js';
 import {
@@ -94,11 +96,12 @@ import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRoll
 import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { withoutUntoldTruths } from '../world/secrets.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION } from '../world/skeletons.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, quietestPlan } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { readRecord } from '../record/read.js';
-import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf } from '../factContinuity/whereabouts.js';
+import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf, pendingPeopleOf, placeAtTime } from '../factContinuity/whereabouts.js';
 import { withoutMeterClaims } from '../factContinuity/sheetClaims.js';
+import { withoutPlaceClaims } from '../factContinuity/placeClaims.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
 import { reportSnapshotEvent, worldSnapshotEnabled } from './snapshotEvents.js';
 
@@ -125,6 +128,8 @@ const SIDECAR_FIELDS = Object.freeze(['sceneTruths', 'sceneState', 'sceneFrame']
 
 /** The most a beat is told of what the dice decided about what its line names (issue #389 #2). */
 const DICE_FACTS_MAX = 4;
+/** The most of them about one subject — the newest (DICE-LINES-UNBOUNDED, round 7: nine narrations told four, two contradicting). */
+const DICE_FACTS_PER_SUBJECT = 2;
 const DICE_STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'into', 'their', 'there', 'where', 'what', 'have',
   'been', 'were', 'they', 'them', 'your', 'about', 'over', 'down', 'back', 'still', 'then', 'than', 'just', 'some']);
 const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
@@ -139,14 +144,19 @@ const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '')
  * by a word of its name, or of what one of the record's name changes says it
  * is — "raider cutter" for the Cinder Wren, the sixth live long haul's "the
  * cutter's wreck" — or the name of what a change says the subject is. The
- * latest first, at most DICE_FACTS_MAX. Never throws: a record that cannot be
- * read tells nothing.
+ * latest first, at most DICE_FACTS_MAX, and DICE_FACTS_PER_SUBJECT a subject.
+ * Never a player character's or the command vehicle's own (`own`: the table's
+ * side is the line's to tell), nor the current scene's (`sceneId`: WHAT BINDS
+ * holds them) — DICE-LINES-UNBOUNDED, round 7: [dice] rode on 22 of 44
+ * narrations, 61 lines, the PC's own ship's two of them contradicting each
+ * other. Never throws: a record that cannot be read tells nothing.
  *
  * @param {string} line
- * @param {{ source?: Object }} [opts] — the record to read (default: the stored pages)
+ * @param {{ source?: Object, own?: string[], sceneId?: string|null }} [opts] — the record to read (default: the
+ *   stored pages); the table's own names (meterOwnersOf); the current scene's id
  * @returns {Array<{ subject: string, fact: string, words: string[] }>}
  */
-export function diceFactsOf(line, { source } = {}) {
+export function diceFactsOf(line, { source, own = [], sceneId = null } = {}) {
   try {
     const said = new Set(diceWords(line));
     if (!said.size) return [];
@@ -155,20 +165,30 @@ export function diceFactsOf(line, { source } = {}) {
     const same = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
     const facts = [];
     const seen = new Set();
+    const perSubject = new Map();
+    const ownKeys = new Set((Array.isArray(own) ? own : []).map(n => String(n ?? '').trim().toLowerCase()).filter(Boolean));
+    // Each session's beats, the newest first: a beat's truths with its scene
+    // (the same truths as the session's `open.established`, which carries none).
+    const told = (session) => (Array.isArray(session?.beats) ? session.beats : []).filter(b => !b?.removed).reverse()
+      .flatMap(b => [...(Array.isArray(b.established) ? b.established : [])].reverse().map(t => ({ t, scene: b.scene ?? null })));
     for (const session of [...(record?.sessions ?? [])].reverse()) {
-      for (const t of [...(session?.open?.established ?? [])].reverse()) {
+      for (const { t, scene } of told(session)) {
         if (t?.basis !== 'dice') continue;
+        if (sceneId && scene === sceneId) continue;
         // As the record's views read it (summaryView.js subjectText): its words, or the name read gave it.
         const subject = typeof t.subject === 'string' ? t.subject.trim()
           : String(t.subject?.text ?? t.subject?.name ?? '').trim();
         const fact = String(t.fact ?? '').trim();
         if (!subject || !fact) continue;
+        if (ownKeys.has(subject.toLowerCase())) continue;
+        if ((perSubject.get(subject.toLowerCase()) ?? 0) >= DICE_FACTS_PER_SUBJECT) continue;
         const also = changes.flatMap(c => (same(c?.to, subject) ? [c.about] : same(c?.about, subject) ? [c.to] : []));
         const words = [...new Set([subject, ...also].flatMap(diceWords))];
         if (!words.some(w => said.has(w))) continue;
         const key = `${subject.toLowerCase()}|${fact.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        perSubject.set(subject.toLowerCase(), (perSubject.get(subject.toLowerCase()) ?? 0) + 1);
         facts.push({ subject, fact, words });
         if (facts.length >= DICE_FACTS_MAX) return facts;
       }
@@ -379,6 +399,28 @@ async function buildShipboardGuidanceBlock(campaignState) {
 }
 
 /**
+ * Where the open fight stands for a blow struck in it — the [foe] line's data
+ * (obligations.js; FIGHT-PAST-ITS-END: round 8 told the cutter destroyed four
+ * times while its track filled, a38–a43): its label, and whether its track is
+ * full (40 ticks), so the narration tells it beaten in all but the deciding
+ * blow. The fight is the only open one, else the one the roller holds a
+ * position in. Null for a move the contracts do not oblige [foe], or with no
+ * such fight. Read after the move marked its progress. Fail-open.
+ *
+ * @param {Object} resolution
+ * @param {string|null} actorId — the roller
+ * @returns {Promise<{ label: string|null, full: boolean }|null>}
+ */
+async function fightStandingOf(resolution, actorId = null) {
+  if (!(contractFor(resolution?.moveId)?.obliges ?? []).includes('foe')) return null;
+  const fights = (await readOpenProgressTracks()).filter(t => t?.type === 'combat');
+  const fight = fights.length === 1 ? fights[0]
+    : (actorId ? fights.find(t => t?.positions && Object.prototype.hasOwnProperty.call(t.positions, actorId)) : null) ?? null;
+  if (!fight) return null;
+  return { label: typeof fight.label === 'string' && fight.label.trim() ? fight.label.trim() : null, full: Number(fight.ticks) >= 40 };
+}
+
+/**
  * The open tracks in the Progress Tracks journal (ui/progressTracks.js),
  * for [4j]. Fail-open: a read failure is no tracks, never a blocked narration.
  *
@@ -461,6 +503,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     endingTrackIds  = [],
     planIds         = [],
     beatClaim       = null,
+    arriving        = false,
   } = opts;
 
   // The scene's ledgers as they stand in the store (issue #325 W05; rules/
@@ -516,9 +559,16 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // and the player's line apart (NARRATION-REFRAINS-RISING, round 7): listed
   // as worn, to reach past.
   if (BEAT_VARIETY_MODES.has(mode)) {
+    // The scene's own actors are its matter, not its refrains: who is present,
+    // who is heard, and the foe of the open fight (round 8 listed "stowaway",
+    // "stranger voice" and "second raider" as worn — THE-REFRAINS-THE-LIST-CANNOT-NAME).
+    const frame = sceneState?.sceneFrame ?? null;
+    const actors = [...(Array.isArray(frame?.present) ? frame.present : []), ...(Array.isArray(frame?.remote) ? frame.remote : []),
+      ...(extras.progressTracks ?? await readOpenProgressTracks()).filter(t => t?.type === 'combat').map(t => t.label)];
     Object.assign(extras, beatVariety(campaignState?.currentSessionId ?? null, beatClaim, {
       names: storyNamesOf(campaignState),
-      keep: [sceneState?.sceneFrame?.location, sceneState?.sceneFrame?.situation, playerNarration].filter(t => typeof t === 'string'),
+      keep: [frame?.location, frame?.situation, playerNarration, ...actors].filter(t => typeof t === 'string'),
+      line: typeof playerNarration === 'string' ? playerNarration : '',
     }));
   }
 
@@ -569,10 +619,20 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // Where the record has the characters, the other places and the people at
   // one — the beat's certain [here] (CHARACTERS-MOVED-BY-THE-NARRATION, round
   // 7): its frame, its present and its prose are read against it before it posts.
-  extras.here = (mode === 'move_resolution' || mode === 'paced_narrative')
+  // An oracle follow-up's too: a journey's complication is told at the
+  // arrival, and is held to it (PEOPLE-WAITING-AT-THE-ARRIVAL, round 8's a72).
+  // A journey's arrival reads only those not with the characters as they set
+  // out ([arrival] — PEOPLE-WAITING-AT-THE-ARRIVAL): one who was may have come along.
+  extras.here = (mode === 'move_resolution' || mode === 'paced_narrative' || mode === 'oracle_followup')
     ? hereOf(sceneState ?? campaignState, { underway: expeditionUnderway(extras.progressTracks),
-      vehicle: getCommandVehicle(campaignState ?? {})?.name ?? null })
+      vehicle: getCommandVehicle(campaignState ?? {})?.name ?? null, arriving: mode === 'move_resolution' && arriving === true })
     : null;
+  // The people a narration drafted that the table has neither confirmed nor
+  // dismissed, tracked as real until it does (the maintainer's call after the
+  // eighth live round): told in THE SCENE by the draft card's name, with
+  // where the record last had them with the characters, else where they came
+  // into the story — so the fact block names them so, and where they are is kept.
+  extras.pendingPeople = PENDING_PEOPLE_MODES.has(mode) ? pendingPeopleTold(sceneState ?? campaignState) : [];
 
   // The vow this scene serves (issue #353 R3): a linked track's vow, the
   // session's quest focus, or the only vow in play, with its progress — the
@@ -709,6 +769,12 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       // agenda to decide: it may say the new one is one of them (issue #354
       // P2-30; formatUnrevealedBlock ALREADY PLANNED).
       extras.plannedSubjects = plannedBeings(allPlans);
+      // A thread gone quiet, on a beat of play: the plan in play that has not
+      // come up for QUIET_SCENES scenes, brought into this narration with a
+      // clue to show (the maintainer's call after round 8 — of its four hidden
+      // plans only the vow's was revealed).
+      const quiet = BEAT_VARIETY_MODES.has(mode) ? quietestPlan(allPlans, { cards: narrationCardTimes() }) : null;
+      extras.quietThread = quiet ? { id: quiet.plan.id, subject: quiet.plan.subject.name, scenes: quiet.scenes, clue: quiet.clue } : null;
       // A beat that ends a track or a vow sees its plan, resolved in code as
       // the subject ended, to reveal its end (issue #362 D4; planInPlay).
       extras.unrevealed = selectRelevantSkeletons(endingTrackIds.length ? listSkeletons({ includeInactive: true }) : allPlans, {
@@ -722,8 +788,8 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
         openTrackIds:      (extras.progressTracks ?? []).map(t => t?.id).filter(Boolean),
         endingTrackIds,
         // The plans this beat is about whatever its text: a clock vignette's,
-        // a chosen complication's.
-        planIds,
+        // a chosen complication's — and a thread gone quiet's.
+        planIds: extras.quietThread ? [...planIds, extras.quietThread.id] : planIds,
         // A vow's plan is in play while its vow is the one this scene serves
         // (Phase 4, by R3's ladder: a linked track's vow, the quest focus, the
         // only vow in play) — by the vow's id across its copies, or its name.
@@ -746,6 +812,12 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       .map(async q => (q.reroll ? q : { ...q, reroll: await rollReroll() })));
     extras.decideNowRequests = extras.planRequests.slice(0, PLANS_PER_SIDECAR);
   }
+  // Who a who-vow's culprit may be (VOW-WON-BY-A-STRANGER, round 8: the vow
+  // was won by "Dalen Voss", whom the player never met): the people the story
+  // has met, for DECIDE NOW to prefer — and each decided who-plan whose truth
+  // names only a stranger, to be shown in play before it is revealed.
+  extras.storyPeople = storyPeopleOf(campaignState);
+  extras.strangers = strangersOfWhoPlans(extras.unrevealed, extras.storyPeople, campaignState);
 
   // Established lore, picked for what this turn is about (issue #286 C2):
   // the player's text, the scene frame and the entities now in play. It was
@@ -977,22 +1049,24 @@ function shapeNotBeingWritten(shape, sessionId) {
  * @param {{ names?: string[], keep?: string[] }} [worn] — the story's names and the scene's own words, never listed as worn
  * @returns {{ usedImages: string[], wornDetails: string[], beatShape: { id: string, hint: string } }}
  */
-function beatVariety(sessionId, claim = null, { names = [], keep = [] } = {}) {
+function beatVariety(sessionId, claim = null, { names = [], keep = [], line = '' } = {}) {
   let variety;
   try {
     const cards = sessionNarratorCards(sessionId);
-    const prose = cards.slice(-IMAGE_SOURCE_CARDS)
-      .map(m => m?.flags?.[MODULE_ID]?.narrationText)
-      .filter(t => typeof t === 'string' && t.trim());
+    const all = cards.map(m => m?.flags?.[MODULE_ID]?.narrationText).filter(t => typeof t === 'string' && t.trim());
+    const prose = all.slice(-IMAGE_SOURCE_CARDS);
     const beats = (game.messages?.contents ?? []).filter(m => isSessionBeatCard(m, sessionId)).length;
     variety = {
       usedImages:  recentImages(prose),
       wornDetails: wornDetails(prose, { names, keep }),
+      // The session's lines of speech, for the certain [quote]: never one
+      // said again, word for word (round 8's a92 gave a84's line again).
+      saidLines:   linesAlreadySaid(all, { line }),
       beatShape:   beatShapeAfter(lastBeatShapeId(sessionId)) ?? pickBeatShape({ beatIndex: beats, seed: sessionId }),
     };
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the recent narrations could not be read for this beat's shape and images:`, err?.message ?? err);
-    variety = { usedImages: [], wornDetails: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
+    variety = { usedImages: [], wornDetails: [], saidLines: [], beatShape: pickBeatShape({ beatIndex: 0, seed: sessionId }) };
   }
   variety.beatShape = shapeNotBeingWritten(variety.beatShape, sessionId);
   if (claim) {
@@ -1487,6 +1561,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
     planIds:         owed.planIds,
     endingTrackIds,
     beatClaim,
+    // A hit on Set a Course or Finish an Expedition: the characters have arrived ([arrival]).
+    arriving: (resolution.moveId === 'set_a_course' || resolution.moveId === 'finish_an_expedition')
+      && (resolution.outcome === 'strong_hit' || resolution.outcome === 'weak_hit'),
   });
 
   const systemPrompt = buildNarratorSystemPrompt(
@@ -1501,10 +1578,13 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // (overhaul 2 §10.3; kinds checks.js trips on nothing — they are told only).
   // A move pressed on a card has no line of the player's (issue #388 #10).
   const madeLine = resolution.inputMethod === 'button';
-  const moveObligations = [...obligationsFor({ mode: 'move', resolution, situation: touched.situation,
+  // A blow in the open fight is held to it: only Take Decisive Action ends a fight ([foe]).
+  const fightStanding = await fightStandingOf(resolution, character?.actorId ?? null);
+  const moveObligations = [...obligationsFor({ mode: 'move', resolution: fightStanding ? { ...resolution, fightStanding } : resolution, situation: touched.situation,
     line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince, madeLine,
-    dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? ''), whereabouts: extras.elsewhere ?? null,
-    here: extras.here ?? null, person: beatPersonOf(settings, campaignState, character) }),
+    dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? '', { own: meterOwnersOf(campaignState), sceneId: campaignState?.currentSceneId ?? null }),
+    whereabouts: extras.elsewhere ?? null,
+    here: extras.here ?? null, person: beatPersonOf(settings, campaignState, character), quotes: extras.saidLines ?? [] }),
     ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const userMessage  = buildNarratorUserMessage(
     resolution,
@@ -2619,7 +2699,9 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       // narration shows is that person's name. A round hands in each acting
       // character's (`options.playerLines`); a Burn Momentum / Improve Result
       // re-narration has none (writtenLine).
-      { playerLines: detectionPlayerLinesOf(options.playerLines ?? writtenLine(resolution)) },
+      // …and the narration's id: the detector is told who its fact block has
+      // in the scene (issue #397, Code fix 5).
+      { playerLines: detectionPlayerLinesOf(options.playerLines ?? writtenLine(resolution)), narrationId },
     );
     if (isNarrationXCarded(narrationId)) return;
     await routeWorldJournalResults(detection.worldJournal, campaignState, { narrationId });
@@ -2971,6 +3053,23 @@ function ringEntryText(message) {
  */
 function sessionNarratorCards(sessionId) {
   return (game.messages?.contents ?? []).filter(m => inNarratorMemory(m, sessionId));
+}
+
+/**
+ * Every narration on the table, oldest first — its id, its scene and when it
+ * posted — for a plan's quiet scenes (skeletons.js quietestPlan). Never throws.
+ *
+ * @returns {Array<{ narrationId: string|null, sceneId: string|null, at: number }>}
+ */
+function narrationCardTimes() {
+  try {
+    return (game.messages?.contents ?? [])
+      .map(m => ({ narrationId: m?.flags?.[MODULE_ID]?.narrationId ?? null, sceneId: m?.flags?.[MODULE_ID]?.sceneId ?? null, at: Number(m?.timestamp) }))
+      .filter(c => (c.narrationId || c.sceneId) && Number.isFinite(c.at))
+      .sort((a, b) => a.at - b.at);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -4374,12 +4473,17 @@ function sceneAnswerText(raw, campaignState, { matchedEntityIds = [], narrationI
  *                                          one the move was on: its plan's
  *                                          next danger is the peril (issue
  *                                          #362 AC11)
+ * @param {string|null} [args.toldCardId]  — the cost card a chosen complication
+ *                                          was picked on: this narration tells
+ *                                          its cost, and stamps it told, so the
+ *                                          next narration's [chosen-since] does
+ *                                          not tell it again (CHOSEN-COST-TOLD-TWICE)
  * @param {Object}  args.campaignState
  * @returns {Promise<string|null>} the rendered narration text or null on skip / failure
  */
 export async function narrateOracleFollowup({
   kind, oracleName, question = '', rolledLine, campaignState, speakerActorId = null, oracleCardId = null, scope = null,
-  trackId = null,
+  trackId = null, toldCardId = null,
 }) {
   const sessionId = campaignState?.currentSessionId ?? null;
 
@@ -4435,9 +4539,15 @@ export async function narrateOracleFollowup({
   // was read into this user message while the role said 2-3 (issue #331 X28).
   const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards(),
     { scene: ringSceneOf(extras.sceneLedger ?? campaignState) });
+  // A journey's complication is told where the journey arrived, held to the
+  // record's place as a beat of play is ([here] — PEOPLE-WAITING-AT-THE-ARRIVAL:
+  // round 8's a72 had the Bleakhold berth's visitor follow the PC "across the
+  // docks" to Hollow Spire). Told in its block, and checked before it posts.
+  const arrivalHere = kind === 'complication' && scope === 'destination' ? (extras.here ?? null) : null;
+  const arrivalLines = kind === 'complication' ? oracleObligationsFor({ kind, question, rolledLine, here: arrivalHere }) : [];
   const userMessage    = buildOracleUserMessage({
-    kind, oracleName, question, rolledLine, recentContext, seedLines,
-    sceneObligations: sceneObligationsOf(extras.sceneLedger, campaignState),
+    kind, oracleName, question, rolledLine, recentContext, seedLines, scope,
+    sceneObligations: [...arrivalLines, ...sceneObligationsOf(extras.sceneLedger, campaignState)],
     stepLine: step ? `It is the next escalation step of ${step.plan.subject.name} under UNREVEALED: "${step.step.text}". Play it as that.` : '',
   });
   const stepReveals = step ? [{ id: step.plan.id, advanced: step.step.id }] : [];
@@ -4450,7 +4560,7 @@ export async function narrateOracleFollowup({
 
   // Checked against its obligations before it posts — the answer told, its
   // opposite not (overhaul 4: checks.js narrateKeepingObligations).
-  const oracleObligations = [...oracleObligationsFor({ kind, question, rolledLine }), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
+  const oracleObligations = [...oracleObligationsFor({ kind, question, rolledLine, here: arrivalHere }), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const checking = { apiKey, judge: obligationJudgeOn(), ctx: { question: sanitizePlayerText(question ?? ''), line: question ?? '' },
     onVerdict: (v) => logObligationVerdict('oracle', v, campaignState, narrationId) };
   // A local `ask`, so the playthrough harness files the call as this
@@ -4472,6 +4582,9 @@ export async function narrateOracleFollowup({
     sideDataApplied = true;
 
     await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
+    // A chosen complication's cost is told here: its card is stamped, so the
+    // next narration is not asked to tell it again (CHOSEN-COST-TOLD-TWICE).
+    if (toldCardId) await markChosenCostsTold([{ cardId: toldCardId }], narrationId);
     reportNarratedOracle(kind, rolledLine);
     // The narration of a roll the table made — discovery by nature (#286 D4).
     scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
@@ -4487,6 +4600,7 @@ export async function narrateOracleFollowup({
         if (text?.trim()) {
           sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
+          if (toldCardId) await markChosenCostsTold([{ cardId: toldCardId }], narrationId);
           reportNarratedOracle(kind, rolledLine);
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
           return text;
@@ -4560,6 +4674,7 @@ async function complicationStep(campaignState, scope, trackId = null) {
 
 function buildOracleUserMessage({
   kind = 'oracle_table', oracleName, question, rolledLine, recentContext, seedLines = [], stepLine = '', sceneObligations: lines = [],
+  scope = null,
 }) {
   // What the scene obliges it to tell (overhaul 2 §10.3), in overhaul 4's
   // block — the answer's own, for a yes/no question (below).
@@ -4590,6 +4705,11 @@ function buildOracleUserMessage({
       owed +
       `Render the complication arriving now, as 2-3 sentences of in-fiction prose anchored to ` +
       `the current scene: it happens, concretely, and it costs or threatens the characters. ` +
+      // A destination's complication is the destination's (PEOPLE-WAITING-AT-THE-ARRIVAL:
+      // round 8's a72 brought the berth's visitor from the station left behind).
+      (scope === 'destination'
+        ? `It comes from what is at the destination — its people, its trouble, the place itself — never someone or something the characters left behind. `
+        : '') +
       `Do not resolve it. Do not repeat the dice number or the literal table text — transform ` +
       `it into narrative.`
     );
@@ -4735,6 +4855,96 @@ function beatPersonOf(settings, campaignState, character) {
   return perspective === 'second_person' ? personNamesOf(character) : null;
 }
 
+/** How many of the story's people DECIDE NOW lists for a who-vow's culprit. */
+const STORY_PEOPLE_LISTED = 8;
+
+/** The modes told the people met whom the table has not yet confirmed: the beats of play, a follow-up, an `@scene` answer. */
+const PENDING_PEOPLE_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution', 'oracle_followup', 'scene_interrogation']);
+
+/**
+ * The people met whom the table has not yet confirmed (whereabouts.js
+ * pendingPeopleOf), as THE SCENE tells them: each one's draft name and
+ * description, and where the record last had them with the characters —
+ * their name in a scene's frame — else the place of the scene they came into
+ * the story in (their draft card's time; a person mentioned there may never
+ * have been there, so this is told, never checked). Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @returns {Array<{ name: string, description: string, pronouns: string, where: string|null }>}
+ */
+function pendingPeopleTold(campaignState) {
+  try {
+    const people = pendingPeopleOf(campaignState ?? {});
+    if (!people.length) return [];
+    let read = null;
+    try { read = readRecord({ session: 'campaign' }); } catch { read = null; }
+    return people.map((p) => {
+      const seen = read ? lastSeenWith(read, p.name, { exact: true }) : null;
+      const came = seen ? null : placeAtTime(read, p.at);
+      const where = seen
+        ? (seen.place?.name ? `last with the characters at ${seen.place.name}` : 'last with the characters, between places')
+        : (came ? `came into the story at ${came}` : null);
+      return { name: p.name, description: p.description ?? '', pronouns: p.pronouns ?? '', where };
+    });
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | the people not yet on record were not read for the scene:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * The people the story has met, by name — its connection cards (people
+ * recorded by Confirm or Make a Connection), then the people a narration
+ * drafted that the table has neither confirmed nor dismissed (tracked as
+ * real until it does — whereabouts.js pendingPeopleOf), the player
+ * characters apart — for a who-vow's DECIDE NOW to choose from
+ * (VOW-WON-BY-A-STRANGER). Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @returns {string[]}
+ */
+function storyPeopleOf(campaignState) {
+  try {
+    const entities = collectAllEntities(campaignState ?? {});
+    const names = entities.filter(e => e?.entityType === 'connection' && typeof e.name === 'string' && e.name.trim())
+      .map(e => e.name.trim());
+    names.push(...pendingPeopleOf(campaignState ?? {}, { entities }).map(p => p.name));
+    return [...new Set(names)].slice(0, STORY_PEOPLE_LISTED);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | the story's people were not read for a who-vow's plan:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * Each decided plan of a vow that asks who, whose truth names someone the
+ * story has not met — id → that name (skeletons.js strangerNamedIn): shown in
+ * play before its truth is revealed (formatUnrevealedBlock). Places, ships and
+ * the PCs are no names. A pending draft's name — often a description, "The
+ * Man From the Berth" — is matched whole, as everywhere a draft is (issue
+ * #397, Code fix 1). Never throws.
+ *
+ * @param {Object[]} plans — the plans in play
+ * @param {string[]} people — storyPeopleOf
+ * @param {Object|null} campaignState
+ * @returns {Object<string, string>}
+ */
+function strangersOfWhoPlans(plans, people, campaignState) {
+  const out = {};
+  try {
+    const notNames = storyNamesOf(campaignState);
+    const exact = pendingPeopleOf(campaignState ?? {}).map(p => p.name);
+    for (const r of Array.isArray(plans) ? plans : []) {
+      if (r?.kind !== 'vow' || !vowAsksWho(r.subject?.name) || typeof r.truth !== 'string' || !r.truth.trim()) continue;
+      const stranger = strangerNamedIn(r.truth, { people, exact, notNames: notNames.filter(n => !(people ?? []).includes(n)) });
+      if (stranger) out[r.id] = stranger;
+    }
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | a who-vow's plan was not read for a stranger:`, err?.message ?? err);
+  }
+  return out;
+}
+
 /**
  * The story's names — its people, places, ships and factions, the player
  * characters and their ship — which a worn-details list never holds: a name
@@ -4748,6 +4958,34 @@ function storyNamesOf(campaignState) {
   try { for (const e of collectAllEntities(campaignState ?? {})) if (e?.name) names.push(e.name); }
   catch (err) { console.debug?.(`${MODULE_ID} | the story's names were not read for the worn details:`, err?.message ?? err); }
   return names;
+}
+
+/**
+ * A beat of play's frame with the one player character in `present` when the
+ * game has exactly one and no entry of `present` or `remote` names her — she
+ * has just acted, so she is here (issue #397, Code fix 5). Two or more: as it
+ * came — the code cannot tell a split party. Pure.
+ *
+ * @param {Object|null} frame — the fact block's sceneFrame
+ * @param {string[]} pcs — the player characters' names
+ * @returns {Object|null}
+ */
+function withTheOnePlayerCharacter(frame, pcs) {
+  if (!frame || typeof frame !== 'object' || !Array.isArray(pcs) || pcs.length !== 1) return frame;
+  const name = String(pcs[0] ?? '').trim();
+  if (!name) return frame;
+  const whole = name.toLowerCase();
+  const names = (p) => { const s = String(p ?? '').trim().toLowerCase(); return !!s && (s.includes(whole) || (!s.includes(' ') && whole.split(' ').includes(s))); };
+  const present = Array.isArray(frame.present) ? frame.present : [];
+  const remote = Array.isArray(frame.remote) ? frame.remote : [];
+  if (present.some(names) || remote.some(names)) return frame;
+  return { ...frame, present: [name, ...present] };
+}
+
+/** The player characters' names (actorBridge getPlayerActors), for the fact block's place claims (placeClaims.js). Never throws. */
+function playerNamesOf() {
+  try { return (getPlayerActors() ?? []).map(a => String(a?.name ?? '').trim()).filter(Boolean); }
+  catch (err) { console.debug?.(`${MODULE_ID} | the player characters were not read for the fact block's places:`, err?.message ?? err); return []; }
 }
 
 /**
@@ -5369,8 +5607,9 @@ export async function narratePacedInput(playerText, campaignState, options = {},
       // the scene obliges (overhaul 2 §10.3).
       pacedObligations = [...obligationsFor({ mode: 'paced', offer: suggestedMove ?? null, refusal: options.refusal ?? null,
         situation: touched.situation, line: playerText ?? '', cast: touched.cast, chosenSince: pacedChosenSince,
-        dice: diceFactsOf(playerText ?? ''), whereabouts: extras.elsewhere ?? null,
-        here: extras.here ?? null, person: beatPersonOf(settings, campaignState, character) }),
+        dice: diceFactsOf(playerText ?? '', { own: meterOwnersOf(campaignState), sceneId: campaignState?.currentSceneId ?? null }),
+        whereabouts: extras.elsewhere ?? null,
+        here: extras.here ?? null, person: beatPersonOf(settings, campaignState, character), quotes: extras.saidLines ?? [] }),
         ...sceneObligationsOf(extras.sceneLedger, campaignState)];
       userMessage = buildPacedNarrativeUserMessage(
         playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
@@ -5565,7 +5804,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
       PACED_NARRATIVE_MOVE_ID,
       PACED_NARRATIVE_OUTCOME,
       campaignState,
-      { playerLines: detectionPlayerLinesOf(options.playerText ?? '') },
+      { playerLines: detectionPlayerLinesOf(options.playerText ?? ''), narrationId: options.narrationId ?? null },
     );
     if (isNarrationXCarded(options.narrationId)) return;
     // The inciting incident records its own cohesive lore entry (the "Situation"
@@ -6715,8 +6954,8 @@ function roundCheckContext(entries) {
  * @param {{ kind: string, question?: string|null, rolledLine?: string|null }} oracle
  * @returns {Array<Object>}
  */
-function oracleObligationsFor({ kind, question = null, rolledLine = null }) {
-  if (kind === 'complication') return [];
+function oracleObligationsFor({ kind, question = null, rolledLine = null, here = null }) {
+  if (kind === 'complication') return obligationsFor({ mode: 'oracle', here: here ?? null });
   return obligationsFor({ mode: 'oracle', oracle: { kind, question: sanitizePlayerText(question ?? ''), rolledLine } });
 }
 
@@ -6861,7 +7100,11 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // …and a character's meters are the sheet's (PRICE-TOLD-WITH-A-COST-NOT-PAID,
   // round 7: a25's "the effort cost Mira supply" was filed as the dice's, and
   // came back as a [dice] line and in the recap — a cost no one took).
-  const written = withoutMeterClaims(withoutUntoldTruths(parsedBlock.sidecar, prose), { owners: meterOwnersOf(campaignState) });
+  // Where a player character in the scene is, is the frame's alone
+  // (RECAP-TOLD-A-PLACE-SHE-HAD-LEFT, issue #397 Code fix 3): a state change
+  // saying it is not kept while the frame is on — it bound, and went stale.
+  const metered = withoutMeterClaims(withoutUntoldTruths(parsedBlock.sidecar, prose), { owners: meterOwnersOf(campaignState) });
+  const written = sceneFrameEnabledFromSettings() ? withoutPlaceClaims(metered, { pcs: playerNamesOf() }) : metered;
   // The forced reveals go first: the reveals are capped at
   // REVEALS_PER_SIDECAR, and a fact block that held four of its own cut the
   // step the beat was made to play — its clock then stayed full though the
@@ -7415,10 +7658,14 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       // and the Entities panel move them.
       // Nor is anyone present in person whom the record has at another place
       // — the beat's [here] people (CHARACTERS-MOVED-BY-THE-NARRATION, round 7).
-      const away = (Array.isArray(ctx.obligations) ? ctx.obligations : []).find(o => o?.kind === 'here')?.people ?? [];
-      const framed = framedAtThePlace(playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
+      const away = (Array.isArray(ctx.obligations) ? ctx.obligations : []).find(o => o?.kind === 'here' || o?.kind === 'arrival')?.people ?? [];
+      // In a one-character game a beat of play's frame has her present: she
+      // has just acted (issue #397, Code fix 5 — round 8's lists left Mira out
+      // of 40 of 68, and each change of `present` is a new frame event).
+      const told = !bookend && QUESTION_MODES.has(ctx.mode) ? withTheOnePlayerCharacter(sidecar.sceneFrame, playerNamesOf()) : sidecar.sceneFrame;
+      const framed = framedAtThePlace(playersFrame(bookend ? bookendFrame(told) : told, prior, {
         sceneId: campaignState.currentSceneId ?? null, line, about,
-      }), prior, campaignState, { elsewhere: away.map(p => p?.name).filter(Boolean) });
+      }), prior, campaignState, { elsewhere: away.filter(p => p?.name).map(p => (p.exact ? { name: p.name, exact: true } : p.name)) });
       if (framed && applySceneFrame(framed, campaignState, { narrationId })) {
         campaignState.sceneFrame = countSceneQuestionBeat(campaignState.sceneFrame, prior, { bookend, about });
       }

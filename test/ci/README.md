@@ -398,6 +398,15 @@ the characters are held, and the narration did not: a skiff hop took the
 character to another settlement with no journey (its findings are in #390–#392
 and `docs/known-issues.md`, LONG-HAUL-ROUND-7).
 
+**The eighth live round** (2026-11-26, $3.23, one run) measured the six fixes
+of PR #395. It is kept, reviewed in full, at
+`playwright/explorations/long-haul-live-20261126-184225/`: 24 of 27 beats,
+with no check violated and no fact lost. Beat 12's burn could not be scripted
+and spent the actions the cap then took from beats 26 and 27. The prose kept to
+the record of where everyone is without a re-ask. What a player feels now is
+the story: a vow won by a stranger, and a fight told past its end (its findings
+are in #396 and `docs/known-issues.md`, LONG-HAUL-ROUND-8).
+
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
 sixty-five in-fiction lines that name no move (but one that names its move on
@@ -426,8 +435,10 @@ key. A line the script offers a move for is read unasked, and offered. The
 stand-in's `asked` is a choice, not a measure: a rehearsal walks the beats,
 and how the real reader reads a plain line is the live run's to measure (the
 Plain lines row) and the readers' plain-line test's. A long run also writes `beats.json`,
-`mechanics.json` and `ledger.json`. Its caps are its own: 100 actions, 400
-model calls, 60 minutes, $15.
+`mechanics.json` and `ledger.json`. Its caps are its own: 400 actions, 1,600
+model calls, 240 minutes, $15 (raised from 100, 400 and 60 after the eighth
+round stopped on the action cap; the dollar cap stays). Fact continuity's
+consistency check runs in it, as in real play, so its judge lines are judged.
 
 **The short scenarios, beside the long haul** (`playwright/suites/scenarios.json`,
 run by `playwright/suite.mjs`). The long haul stays as it is — the

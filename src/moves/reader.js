@@ -65,6 +65,7 @@ import { renderReaderCatalogue } from "./readerCatalogue.js";
 import { readLineSituation, buildReaderSituationBlock } from "./readerSituation.js";
 import { availableMoves, formatAvailableMoves } from "./contracts/available.js";
 import { readMoveSituation } from "./situation.js";
+import { positionReason } from "./combat.js";
 import { CATALOGUE_MOVE_IDS } from "./readerCatalogue.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -112,6 +113,27 @@ const NAME_VERBS = Object.freeze({
 });
 const POSSESSIVE = "(?:your|my|our|her|his|their|the|this|that)";
 const NAME_PATTERNS = new Map();
+
+/**
+ * The move of a position pair whose other `moveId` is (Strike for Clash in a
+ * bad spot) when the line says it — by its name, or for a one-word move its
+ * verb as a word ("I Strike at the cutter"); else null (issue #397, Code fix 2).
+ *
+ * @param {string} text — the player's line
+ * @param {string} moveId — the move the reading is
+ * @param {"in_control"|"bad_spot"|null} position
+ * @returns {string|null}
+ */
+function positionTwinSaid(text, moveId, position) {
+  if (position !== "in_control" && position !== "bad_spot") return null;
+  const said = String(text ?? "");
+  for (const id of Object.keys(MOVES)) {
+    if (id === moveId || constrainMoveToPosition(id, position) !== moveId) continue;
+    const word = !id.includes("_") && new RegExp(`\\b${id.replace(/e$/, "")}(?:e|es|ed|ing)?\\b`, "i").test(said);
+    if (word || lineNamesMove(said, id)) return id;
+  }
+  return null;
+}
 
 /** Whether the line names the move: two words or more of its name, as a player would type them. */
 function lineNamesMove(text, moveId) {
@@ -512,6 +534,13 @@ export function parseReading(rawText, { mode = READING_MODES.OPEN, chosen = null
   const named = moveId;
   if (!chosenId) moveId = constrainMoveToPosition(moveId, combatPosition);
   const remapped = moveId !== named;
+  // The swap is recorded for the move card — "↪ Strike becomes Clash: the
+  // character is in a bad spot." — in the position rule's own words (issue
+  // #397, Code fix 2: round 8's typed "I Strike at the cutter" reached the
+  // pipeline's gate already a Clash, and its card said nothing). The reply's
+  // own pick of the pair's other, for a line that says the move its position
+  // does not allow, is the same swap.
+  const swappedFrom = remapped ? named : (!chosenId ? positionTwinSaid(narration, moveId, combatPosition) : null);
   const move = MOVES[moveId];
   // A line that names the move it is read as asks for it, whatever the reply said.
   const askedByName = !chosenId && (lineNamesMove(narration, named) || lineNamesMove(narration, moveId));
@@ -554,11 +583,13 @@ export function parseReading(rawText, { mode = READING_MODES.OPEN, chosen = null
     stakes:           move.progressMove !== true && statUsed ? withPriceSource(normaliseStakes(parsed.stakes), missPaysPrice(moveId)) : null,
     mischiefApplied,
     confidence,
-    positionConstraintApplied: remapped,
     playerConfirmed:  false,
   };
   const plainMove = mischiefApplied ? toMoveId(parsed.plainMove) : null;
   interpretation = keepMischiefInKind(interpretation, plainMove ? { moveId: plainMove, category } : null, mischiefLevel);
+  if (swappedFrom && interpretation.moveId === moveId) {
+    interpretation = { ...interpretation, rerouted: { from: swappedFrom, why: positionReason(combatPosition) } };
+  }
 
   return {
     ...base,

@@ -384,6 +384,35 @@ ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
 The marks land before the move's roll card is built; the "Combat progress"
 card that says so is posted after it (`afterMoveCard`, above) — for a held
 result too: the marks are the roll's, only its price and narration wait.
+An upgrade's added marks (Burn Momentum, Improve Result) post "Marked progress
+once more, for the upgraded result", so a second card no longer reads as a
+double count. A move made as another, a Strike in a bad spot being a Clash,
+carries its reason on the move card: "↪ Strike becomes Clash: the character is
+in a bad spot" (`interpretation.rerouted` → `resolution.rerouted` → `index.js
+reroutedLine`). It is recorded where the swap happens, with the position
+rule's one wording (`combat.js positionReason`): for a typed line, the
+reader's parse — its position remap, or the reply's own pick of the pair's
+other for a line that says the move ("I Strike at the cutter", `reader.js
+positionTwinSaid`) — or the router's gate (`readAndRoute.js` `readAs`, the
+gate's `insteadWhy`); for a move chosen on a card, the pipeline's gate. The
+first swap recorded is kept (issue #397, Code fix 2: round 8's typed "I
+Strike" reached the pipeline already a Clash, and its card said nothing).
+Since round 8 (FIGHT-PAST-ITS-END), a full track (40 ticks) is said in three
+places:
+- The "Combat progress" card adds "The track is full: another blow marks nothing
+  — ⚔ Attempt to Finish the Fight decides it" (`index.js`
+  `postCombatProgressCard`).
+- The reader's situation reads "its track full: only Take Decisive Action ends
+  it" (`readerSituation.js`).
+- The narration of a Gain Ground, Strike, Clash or React Under Fire carries NOT
+  SO [foe] (`table.js` `obliges: ["foe"]`, `obligations.js`). The fight is not
+  decided, and on a full track the foe is beaten in all but the deciding blow,
+  which is the player's. `narrator.js` `fightStandingOf` reads the track after
+  the marks. "destroyed", "dead", "fled", "beaten" or "hulk" in the prose trips
+  the judge, and a breach is asked again — and their other forms ("destroys",
+  "wreckage", "kills", "dying", "flee", "retreat", "retreated", "explode") and
+  possessives ("the hulk's guns") since issue #397's Code fix 4. "Guns silent"
+  and "goes dark" are no trip words: harm short of the end is allowed.
 A move's marks never begin a fight (overhaul 4, D6 — "Combat is offered, not
 forced"): only Enter the Fray's commit, ⚔ Begin the fight on its threshold
 card, makes a combat track (`createCombatTrackFromThreshold` →

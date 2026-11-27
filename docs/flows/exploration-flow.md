@@ -194,8 +194,15 @@ finish docks there and charts nothing.
   ship-position flag on the command vehicle and the sector-scene token syncs
   (its `report` says whether the token moved). A **miss sets out** (D1):
   waylaid, the characters are between places — the current location none
-  (`index.js setOut`) — until an arrival. Whatever Ship Positioning says, the narrator
-  is told: the MOVE OUTCOME gains `[ARRIVAL: The ship has ARRIVED at <place>.
+  (`index.js setOut`) — until an arrival. The ship sets out with them: when her
+  record had her at the place left, `shipSetsOut` writes her under way (free
+  text "under way — waylaid on the course to …" / "— on the expedition …",
+  `previous` the place left; SHIP-LEFT-NEAR-ON-SETTING-OUT). Whatever Ship Positioning says, the narrator
+  is told — and, since round 8, NOT SO [arrival] holds the hit's fact block
+  to who is where: nobody the record has elsewhere, who was not with the
+  characters as they set out (`whereabouts.js departedWith`, the latest
+  frame's present), is waiting at the arrival or arrives with them (a certain
+  check on the frame's present; PEOPLE-WAITING-AT-THE-ARRIVAL) — the MOVE OUTCOME gains `[ARRIVAL: The ship has ARRIVED at <place>.
   Open the scene there …]` — a strong hit's favouring the crew, ending on
   something unresolved there (`arrivalNarratorLine`; issue #348 PT08: it got
   "Arrived" with no place and narrated a launch) — for every narration of the
@@ -297,7 +304,15 @@ finish docks there and charts nothing.
   hit's "Peril at the waypoint" pick rolls Spaceborne Peril, posts it, and the
   narrator plays it at once as its own beat (`sufferDialog.js`
   `postChosenComplication` → the oracle follow-up) — its card only promised
-  that the narrator would "surface" it. That peril is the open expedition's
+  that the narrator would "surface" it. The follow-up stamps the cost card the
+  pick was made on as told (`sufferCardId` → `toldCardId` →
+  `markChosenCostsTold`), so the next narration does not tell it again
+  (CHOSEN-COST-TOLD-TWICE, round 8). A Set a Course's "Complication at
+  destination" is told at the arrival. It is held to the record's place by NOT
+  SO [here], and its message says it comes from what is at the destination,
+  never from someone or something left behind (PEOPLE-WAITING-AT-THE-ARRIVAL,
+  round 8's a72). A Set a Course hit rolled from a typed line with no word of
+  travel carries TELL [journey]: say the crossing in one sentence. That peril is the open expedition's
   plan's next danger when one is planned (issue #353 Phase 3) — the
   expedition the move marked, which its choice card names
   (`executorOpts.expeditionTrackId`, `movePipeline` `waypointExpedition`) and

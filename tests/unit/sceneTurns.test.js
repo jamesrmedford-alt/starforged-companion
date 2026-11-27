@@ -142,7 +142,7 @@ describe('overhaul 2 §4.2 — TIME_SKIP: phrases, never a bare word', () => {
 
   // Beat 22 asks for the night to pass in those words since the fifth live
   // run: the one line of each kept run it is for (issue #388; it turned the
-  // fifth run's scene at a56). The sixth round's two runs each reached it, and the seventh round's run.
+  // fifth run's scene at a56). The sixth round's two runs each reached it, and the seventh and eighth rounds' runs.
   it('over every typed line of the kept long hauls it fires only on beat 22\'s night-pass line', () => {
     const dir = join(process.cwd(), 'test/ci/playwright/explorations');
     const fired = [];
@@ -161,6 +161,7 @@ describe('overhaul 2 §4.2 — TIME_SKIP: phrases, never a bare word', () => {
       'long-haul-live-20261125-225635: I rest aboard until the next morning.',
       'long-haul-live-20261125-232143: I rest aboard until the next morning.',
       'long-haul-live-20261126-030646: I rest aboard until the next morning.',
+      'long-haul-live-20261126-184225: I rest aboard until the next morning.',
     ]);
   });
 });

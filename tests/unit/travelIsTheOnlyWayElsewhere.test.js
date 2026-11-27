@@ -145,6 +145,9 @@ describe('D1 — a journey that leaves sets out: no place, between places, until
     await setACourse(MISS);
     expect(state()).toMatchObject({ currentLocationId: null, currentLocationType: null });
     expect(narrationSystem()).not.toContain('Place:    Port Vigil');
+    // SHIP-LEFT-NEAR-ON-SETTING-OUT (round 7): their ship sets out with them.
+    expect(ship.flags[MODULE_ID].ship.position).toMatchObject({ nearestSettlementId: null, freeText: 'under way — waylaid on the course to Bleakhold',
+      updatedBy: 'set_a_course', previous: expect.objectContaining({ nearestSettlementId: 'actor-port' }) });
   }, 60_000);
 
   it('a22: Undertake an Expedition for the distress call\'s source — between places, and the scene block says so', async () => {
@@ -154,12 +157,16 @@ describe('D1 — a journey that leaves sets out: no place, between places, until
     expect(state()).toMatchObject({ currentLocationId: null, currentLocationType: null });
     expect(narrationSystem()).toMatch(/ {2}Place: {4}none — the characters are between places, on the expedition [^\n]*distress call[^\n]*, until it arrives/);
     expect(narrationSystem()).not.toContain('Place:    Port Vigil');
+    // SHIP-LEFT-NEAR-ON-SETTING-OUT (round 7's a22–a24): "Ship: Wayfinder near Port Vigil" no more.
+    expect(ship.flags[MODULE_ID].ship.position).toMatchObject({ nearestSettlementId: null, updatedBy: 'expedition',
+      freeText: expect.stringMatching(/^under way — on the expedition .*distress call/) });
   }, 60_000);
 
   it('an expedition for the place they are at leaves nothing: they stay', async () => {
     await seat();
     await undertake('Port Vigil', 'We sweep the approaches to Port Vigil for the beacon.');
     expect(state().currentLocationId).toBe('actor-port');
+    expect(ship.flags[MODULE_ID].ship.position).toMatchObject({ nearestSettlementId: 'actor-port' });
   }, 60_000);
 
   it('an expedition begun inside a derelict, for no other recorded place, explores it: they stay', async () => {

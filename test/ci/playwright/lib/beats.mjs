@@ -71,7 +71,7 @@ export function castCardId(marks, cast, name) {
  * (`from`) to now, and the run so far — and, where it is given, the beat
  * itself (`wants`: the moves it wants, wantsOf).
  */
-export function beatView({ marks, messages, actions, charter, from, beat = null }) {
+export function beatView({ marks, messages, actions, charter, from, beat = null, unscripted = null }) {
   // `from` is the step the beat became current at: the world as that step
   // left it is where the beat starts (`entered`), and what happened in that
   // step belongs to the beat before — a roll that finished one beat is not
@@ -107,6 +107,8 @@ export function beatView({ marks, messages, actions, charter, from, beat = null 
   const questVows = () => (pc?.vows ?? []).filter(x => !seeded.has(String(x.name ?? "").trim().toLowerCase()));
   return {
     marks, window, steps, now, entered, allCards, inWindow, firstSeen, rolls, pc, charter, actions, from,
+    // The beat's own roll the GM could not script (explore.mjs, lib/gm.mjs `notScriptedBeat`), or null.
+    unscripted,
     wants: beat ? wantsOf(beat) : [],
     lines, linesInWindow: lines.filter(m => steps.has(m.step)),
     messagesInWindow: messages.filter(m => steps.has(m.step)),
@@ -483,6 +485,13 @@ export const BEAT_CHECKS = {
   burned(v, c) {
     const roll = v.rolls.find(r => r.rolled && (!c.moves || attacks(c.moves).includes(r.moveId)) && (!c.outcome || r.outcome === c.outcome));
     if (!roll) return notYet("no such roll yet");
+    // The GM could not script the weak hit a burn improves (momentum too low,
+    // lib/gm.mjs): the roll fell live and offers no burn, and every roll after
+    // it would too — moot, and the run goes on. Round 8's beat 12 attacked a
+    // full track for eight actions instead (FIGHT-PAST-ITS-END).
+    if (!roll.card.move.burn && v.unscripted) {
+      return { done: false, moot: true, detail: `${roll.moveId} came up ${roll.outcome} unscripted — ${v.unscripted}; the burn was not exercised` };
+    }
     if (!roll.card.move.burn) return notYet(`${roll.moveId} came up ${roll.outcome}; its card offers no burn`, 1);
     if (!roll.card.move.burn.consumed) return notYet(`${roll.moveId} came up ${roll.outcome}; momentum has not been burned`, 2);
     return done(`${roll.moveId} came up ${roll.outcome} at ${roll.step} and momentum was burned for ${roll.card.move.burn.previewOutcome ?? "a better result"}`);
@@ -861,7 +870,7 @@ export function createPointer(beats) {
         if (beat.interruption && !cur.interrupted) return changes;
         const check = BEAT_CHECKS[beat.check?.type];
         if (!check) throw new Error(`beat ${beat.n} has no check the observer knows (${beat.check?.type})`);
-        const view = beatView({ ...run, from: cur.enteredAt, beat });
+        const view = beatView({ ...run, from: cur.enteredAt, beat, unscripted: cur.unscripted ?? null });
         const result = check(view, beat.check);
         cur.detail = result.detail;
         const lines = view.linesInWindow.filter(m => !isSceneQuestion(m.text));

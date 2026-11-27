@@ -55,7 +55,8 @@ describe('DECIDE NOW tells a who-vow\'s plan to name the one behind it', () => {
     const block = (label) => formatUnrevealedBlock([], {
       planRequests: [{ ref: 'plan-res-1-vow', kind: 'vow', trigger: 'vow', label, oracleSeeds: ['What is behind it — Action + Theme: Debate Greed'] }],
     });
-    expect(block(`what is really behind the vow "${VOW}"`)).toContain('Its truth names the one behind it — a person, by name: someone the story has met, or a new name.');
+    // With no people met yet, any name; a new one is shown before the truth comes out (VOW-WON-BY-A-STRANGER).
+    expect(block(`what is really behind the vow "${VOW}"`)).toContain('Its truth names the one behind it — a person, by name: someone the story has met, or a new name; a new one is shown in play, by name, before the truth is revealed.');
     expect(block('what is really behind the vow "Find the lost colony ship Verity\'s Hope"')).not.toContain('Its truth names the one behind it');
   });
 });

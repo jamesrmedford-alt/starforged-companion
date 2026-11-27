@@ -159,6 +159,14 @@ export function appendSidecarInstruction(options = {}) {
     '  { "subject": "Kael Dros", "fact": "holds the datapad the PC handed him",',
     '  "from": "line" } and { "subject": "Kael Dros", "attribute": "location",',
     '  "value": "in the cargo bay with the PC", "from": "line" }.',
+    // RECAP-TOLD-A-PLACE-SHE-HAD-LEFT (issue #397, Code fix 3): a player
+    // character's own place in a state change bound and went stale as the
+    // frames moved her on; the frame's location is its one store
+    // (placeClaims.js drops such an entry — the matched pair).
+    ...(sceneFrameEnabled ? [
+      '  Where the player characters themselves are is "sceneFrame"\'s',
+      '  "location" alone: no stateChange says it.',
+    ] : []),
     // Players can't overrule dice (issue #389 #2): the line binds the
     // character's own acts and words, never what the dice decided otherwise.
     '- A line that takes for granted what the dice decided otherwise — the',
@@ -166,7 +174,7 @@ export function appendSidecarInstruction(options = {}) {
     '  make it so: narrate what the dice made true, and tag none of what the',
     '  line assumed "line".',
     '- REQUIRED: when your prose establishes or changes WHERE a named',
-    '  character is (their location, the vessel or structure they are',
+    `  character${sceneFrameEnabled ? ' other than a player character' : ''} is (their location, the vessel or structure they are`,
     '  aboard) or their physical condition (wounded, dying, well), you MUST',
     '  emit a stateChange for that character recording it — e.g.',
     '  { "subject": "Vance", "attribute": "location", "value": "aboard his',
@@ -239,9 +247,16 @@ export function appendSidecarInstruction(options = {}) {
       '  player\'s line moves it. "location": where the characters are, in a',
       '  few words — a room, a street, a deck, a stall — never where the ship',
       '  is in space: the ship\'s position says that, and a move of the ship is',
-      '  a ship/position change. "present": every named character here in',
-      '  person; "remote": a named character heard or seen over a comm, a',
-      '  screen or a call — never in "present"; "situation": the',
+      // Issue #397, Code fix 5: it asked for "every named character here in
+      // person" — no unnamed figure (r7 a63, r8 a68 and a72 left theirs out,
+      // though the same block's stateChanges named them), and nothing of the
+      // player characters (round 8's lists left Mira out of 40 of 68).
+      '  a ship/position change. "present": everyone here in person — each',
+      '  player character in the scene, by name; each named character; and an',
+      '  unnamed figure by a short handle, the same words the fact block\'s',
+      '  stateChanges use for them, kept the same from beat to beat; "remote": a',
+      '  named character heard or seen over a comm, a screen or a call — never in',
+      '  "present"; "situation": the',
       '  situation in one sentence. Include it on EVERY response — it replaces',
       '  the previous snapshot. Keep names exactly as established. When the',
       '  player\'s line has moved the scene within the characters\' place, write',
@@ -367,6 +382,18 @@ const STATE_KEPT_LONGEST = new Set(WHEREABOUTS_ATTRIBUTES);
 
 /** How a binding entry's basis is named in the block (overhaul 2 §5.5). */
 const BASIS_LABELS = Object.freeze({ player: 'the player', dice: 'the dice', gm: 'the GM', setup: 'the premise' });
+
+/** At most this many people not yet on record are told in THE SCENE — the newest drafted first. */
+const PENDING_PEOPLE_TOLD = 4;
+
+/** A text cut at its last whole word within `max` characters, marked "…" when cut. */
+function clipWords(text, max) {
+  const t = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const at = cut.lastIndexOf(' ');
+  return `${(at > max / 2 ? cut.slice(0, at) : cut).replace(/[\s,;:.—-]+$/, '')}…`;
+}
 
 /**
  * Build the Section 6.5 active-scene ledger block — fact-continuity scope §6,
@@ -542,6 +569,21 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // the people whose whereabouts are one.
   for (const p of options?.elsewhere?.people ?? []) placeLines.push(`  Elsewhere: ${p.name} — ${p.where}, not here`);
   for (const p of options?.elsewhere?.places ?? []) placeLines.push(`  Elsewhere: ${p.name} — another place, reached only by a journey's move`);
+  // The people met whom the table has not yet confirmed — tracked as real
+  // until it does (the maintainer's call after round 8): the fact block names
+  // them by this name, so where they are can be kept.
+  const pending = (Array.isArray(options?.pendingPeople) ? options.pendingPeople : []).filter(p => typeof p?.name === 'string' && p.name.trim())
+    .slice(0, PENDING_PEOPLE_TOLD);
+  if (pending.length) {
+    placeLines.push('  Not yet on record — people met; when one is in the scene, the fact block names them so, in "present" or "remote":');
+    for (const p of pending) {
+      const what = typeof p.description === 'string' && p.description.trim() ? ` — ${clipWords(p.description.trim(), 90).replace(/[\s.;,:]+$/, '')}` : '';
+      const where = typeof p.where === 'string' && p.where.trim() ? `; ${p.where.trim()}` : '';
+      // Their pronouns as the narration gave them, so they hold (UNNAMED-FIGURE-PRONOUN-DRIFT).
+      const pronouns = typeof p.pronouns === 'string' && p.pronouns.trim() ? ` (${p.pronouns.trim()})` : '';
+      placeLines.push(`    ${p.name.trim()}${pronouns}${what}${where}`);
+    }
+  }
   const frameLines = [];
   if (frame) {
     if (read.where)          frameLines.push(`  Where:    ${read.where} — as the narration has it`);
@@ -1992,7 +2034,7 @@ function formatEntityCardsBlock(entityCards) {
  */
 function formatLedgerSection(campaignState, settings = {}, {
   matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
-  nameChanges = null, progressTracks = [], elsewhere = null,
+  nameChanges = null, progressTracks = [], elsewhere = null, pendingPeople = [],
 } = {}) {
   const {
     factContinuityEnabled         = true,
@@ -2016,6 +2058,7 @@ function formatLedgerSection(campaignState, settings = {}, {
     nameChanges,
     underway: expeditionUnderway(progressTracks),
     elsewhere,
+    pendingPeople,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -2344,6 +2387,9 @@ export function buildNarratorSystemBlocks(
     planRequests         = [],
     decideNowRequests    = null,
     plannedSubjects      = [],
+    storyPeople          = [],
+    strangers            = {},
+    quietThread          = null,
     usedImages           = [],
     wornDetails          = [],
     beatShape            = null,
@@ -2685,6 +2731,8 @@ export function buildNarratorSystemBlocks(
     nameChanges: extras?.nameChanges ?? null,
     progressTracks,
     elsewhere: extras?.elsewhere ?? null,
+    // The people met whom the table has not yet confirmed (whereabouts.js pendingPeopleOf).
+    pendingPeople: Array.isArray(extras?.pendingPeople) ? extras.pendingPeople : [],
   });
   if (ledgerBlock) parts.push(ledgerBlock);
 
@@ -2703,6 +2751,11 @@ export function buildNarratorSystemBlocks(
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
       planRequests: Array.isArray(decideNowRequests) ? decideNowRequests : planRequests,
       plannedSubjects,
+      // A who-vow's culprit: the people met, and the strangers to be shown (VOW-WON-BY-A-STRANGER).
+      people: storyPeople,
+      strangers,
+      // A thread gone quiet, to be brought back with a clue (the maintainer's call after round 8).
+      quiet: quietThread,
       // An `@scene` answer writes nothing back: the plans in play without the
       // lines that ask for a record of them, and nothing to decide.
       sidecar: factContinuityEnabled && resolvedMode !== 'scene_interrogation',
@@ -3017,6 +3070,19 @@ export function formatSnapshotPlan(r) {
 }
 
 /**
+ * What a decided who-vow plan carries when its truth names someone the story
+ * has not met (VOW-WON-BY-A-STRANGER): show them before the truth comes out.
+ * The one wording, for a plan written out under UNREVEALED and one the world
+ * snapshot holds (IN PLAY FOR THIS NARRATION).
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function strangerLine(name) {
+  return `Not yet in play: ${name}. Before this truth is revealed, show ${name} in the story — seen, met, or spoken of by name — as one of its clues.`;
+}
+
+/**
  * [6.6] UNREVEALED — the narrative skeleton's hidden plans for this beat
  * (issue #353 "What the narrator sees"), and — with the sidecar — DECIDE NOW,
  * the plans this narration must decide: a price that revealed a new enemy
@@ -3030,7 +3096,12 @@ export function formatSnapshotPlan(r) {
  *
  * @param {Object[]} skeletons — selectRelevantSkeletons' records
  * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number,
- *   coveredIds?: string[], endingSubjectIds?: string[] }} [opts] —
+ *   coveredIds?: string[], endingSubjectIds?: string[], people?: string[], strangers?: Object<string, string>, quiet?: Object|null }} [opts] —
+ *   `people`: the people the story has met, for a who-vow's DECIDE NOW to prefer as the one behind it;
+ *   `strangers`: decided who-vow plans whose truth names someone not met — id → name — each told to
+ *   show that person in play before the truth is revealed (VOW-WON-BY-A-STRANGER, round 8);
+ *   `quiet`: a thread gone quiet — { id, subject, scenes, clue } (skeletons.js quietestPlan) — told to come
+ *   back in this beat through that clue (A THREAD GONE QUIET; the maintainer's call after round 8);
  *   `plannedSubjects`: the beings that already have a plan (skeletons.js plannedBeings), listed under
  *   DECIDE NOW when an enemy or an NPC's agenda is being decided, so the narrator can answer that the
  *   "new" one is one of them (`sameAs`, issue #354 P2-30);
@@ -3040,7 +3111,7 @@ export function formatSnapshotPlan(r) {
  *   is told now (THIS BEAT ENDS A VOW, vowEndingLines)
  * @returns {string} '' when there is nothing to show
  */
-export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [], endingSubjectIds = [] } = {}) {
+export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS, coveredIds = [], endingSubjectIds = [], people = [], strangers = {}, quiet = null } = {}) {
   const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
   const covered = new Set(Array.isArray(coveredIds) ? coveredIds : []);
   const everyDecided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
@@ -3079,20 +3150,36 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
   const budget = Math.max(0, Number(maxTokens) || 0) * 4;   // ~4 characters a token
   let used = lines.join('\n').length;
   const entries = [];
+  // A who-vow's culprit the story has not met is shown before the truth comes
+  // out (VOW-WON-BY-A-STRANGER: round 8's vow was won by a name the player
+  // never saw) — told with the plan, whether it is written out here or held
+  // by the world snapshot (issue #397, Code fix 1: the snapshot, on by
+  // default, held round 8's plan in every narration, and the line rode only
+  // with a plan written out here).
+  const strangerOf = (r) => (typeof strangers?.[r.id] === 'string' && strangers[r.id].trim() ? strangerLine(strangers[r.id].trim()) : '');
   for (const r of decided) {
-    const entry = formatSkeletonEntry(r);
+    const stranger = strangerOf(r);
+    const entry = formatSkeletonEntry(r) + (stranger ? `\n- ${stranger}` : '');
     if (entries.length && used + entry.length > budget) break;   // the first always shows
     entries.push(entry);
     used += entry.length;
   }
   if (entries.length) lines.push('', entries.join('\n\n'));
+  // A thread gone quiet (the maintainer's call after round 8): one plan that
+  // has not come up for scenes, brought back in this beat with a clue — the
+  // exception to "a beat that does not touch a subject leaves it alone".
+  if (sidecar && quiet && typeof quiet === 'object' && quiet.id && quiet.clue && list.some(r => r.id === quiet.id)) {
+    lines.push('', '### A THREAD GONE QUIET',
+      `${quiet.subject} (id ${quiet.id}) has not come up for ${quiet.scenes} scenes. Bring it back in this beat through one of its clues — `
+      + `"${quiet.clue}" — shown in the fiction, never explained, and record the reveal in your sidecar.`);
+  }
   if (named.length) {
     lines.push(
       '',
       '### IN PLAY FOR THIS NARRATION',
       'Each of these is written out under HIDDEN PLANS in WORLD SNAPSHOT — or, changed since, under',
       'CHANGED SINCE THE SNAPSHOT, which wins. Use these and no other plan the snapshot holds:',
-      ...named.map(r => `- ${skeletonHeading(r)} (id ${r.id})`),
+      ...named.map(r => `- ${skeletonHeading(r)} (id ${r.id})${strangerOf(r) ? `\n  ${strangerOf(r)}` : ''}`),
     );
   }
   // The vow this beat's move fulfils is told now — with the fact block, which
@@ -3119,8 +3206,13 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
     // A vow that asks who is won by a name (VOW-FULFILLED-UNANSWERED): its
     // truth names the one behind it — and one that names no one is given a
     // name from the name oracle when it is filed (secrets.js namedIfAWhoVow).
+    // The one behind it is one of the story's people where one fits (the
+    // maintainer's call after round 8, VOW-WON-BY-A-STRANGER), and a new one is
+    // shown in play before the truth comes out.
+    const met = (Array.isArray(people) ? people : []).map(n => String(n ?? '').trim()).filter(Boolean);
     const whoOf = (kind, name) => (kind === 'vow' && vowAsksWho(name)
-      ? ' Its truth names the one behind it — a person, by name: someone the story has met, or a new name.' : '');
+      ? ` Its truth names the one behind it — a person, by name: ${met.length ? `one of the people the story has met if one fits (${met.join(', ')}), else a new name` : 'someone the story has met, or a new name'}; a new one is shown in play, by name, before the truth is revealed.`
+      : '');
     for (const q of requests) {
       const seeds = Array.isArray(q.oracleSeeds) && q.oracleSeeds.length ? ` Oracle: ${q.oracleSeeds.join('; ')}.` : '';
       const journey = q.kind === 'expedition'

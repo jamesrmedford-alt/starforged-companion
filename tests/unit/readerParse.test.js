@@ -28,8 +28,9 @@ describe('a reply the reader can read', () => {
       playerNarration: 'I jump the gap.', inputMethod: 'chat', moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'edge',
       statValue: 0, adds: 0, isProgressMove: false, progressTicks: 0, moveTarget: null, rationale: 'Crossing the gap is risky.',
       stakes: { hit: 'You make the far side.', miss: 'You slip and fall hard.', missSuffer: { move: 'endure_harm', amount: 1 } },
-      mischiefApplied: false, confidence: 'high', positionConstraintApplied: false, playerConfirmed: false,
+      mischiefApplied: false, confidence: 'high', playerConfirmed: false,
     });
+    expect(r.interpretation).not.toHaveProperty('rerouted');
   });
 
   it('a no-move reading names the move NOT NOW blocked, when the reply says so — never one it does not know (issue #388 #7)', () => {
@@ -145,7 +146,9 @@ describe('the holds that need no more than the reading', () => {
   it('a combat move for the wrong position is the same intent\'s for the speaker\'s, and says so', () => {
     const r = parseReading(reading({ move: 'strike', stat: 'iron' }), { combatPosition: 'bad_spot' });
     expect(r.moveId).toBe('clash');
-    expect(r.interpretation).toMatchObject({ moveId: 'clash', moveName: 'Clash', statUsed: 'iron', positionConstraintApplied: true });
+    // The swap is recorded for the move card, in the position rule's words (issue #397, Code fix 2).
+    expect(r.interpretation).toMatchObject({ moveId: 'clash', moveName: 'Clash', statUsed: 'iron',
+      rerouted: { from: 'strike', why: 'the character is in a bad spot' } });
     expect(r.interpretation.rationale).toMatch(/\(Adjusted to Clash — you are in a bad spot\.\)$/);
     expect(parseReading(reading({ move: 'react_under_fire', stat: 'edge' }), { combatPosition: 'in_control' }).moveId).toBe('gain_ground');
     expect(parseReading(reading({ move: 'strike', stat: 'iron' }), { combatPosition: null }).moveId).toBe('strike');
@@ -193,7 +196,8 @@ describe('the holds that need no more than the reading', () => {
     const misread = reading({ move: 'undertake_an_expedition', stat: 'wits', category: 'social', mischiefApplied: true, plainMove: 'compel' });
     const r = parseReading(misread, { mischiefLevel: 'balanced' });
     expect(r).toMatchObject({ moveId: 'compel', plainMove: 'compel', category: 'social' });
-    expect(r.interpretation).toMatchObject({ moveId: 'compel', keptInKind: 'undertake_an_expedition', mischiefApplied: false, stakes: null });
+    expect(r.interpretation).toMatchObject({ moveId: 'compel', mischiefApplied: false, stakes: null });
+    expect(r.interpretation.rationale).toMatch(/\(Read as Compel: a line of dialogue is not turned into Undertake an Expedition\.\)$/);
     // Chaotic keeps its freedom; a misread with no plain move named has no anchor to go back to.
     expect(parseReading(misread, { mischiefLevel: 'chaotic' }).moveId).toBe('undertake_an_expedition');
     expect(parseReading(reading({ move: 'undertake_an_expedition', stat: 'wits', category: 'social', mischiefApplied: true, plainMove: null }), { mischiefLevel: 'balanced' }).moveId).toBe('undertake_an_expedition');

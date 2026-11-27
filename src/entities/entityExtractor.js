@@ -34,6 +34,7 @@ import { apiPost } from "../api-proxy.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag, ENTITY_ID_LISTS, unionIdList } from "./registry.js";
 
 import { getConnection, createConnection, updateConnection, roleTitleFromName } from "./connection.js";
+import { pendingDraftRows, isPendingDraftRow } from "./pendingDrafts.js";
 import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
@@ -153,9 +154,6 @@ export function normalizeEntityName(name) {
 function draftNameKey(name) {
   return normalizeEntityName(name).replace(/^(?:the|a|an) (?=\S)/, "");
 }
-
-/** Whether a draft row is still pending — no status, or "pending" (collectPendingDraftNames' rule). */
-const isPendingDraftRow = (d) => !d?.status || d.status === "pending";
 
 /**
  * Heuristic: does this look like an auto-generated placeholder name for an
@@ -294,7 +292,7 @@ const DETECTION_RETRY_BACKOFF_MS = 500;  // multiplied by the attempt number
 export async function runCombinedDetectionPass(
   narrationText, moveId, outcome, campaignState, options = {},
 ) {
-  const prompt   = buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState, { playerLines: options.playerLines });
+  const prompt   = buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState, { playerLines: options.playerLines, narrationId: options.narrationId ?? null });
   const callAPI  = options.callDetectionAPI ?? defaultCallDetectionAPI;
   const retries  = Number.isInteger(options.detectionRetries) ? options.detectionRetries : DETECTION_API_RETRIES;
   const backoff  = Number.isInteger(options.retryBackoffMs)   ? options.retryBackoffMs   : DETECTION_RETRY_BACKOFF_MS;
@@ -387,13 +385,19 @@ export const PACED_NARRATIVE_OUTCOME = "n/a";
  * @param {{ playerLines?: string|Array<{ name?: string|null, text: string }>|null }} [opts]
  * @returns {string}
  */
-export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState, { playerLines = null } = {}) {
+export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState, { playerLines = null, narrationId = null } = {}) {
   // The store's lists too: an NPC confirmed while the move ran is established (issue #347 AB09).
   const listed       = withStoredEntityIds(campaignState);
   const established  = collectEstablishedEntityNames(listed);
   const placeholders = collectPlaceholderConnectionNames(listed);
   const dismissed    = (campaignState?.dismissedEntities ?? []).filter(Boolean);
-  const pending      = collectPendingDraftNames();
+  // The pending people by what the narration said of them; the rest by name
+  // (issue #397, Code fix 5: round 8 drafted "Unknown Hatchway Figure" at a68
+  // and "The Man From the Berth" at a72 — one man, told to the detector by
+  // name only).
+  const pendingPeople = pendingPeopleForDetection();
+  const pending       = collectPendingDraftNames().filter(n => !pendingPeople.some(p => draftNameKey(p.name) === draftNameKey(n)));
+  const here          = frameOfNarration(campaignState, narrationId);
 
   const wjState = describeWorldJournalState(campaignState);
 
@@ -447,7 +451,16 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
     ``,
     `PENDING DRAFTS (already proposed in earlier narration, not yet confirmed —`,
     `do not return these again, the GM has them under review):`,
-    pending.length ? pending.join(", ") : "(none)",
+    pending.length ? pending.join(", ") : (pendingPeople.length ? "" : "(none)"),
+    ...(pendingPeople.length ? [
+      `People among them, with what the narration said of each. A figure in this narration who fits one of these people is that person, whatever the narration calls them now: never return them again. If this narration gives one of them a name, record it under "renames", "from" the name below:`,
+      ...pendingPeople.map(p => `- ${p.name}${p.pronouns ? ` (${p.pronouns})` : ""}${p.description ? ` — ${p.description}` : ""}`),
+    ] : []),
+    ...(here ? [
+      ``,
+      `WHO THIS NARRATION'S FACT BLOCK HAS HERE: ${here}.`,
+      `When this narration brings in an unnamed figure who is on that list, name the draft with those words, so the card and the scene call them the same.`,
+    ] : []),
     ``,
     `UNNAMED / PLACEHOLDER FIGURES (established entities introduced without a`,
     `proper name). If THIS narration reveals a real name for one of them — e.g.`,
@@ -725,7 +738,7 @@ function detectionFromParsed(parsed, campaignState) {
   // figure. Any other rename is skipped (applyEntityRenames), and dropping its
   // `to` as well lost the newly named NPC entirely (issue #321 U27).
   const renameTargets = new Set(renames
-    .filter(r => findPlaceholderConnection(r.from, campaignState))
+    .filter(r => findPlaceholderConnection(r.from, campaignState) || pendingPersonRowNamed(r.from))
     .map(r => draftNameKey(r.to))
     .filter(Boolean));
 
@@ -1181,7 +1194,19 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     // The placeholder connection this rename targets — only placeholder
     // figures collapse, never properly-named ones.
     const target = findPlaceholderConnection(from, campaignState, getConn);
-    if (!target) continue;
+    if (!target) {
+      // A person still pending on a draft card, by the row's whole name: the
+      // row takes the name, and no second person is drafted (issue #397, Code
+      // fix 5 — round 8's pending "Unknown Hatchway Figure" was drafted again).
+      // Never onto a name someone already holds: the GMs are told, as for a card.
+      const row = pendingPersonRowNamed(from);
+      if (!row) continue;
+      const known = entityExists(to, campaignState) ? null : knownPersonFor(to, withStoredEntityIds(campaignState));
+      if (entityExists(to, campaignState) || known) { refused.push({ from: row.name, to, known }); continue; }
+      const carried = await carryNameChangeToPendingDrafts({ from: row.name, to });
+      if (carried) applied.push({ from: row.name, to, id: null });
+      continue;
+    }
 
     // Never rename onto a name that already belongs to another entity — nor
     // onto a person's under part of it or a near spelling (issue #362 AC40):
@@ -1264,6 +1289,20 @@ function findPlaceholderConnection(from, campaignState, getConn = getConnection)
     }
   }
   return null;
+}
+
+/**
+ * The pending person row (pendingDrafts.js) a rename's `from` names whole, or
+ * null — a draft no one has confirmed or dismissed, which a revealed name
+ * renames in place (issue #397, Code fix 5). Never throws.
+ *
+ * @param {string} from
+ * @returns {Object|null}
+ */
+function pendingPersonRowNamed(from) {
+  const key = draftNameKey(from);
+  if (!key) return null;
+  try { return pendingDraftRows({ type: "connection" }).find(r => draftNameKey(r.name) === key) ?? null; } catch { return null; }
 }
 
 /**
@@ -4280,6 +4319,66 @@ function collectDraftRowNames(status, type = null) {
   }
 }
 
+/** How many pending people the detector is told with their descriptions, and how long a description runs. */
+const PENDING_PEOPLE_TOLD = 12;
+const PENDING_DESCRIPTION_MAX = 160;
+
+/**
+ * The pending person rows (pendingDrafts.js), newest first, by name, pronouns
+ * and description — for the detector to know a figure it has drafted already
+ * whatever the narration calls them now (issue #397, Code fix 5). Never throws.
+ *
+ * @returns {Array<{ name: string, pronouns: string, description: string }>}
+ */
+function pendingPeopleForDetection() {
+  try {
+    const seen = new Set();
+    const out = [];
+    for (const r of [...pendingDraftRows({ type: "connection" })].reverse()) {
+      const key = draftNameKey(r.name);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const description = String(r.description ?? "").replace(/\s+/g, " ").trim();
+      out.push({ name: r.name, pronouns: String(r.pronouns ?? "").trim(),
+        description: description.length > PENDING_DESCRIPTION_MAX ? `${description.slice(0, PENDING_DESCRIPTION_MAX - 1).replace(/\s+\S*$/, "")}…` : description });
+      if (out.length >= PENDING_PEOPLE_TOLD) break;
+    }
+    return out;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | detection: the pending people were not read:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * Who the fact block of narration `narrationId` has in the scene — "present —
+ * …; remote — …" — when the stored frame is that narration's (the campaign
+ * state the detector is handed, else the stored one); else null. The detector
+ * names a figure on it in those words (issue #397, Code fix 5). Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @param {string|null} narrationId
+ * @returns {string|null}
+ */
+function frameOfNarration(campaignState, narrationId) {
+  if (!narrationId) return null;
+  try {
+    let frame = campaignState?.sceneFrame ?? null;
+    if (frame?.narrationId !== narrationId) {
+      try { frame = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.sceneFrame ?? null; } catch { frame = null; }
+    }
+    if (!frame || frame.narrationId !== narrationId) return null;
+    const list = (xs) => (Array.isArray(xs) ? xs : []).map(x => String(x ?? "").trim()).filter(Boolean);
+    const present = list(frame.present);
+    const remote = list(frame.remote);
+    if (!present.length && !remote.length) return null;
+    return [present.length ? `present — ${present.join(", ")}` : null, remote.length ? `remote — ${remote.join(", ")}` : null].filter(Boolean).join("; ");
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | detection: the narration's frame was not read:`, err?.message ?? err);
+    return null;
+  }
+}
+
 /**
  * Collect names that have been proposed in a still-pending "New Entities
  * Detected" draft card but not yet accepted into an entity record or
@@ -4294,26 +4393,10 @@ function collectDraftRowNames(status, type = null) {
  * @returns {string[]}
  */
 function collectPendingDraftNames(type = null) {
-  try {
-    const messages = globalThis.game?.messages?.contents ?? [];
-    const names = new Set();
-    for (const m of messages) {
-      const f = m?.flags?.[MODULE_ID];
-      if (!f?.draftEntityCard) continue;
-      const drafts = Array.isArray(f.drafts) ? f.drafts : [];
-      for (const d of drafts) {
-        // Only "pending" drafts should suppress re-detection. Confirmed
-        // drafts are now established entities (caught by collectEstablished-
-        // EntityNames). Dismissed drafts are now in dismissedEntities.
-        if (d?.status && d.status !== "pending") continue;
-        if (type && d?.type !== type) continue;   // one type's rows (the pending people)
-        if (d?.name && typeof d.name === "string") names.add(d.name.trim());
-      }
-    }
-    return [...names];
-  } catch {
-    return [];
-  }
+  // The one reader of the pending rows (pendingDrafts.js): only "pending"
+  // drafts suppress re-detection — a confirmed one is an established entity
+  // now (collectEstablishedEntityNames), a dismissed one is in dismissedEntities.
+  return [...new Set(pendingDraftRows({ type }).map(r => r.name))];
 }
 
 function describeWorldJournalState(campaignState) {

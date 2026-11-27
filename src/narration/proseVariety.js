@@ -179,7 +179,9 @@ would yours your yourself looks look looked turns turn turned takes take took gi
 come came keeps keep kept holds held lets sets puts gets says asks asked tells told knows know knew sees seen seem seems
 seemed wait waits waiting moment long first last next time again already almost quiet quietly slowly enough
 the and her his him you she was for but not all one out now too has had its who how why can did get got let may our own say
-see way yet off are any few new old two put set ask own lot far yes per via nor than its ago due end met use`.split(/\s+/).filter(Boolean));
+see way yet off are any few new old two put set ask own lot far yes per via nor than its ago due end met use
+you're you’re you've you’ve you'll you’ll it's it’s that's that’s decide decided decides stop stops stopped start starts started
+stay stays stayed past short someone second`.split(/\s+/).filter(Boolean));
 
 /** A narration's content words, in order: lowercase, three letters or more ("pen", "boy"), no stop word and no name — its italic offer line left out. */
 function detailWords(text, names) {
@@ -188,6 +190,68 @@ function detailWords(text, names) {
   return prose.split(/[^\p{L}'’-]+/u)
     .map(w => w.replace(/^['’-]+|['’-]+$/g, '').replace(/['’]s$/, ''))
     .map(w => (w.length >= 3 && !WORN_STOP.has(w) && !names.has(w) ? w : null));
+}
+
+/**
+ * The names a narration writes that the record may not hold — a word written
+ * with a capital in the middle of a sentence ("the Cinder Wren", "Ashen
+ * Wake"): round 8's worn lists named "ashen wake" and "cinder wren", set by
+ * `!truth set`, as details (THE-REFRAINS-THE-LIST-CANNOT-NAME).
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+function namesWrittenIn(text) {
+  const out = [];
+  for (const m of String(text ?? '').replace(/<[^>]*>/g, ' ').matchAll(/(?<=[\p{Ll},;:)] )\p{Lu}[\p{L}'’-]*(?: \p{Lu}[\p{L}'’-]*)*/gu)) out.push(m[0]);
+  return out;
+}
+
+/** How many words a line of speech has before a narration saying it again is a repeat ([quote]). */
+const QUOTE_MIN_WORDS = 6;
+
+/** A line of speech, for comparing: lowercase, its punctuation gone. */
+const quoteKey = (s) => String(s ?? '').toLowerCase().replace(/[’]/g, "'").replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * The lines of speech a narration quotes, each sentence of a quotation on its
+ * own, compared as words alone — of QUOTE_MIN_WORDS words or more. Its fact
+ * block is left out. Round 8's a92 gave Tamsin a84's line again, word for
+ * word: "Then you're in it as deep as I am" (THE-REFRAINS-THE-LIST-CANNOT-NAME).
+ * Pure.
+ *
+ * @param {string} text — a narration
+ * @param {{ min?: number }} [opts]
+ * @returns {string[]}
+ */
+export function quotedLinesOf(text, { min = QUOTE_MIN_WORDS } = {}) {
+  const prose = String(text ?? '').replace(/```[\s\S]*?```/g, ' ');
+  const out = [];
+  for (const m of prose.matchAll(/["“]([^"”\n]{1,600})["”]/g)) {
+    for (const sentence of m[1].split(/(?<=[.!?…])\s+/)) {
+      const key = quoteKey(sentence);
+      if (key && key.split(' ').length >= min) out.push(key);
+    }
+  }
+  return out;
+}
+
+/**
+ * The lines of speech the session's narrations have already given, for the
+ * certain [quote] (checks.js): each narration's, once — but one the player's
+ * own line holds, which a narration may say back. Pure.
+ *
+ * @param {string[]} narrations — the session's narrator prose
+ * @param {{ line?: string }} [opts] — this beat's player line
+ * @returns {string[]}
+ */
+export function linesAlreadySaid(narrations, { line = '' } = {}) {
+  const own = quoteKey(line);
+  const said = new Set();
+  for (const text of Array.isArray(narrations) ? narrations : []) {
+    for (const q of quotedLinesOf(text)) if (!own.includes(q)) said.add(q);
+  }
+  return [...said];
 }
 
 /**
@@ -208,7 +272,8 @@ function detailWords(text, names) {
 export function wornDetails(narrations, { names = [], keep = [], cards = WORN_SOURCE_CARDS, min = WORN_IN_CARDS, limit = WORN_LISTED_MAX } = {}) {
   const texts = (Array.isArray(narrations) ? narrations : []).filter(t => typeof t === 'string' && t.trim()).slice(-cards);
   if (texts.length < min) return [];
-  const nameWords = new Set([...(names ?? []), ...(keep ?? [])].flatMap(n => String(n ?? '').toLowerCase().split(/[^\p{L}'’-]+/u))
+  const nameWords = new Set([...(names ?? []), ...(keep ?? []), ...texts.flatMap(namesWrittenIn)]
+    .flatMap(n => String(n ?? '').toLowerCase().split(/[^\p{L}'’-]+/u))
     .map(w => w.replace(/['’]s$/, '')).filter(w => w.length >= 3));
   const df = new Map();       // phrase → in how many narrations
   const newest = new Map();   // phrase → the newest narration it is in

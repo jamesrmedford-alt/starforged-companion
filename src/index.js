@@ -91,7 +91,7 @@ import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
-import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths, holdsTruths, dismissSetupCards } from "./truths/generator.js";
+import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths, holdsTruths } from "./truths/generator.js";
 
 import {
   openProgressTracks,
@@ -189,7 +189,7 @@ import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
 import { recordNameChange } from "./factContinuity/nameChanges.js";
 import { requestOracleNarration } from "./oracles/oracleFollowup.js";
 import { applySpotlightDefaultOff } from "./narration/spotlightDefault.js";
-import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
+import { inferShipPosition, inferShipPositionFromEntityId, emptyPosition } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
   consumeForceMove,
@@ -2243,6 +2243,63 @@ function setOut(campaignState) {
 }
 
 /**
+ * The command vehicle sets out with the characters (SHIP-LEFT-NEAR-ON-
+ * SETTING-OUT, the seventh live round's a22–a24: every reader said "Place:
+ * none — between places, on the expedition …" beside "Ship: Kobayashi IV near
+ * Hollow Spire"). When her record has her at the place left, it says she is
+ * under way — free text, her sector kept, the place she left as `previous` —
+ * until an arrival docks her. With Ship Positioning off, or her record
+ * elsewhere, nothing is written. GM only (a world write). Fail-open.
+ *
+ * @param {Object} campaignState
+ * @param {{ left: string|null, under: string, source: "set_a_course"|"expedition" }} opts — the place left, by its
+ *   id; what she is under way on ("on the expedition …", "waylaid on the course to …")
+ * @returns {Promise<boolean>} whether her record was moved
+ */
+async function shipSetsOut(campaignState, { left = null, under = "", source = "set_a_course" } = {}) {
+  if (!left || !getShipPositioningEnabled() || !game.user?.isGM) return false;
+  try {
+    const { getCommandVehicleActorId, getCommandVehicle, updateShip } = await import("./entities/ship.js");
+    const cvActorId = getCommandVehicleActorId(campaignState);
+    const was = getCommandVehicle(campaignState)?.position ?? null;
+    if (!cvActorId || !was || ![was.nearestSettlementId, was.nearestLocationId, was.nearestPlanetId].includes(left)) return false;
+    await updateShip(cvActorId, { position: {
+      ...emptyPosition(),
+      sectorId:  was.sectorId ?? null,
+      freeText:  `under way${under ? ` — ${under}` : ""}`,
+      updatedAt: new Date().toISOString(),
+      updatedBy: source,
+      previous:  was,
+    } });
+    return true;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | shipPosition: setting out was not recorded:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * The move card's line for a move the gate made as another (moves/contracts
+ * gate.js `instead`): "↪ Strike becomes Clash: the character is in a bad spot."
+ * — the eighth live round's "I Strike" rolled Clash with no word why. '' when
+ * none, or for a variant falling back to the move it varies.
+ *
+ * @param {Object} resolution
+ * @returns {string}
+ */
+function reroutedLine(resolution) {
+  const from = resolution?.rerouted?.from ?? null;
+  if (!from || from === resolution.moveId) return "";
+  const was = moveDisplayName(from);
+  const now = moveDisplayName(resolution.moveId);
+  // A variant falling back to the move it varies ("Face Danger (Scene Challenge)"
+  // with its challenge over) is told nothing: the line is for another move.
+  if (!was || !now || was === now || was.includes(now) || now.includes(was)) return "";
+  const why = typeof resolution.rerouted.why === "string" && resolution.rerouted.why.trim() ? `: ${resolution.rerouted.why.trim()}` : "";
+  return `<div class="sf-move-effect sf-move-reroute">↪ ${escapeChatHtml(`${was} becomes ${now}${why}.`)}</div>`;
+}
+
+/**
  * The current-location pick ({ id, type, entity }, as resolveCurrentLocationName
  * returns) for a place known by its host document id — a settlement, location
  * or planet — or null. An arrival whose destination came by id (a token
@@ -2578,7 +2635,12 @@ async function applyOutcomeEffects({
   } else if (resolution.moveId === "set_a_course" && resolution.outcome === "miss" && !upgrade) {
     // Waylaid on the way (issue #393 D1): the characters are aboard, between
     // places — no longer at the place they set out from — until an arrival.
-    if (setOut(campaignState)) applied.push("set out — between places until an arrival");
+    // Their ship with them (SHIP-LEFT-NEAR-ON-SETTING-OUT).
+    const left = campaignState.currentLocationId ?? null;
+    if (setOut(campaignState)) {
+      applied.push("set out — between places until an arrival");
+      await shipSetsOut(campaignState, { left, under: moveTarget ? `waylaid on the course to ${moveTarget}` : "", source: "set_a_course" });
+    }
   }
 
   // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
@@ -2706,6 +2768,9 @@ async function applyOutcomeEffects({
           const elsewhere = bound.towards ? bound.towards !== here && !(atSite && bound.recordedNow) : !atSite;
           if (here && elsewhere) {
             setOut(campaignState);
+            // Their ship with them (SHIP-LEFT-NEAR-ON-SETTING-OUT).
+            await shipSetsOut(campaignState, { left: here, under: result.track?.label ? `on the expedition ${result.track.label}` : "on an expedition",
+              source: "expedition" });
             if (upgrade) {
               try {
                 await writeOwnedFields(campaignState, ["currentLocationId", "currentLocationType"], "setting out after an upgrade");
@@ -2952,7 +3017,9 @@ async function applyOutcomeEffects({
             if (updated) { track = updated; marksApplied++; }
           }
           combatProgressTrack = track;
-          await followsTheRoll(() => postCombatProgressCard({ track, marksApplied }).catch(err =>
+          // An upgrade's marks are the difference its result adds: "once more" (round 6's
+          // a40 read a second "Marked progress once" card as a double count).
+          await followsTheRoll(() => postCombatProgressCard({ track, marksApplied, more: !!upgrade }).catch(err =>
             console.warn(`${MODULE_ID} | combat progress card failed:`, err?.message ?? err)));
           applied.push(`progress marked ${times} on ${track.label ?? "the fight"}`);
         } else {
@@ -8382,12 +8449,17 @@ async function postCombatTrackCard({ track, created }, { actorId = null } = {}) 
   }
 }
 
-async function postCombatProgressCard({ track, marksApplied }) {
+async function postCombatProgressCard({ track, marksApplied, more = false }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
-  const times = marksApplied === 1 ? "once" : `${marksApplied} times`;
+  const times = `${marksApplied === 1 ? "once" : `${marksApplied} times`}${more ? " more, for the upgraded result," : ""}`;
+  // A full track is ended only by Take Decisive Action (FIGHT-PAST-ITS-END:
+  // round 8 attacked a full track six times, and no card said it was full).
+  const full = Number(track?.ticks) >= 40
+    ? `<p class="sf-card-hint">The track is full: another blow marks nothing — <strong>⚔ Attempt to Finish the Fight</strong> decides it.</p>`
+    : "";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Combat progress</strong><p>Marked progress ${times} on <strong>${label}</strong>.</p></div>`,
+      content: `<div class="sf-ptp-card"><strong>Combat progress</strong><p>Marked progress ${times} on <strong>${label}</strong>.</p>${full}</div>`,
       flags:   { [MODULE_ID]: { combatProgressCard: true, marksApplied } },
     });
   } catch (err) {
@@ -10164,6 +10236,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${resolution.courseRerouted
         ? `<div class="sf-move-effect sf-move-reroute">🧭 ${escapeChatHtml(courseReroutedText(resolution.courseRerouted))}</div>`
         : ""}
+      ${reroutedLine(resolution)}
       ${typeof resolution.gateNote === "string" && resolution.gateNote
         ? `<div class="sf-move-effect sf-move-gate-note">⚖ ${escapeChatHtml(resolution.gateNote.replace(/^\w/, c => c.toUpperCase()))}.</div>`
         : ""}
@@ -10569,12 +10642,16 @@ Hooks.once("ready", () => {
       // Notify the GMs if no World Truths have been established yet — posted
       // once (this canonical-GM block) and whispered to every GM: it went to
       // this client's GM alone, so a second GM never saw it (issue #331 X54).
-      // One card at a time: the card an earlier load posted is replaced, not
-      // stacked — every load before the truths were saved added one, and the
-      // save took one away (issue #362 AC58). Every write that establishes
-      // the truths dismisses the cards itself (truths/generator.js).
-      if (!game.settings.get(MODULE_ID, "campaignState")?.worldTruthsSet) {
-        await dismissSetupCards();
+      // One card at a time (issue #362 AC58): a card an earlier load posted
+      // stays where it is — replacing it moved it to the foot of the chat on
+      // every load, mid-fight in six live rounds' reloads
+      // (WORLD-TRUTHS-REMINDER-ON-RELOAD). And it is a setup card: once a
+      // session has been begun, a load posts none — a table playing without
+      // World Truths has chosen to. Every write that establishes the truths
+      // dismisses the cards itself (truths/generator.js).
+      const setupState = game.settings.get(MODULE_ID, "campaignState");
+      const setupCardUp = (game.messages?.contents ?? []).some(m => m?.flags?.[MODULE_ID]?.setupCard);
+      if (!setupState?.worldTruthsSet && !setupCardUp && !setupState?.sessionStartedId) {
         ChatMessage.create({
           content: `<div class="sf-card sf-card--setup">
             <div class="sf-card-header">◈ Campaign Setup</div>

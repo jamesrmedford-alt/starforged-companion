@@ -49,6 +49,7 @@ import { recordLedgerChanges } from '../record/ledgerDiff.js';
 import { recordEvent } from '../record/record.js';
 import { sceneStores, sceneAnchorOf, anchorFilled, sceneTurnDue, shipPlaceKey, causeText } from './sceneTurns.js';
 import { entryBasis, raisedBasis, binds } from './provenance.js';
+import { personSaidIn } from '../entities/nameMatch.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -911,12 +912,9 @@ export function placeNamedBy(where, campaignState) {
 /** What the characters' place can be: as `!at` names one — never a ship. */
 const WHERE_TYPES = new Set(['settlement', 'planet', 'location']);
 
-/** Whether a frame's present entry names a person — the whole name, or a word of it of three letters or more (whereabouts.js nameSaidIn). */
-function nameInEntry(entry, name) {
-  const t = ` ${String(entry ?? '').toLowerCase().replace(/['’]s\b/g, '').replace(/[^\p{L}\p{N}'’\s-]+/gu, ' ').replace(/\s+/g, ' ')} `;
-  const n = String(name ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!n || !t.trim()) return false;
-  return [n, ...n.split(' ').filter(w => w.length >= 3)].some(w => t.includes(` ${w} `));
+/** Whether a frame's present entry names a person — the whole name, or (unless `exact`, a person not yet on record) a word of it of three letters or more (nameMatch.js personSaidIn, the one matcher). */
+function nameInEntry(entry, name, exact = false) {
+  return personSaidIn(entry, name, { exact });
 }
 
 /**
@@ -942,14 +940,18 @@ function nameInEntry(entry, name) {
  * @param {Object|null} frame — the fact block's frame, as the beat's rules made it (playersFrame / bookendFrame)
  * @param {Object|null} prior — the stored frame
  * @param {Object} campaignState
- * @param {{ elsewhere?: string[] }} [opts] — the names of the people the record has at another place
+ * @param {{ elsewhere?: Array<string|{ name: string, exact?: boolean }> }} [opts] — the people the record has at another
+ *   place: a name, or `{ name, exact }` for one not yet on record, matched whole
  * @returns {Object|null} the frame to apply
  */
 export function framedAtThePlace(frame, prior, campaignState, { elsewhere = [] } = {}) {
   try {
-    const away = (Array.isArray(elsewhere) ? elsewhere : []).map(n => String(n ?? '').trim()).filter(Boolean);
+    // A name, or { name, exact } for a person not yet on record (matched whole).
+    const away = (Array.isArray(elsewhere) ? elsewhere : [])
+      .map(n => (n && typeof n === 'object' ? { name: String(n.name ?? '').trim(), exact: n.exact === true } : { name: String(n ?? '').trim(), exact: false }))
+      .filter(n => n.name);
     if (frame && away.length && Array.isArray(frame.present) && frame.present.length) {
-      const kept = frame.present.filter(p => !away.some(name => nameInEntry(p, name)));
+      const kept = frame.present.filter(p => !away.some(a => nameInEntry(p, a.name, a.exact)));
       if (kept.length !== frame.present.length) {
         console.debug?.(`${MODULE_ID} | sceneLifecycle: the frame's present named someone the record has elsewhere — `
           + 'kept out of the record (round 7, CHARACTERS-MOVED-BY-THE-NARRATION).');

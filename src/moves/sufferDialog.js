@@ -1025,6 +1025,11 @@ async function postChosenComplication(call, actor, opts = {}) {
     scope,
     ...(scope === "waypoint" && typeof opts?.expeditionTrackId === "string" && opts.expeditionTrackId
       ? { trackId: opts.expeditionTrackId } : {}),
+    // The cost card this complication was chosen on: its narration tells the
+    // cost, so it stamps that card told (obligations.js markChosenCostsTold) —
+    // the next narration's [chosen-since] told round 8's complications again
+    // (a25, a32, a73 — CHOSEN-COST-TOLD-TWICE).
+    ...(typeof opts?.sufferCardId === "string" && opts.sufferCardId ? { sufferCardId: opts.sufferCardId } : {}),
   };
   const body = roll
     ? `<p>${escapeHtml(roll.tableName)}: d${roll.die} = <strong>${roll.roll}</strong> · ${escapeHtml(roll.result)}</p>`

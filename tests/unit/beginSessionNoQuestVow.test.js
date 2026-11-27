@@ -88,7 +88,7 @@ describe('Begin a Session with no vow in play (issue #353 R3)', () => {
     expect(card.author).toBe('pl-1');
     // Not "No character has a vow in play … swear an iron vow" above the vow its
     // own dialog swore (known-issues BEGIN-CARD-BEFORE-ITS-OWN-VOW).
-    expect(card.content).toMatch(/No vow was in play besides a background vow: Kira swears one — <strong>Learn who sent the escort<\/strong> \(formidable\)\. Its card follows\./);
+    expect(card.content).toMatch(/No vow was in play besides a background vow, so Kira swears the vow written in the Begin a Session dialog: <strong>Learn who sent the escort<\/strong> \(formidable\)\. Its card follows\./);
     expect(card.content).not.toMatch(/swear an iron vow to give this session a quest/);
     // The session began on the GM.
     expect(table.world.campaignState()).toMatchObject({ sessionActive: true, sessionStartedId: 'bsq-s2' });
@@ -148,7 +148,7 @@ describe('Begin a Session with a vow written and no GM connected (BEGIN-CARD-BEF
     const card = beginCards().find(c => /Begin a Session/.test(c.content));
     expect(card.content).toMatch(/the vow <strong>Learn who sent the escort<\/strong> is not sworn until a GM has joined/);
     expect(card.content).toMatch(/No GM is connected — the session was not started/);
-    expect(card.content).not.toMatch(/swears one|Its card follows/);
+    expect(card.content).not.toMatch(/swears the vow|Its card follows/);
     expect(kira.items.contents.map(i => i.name)).toEqual(['Avenge the Iron Hollow']);
   });
 });

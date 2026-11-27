@@ -83,6 +83,12 @@ const MODULE_ID = "starforged-companion";
 /** The moves that take the characters to another place: [whereabouts] is not theirs to keep (issue #393 D6). */
 const JOURNEY_MOVES = new Set(["set_a_course", "undertake_an_expedition", "finish_an_expedition"]);
 
+/** The journey moves whose hit arrives: the characters are at the destination when it is narrated. */
+const ARRIVAL_MOVES = new Set(["set_a_course", "finish_an_expedition"]);
+
+/** At most this many people elsewhere are named in an arrival's line (all are checked). */
+const ARRIVAL_PEOPLE_TOLD = 4;
+
 /** The three lists, in the order the block renders them. */
 const OBLIGATION_LISTS = Object.freeze(["TELL", "NOT YET", "NOT SO"]);
 
@@ -183,6 +189,23 @@ const items = (list) => list.map(x => `\n  - ${x}`).join("");
  * @type {Readonly<Object<string, { list: string|Function, check: "certain"|"floor"|"judge"|"logged", text: Function }>>}
  */
 export const OBLIGATION_KINDS = Object.freeze({
+  // A line of speech said again, word for word (THE-REFRAINS-THE-LIST-CANNOT-NAME,
+  // round 8: a92 gave Tamsin a84's "Then you're in it as deep as I am").
+  // Held by its certain check (checks.js); the session's lines ride on it.
+  quote: Object.freeze({
+    list: "NOT SO", check: "certain",
+    text: () => "No one says again, word for word, a line of speech an earlier narration of this session already gave: say it new, or let the moment carry it.",
+  }),
+  // A journey made from a line that never asked for one (PEOPLE-WAITING-AT-THE-
+  // ARRIVAL, round 8's a71: "I find Tamsin at her ledger stall …" was rolled
+  // as Set a Course to Hollow Spire, and its arrival opened at her stall with
+  // no word of the crossing — the cold read: "quietly becomes a Set a Course").
+  journey: Object.freeze({
+    list: "TELL", check: "logged",
+    text: ({ place = null } = {}) => `THE JOURNEY WAS NOT ASKED FOR IN WORDS. The player's line went looking for what is `
+      + `${place ? `at ${place}` : "elsewhere"}, and this move takes them there: say so in one sentence — the crossing made — `
+      + "and then open the scene there.",
+  }),
   outcome: Object.freeze({
     list: "TELL", check: "logged",
     // A round's entry has no MOVE OUTCOME heading: its outcome is on its own line, above.
@@ -290,6 +313,25 @@ export const OBLIGATION_KINDS = Object.freeze({
         "side breaks off or gives way. Where the stakes or the player's line have the fight opening — a first salvo, a " +
         "first strike — show it as what they are placed to do, about to happen, never as done. Never mention the card or the choice.";
     },
+  }),
+  // A blow in a fight is not its end (FIGHT-PAST-ITS-END, the eighth live
+  // round: the cutter was told destroyed four times, a38–a43, while the track
+  // filled and the attacks went on). Only Take Decisive Action decides a
+  // fight; on a full track the foe is beaten in all but that blow. `fight`
+  // rides on the line: { label, full } — narrator.js fightStandingOf.
+  foe: Object.freeze({
+    list: "NOT SO", check: "judge",
+    text: ({ fight = null } = {}) => {
+      const which = fight?.label ? ` (${fight.label})` : "";
+      return fight?.full
+        ? `THE FIGHT'S TRACK IS FULL${which}. The foe is beaten in all but the deciding blow, and that blow is the player's `
+          + "Take Decisive Action — not this one. Tell the foe broken open and at bay: never destroyed, dead, wrecked, fled, "
+          + "surrendered or beaten."
+        : `THE FIGHT IS NOT DECIDED${which}. Only Take Decisive Action ends it: this blow hurts, drives back or corners the `
+          + "foe — never tell the foe destroyed, dead, wrecked, fled, surrendered or beaten.";
+    },
+    judge: () => "The narration tells the fight as over — the foe destroyed, dead, wrecked, fled, surrendered or beaten — "
+      + "though no Take Decisive Action has decided it.",
   }),
   vow: Object.freeze({
     list: "TELL", check: "floor",
@@ -406,6 +448,17 @@ export const OBLIGATION_KINDS = Object.freeze({
   // and the beats after it followed the prose. Certain: the fact block's frame,
   // its present and the prose are read against the record before the
   // narration posts (checks.js hereViolations). Never on a journey's own move.
+  // A journey's arrival (PEOPLE-WAITING-AT-THE-ARRIVAL: the first-session
+  // re-records had the Hollow Spire dockmaster waiting at both ends of both
+  // journeys). Whoever was not with the characters as they set out is where
+  // the record has them. Held by [here]'s people reading alone (checks.js):
+  // the journey's own move speaks of the places it crosses.
+  arrival: Object.freeze({
+    list: "NOT SO", check: "certain",
+    text: ({ here = null, people = [] } = {}) => `The characters arrive at ${here}. Whoever was not with them as they set out `
+      + `is where the record has them — ${people.map(p => `${p.name} ${p.where}`).join("; ")}: never waiting at ${here}, `
+      + "nor arriving with the characters.",
+  }),
   here: Object.freeze({
     list: "NOT SO", check: "certain",
     text: ({ here = null, underway = null } = {}) => (here
@@ -729,9 +782,33 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
   if (r.openChoice && (r.openChoice.kind === "any" || (Array.isArray(r.openChoice.options) && r.openChoice.options.some(o => stakesLine(o)))))
     out.push(line("cost", { resolution: r }));
   if (obliges.has("fight") && fightNotBegun(r.fightOffer)) out.push(line("fight", { resolution: r }));
+  // A blow in the open fight (FIGHT-PAST-ITS-END): read by the narrator off the fight's track.
+  if (obliges.has("foe") && r.fightStanding && typeof r.fightStanding === "object") {
+    out.push({ ...line("foe", { fight: r.fightStanding }), fight: r.fightStanding });
+  }
   if (obliges.has("recommit") && r.outcome === "miss") out.push(line("recommit", { resolution: r }));
   if (r.gateNote) out.push(line("overridden", { note: r.gateNote }));
   return out;
+}
+
+/** Words a line asks to travel by (a journey's own words: "go", "fly", "a course"…). */
+const TRAVEL_WORDS = /\b(?:go|goes|going|went|head|heads|heading|fly|flies|flying|flew|travel\w*|course|plot\w*|jump\w*|burn\w*|set\s+out|make\s+for|sail\w*|journey\w*|return\w*|back\s+to|take\s+(?:the|her|my|our)\s+[\w\s'’-]{0,30}?\s+(?:to|there|across))\b/i;
+
+/**
+ * Whether a Set a Course that arrived was rolled from a typed line with no
+ * word of travel in it — a journey the reader made of a line that sought
+ * someone elsewhere (overhaul 8, D7; or the Mischief dial's reading). Its
+ * narration says the crossing in a sentence ([journey]).
+ *
+ * @param {Object|null} resolution
+ * @param {string} said — the player's line
+ * @param {boolean} madeLine — pressed on a card, with no line
+ * @returns {boolean}
+ */
+function journeyUnasked(resolution, said, madeLine) {
+  if (madeLine === true || resolution?.moveId !== "set_a_course" || !isHit(resolution?.outcome)) return false;
+  const text = String(said ?? "").trim();
+  return !!text && !TRAVEL_WORDS.test(text);
 }
 
 /**
@@ -766,13 +843,21 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
  */
 export function obligationsFor({ mode, resolution = null, refusal = null, offer = null, note = null, oracle = null,
   situation = null, line: said = "", cast = [], speaker = null, chosenSince = [], material = null, person = null, madeLine = false,
-  dice = [], whereabouts = null, here = null } = {}) {
+  dice = [], whereabouts = null, here = null, quotes = [] } = {}) {
   const out = [];
+  // The lines of speech the session's narrations already gave ([quote]).
+  const repeated = () => (Array.isArray(quotes) && quotes.length ? [{ ...line("quote"), quotes: [...quotes] }] : []);
   const journey = mode === "move" && JOURNEY_MOVES.has(resolution?.moveId);
   // Where the characters are, by the record (CHARACTERS-MOVED-BY-THE-NARRATION,
   // round 7) — every beat of play but a journey's own move. Its data rides on
   // the line for its certain check (checks.js hereViolations).
   const atPlace = (!journey && here && typeof here === "object" && (here.here || here.underway)) ? here : null;
+  // A journey's hit that arrives: who is elsewhere, and was not with them as
+  // they set out (whereabouts.js hereOf `arriving`), is not at the arrival.
+  const arrivalAt = (journey && ARRIVAL_MOVES.has(resolution?.moveId) && isHit(resolution?.outcome)
+    && here && typeof here === "object" && here.here && Array.isArray(here.people) && here.people.length) ? here : null;
+  const arrived = () => (arrivalAt ? [{ ...line("arrival", { here: arrivalAt.here, people: arrivalAt.people.slice(0, ARRIVAL_PEOPLE_TOLD) }),
+    here: arrivalAt.here, places: [], people: arrivalAt.people, markers: [] }] : []);
   const where = () => (atPlace ? [{ ...line("here", atPlace),
     here: atPlace.here ?? null, underway: atPlace.here ? null : (atPlace.underway ?? null),
     places: Array.isArray(atPlace.places) ? atPlace.places : [],
@@ -810,9 +895,12 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     out.push(line("sheet", { mode, refused: !!refusal }));
     out.push(line("apparatus", { offer }));
     out.push(...you());
+    out.push(...repeated());
   } else if (mode === "move") {
     out.push(...since());
     out.push(...resultObligations(resolution ?? (note ? { gateNote: note } : null), { speaker }));
+    if (journeyUnasked(resolution, said, madeLine)) out.push(line("journey", { place: resolution.moveTarget ?? null }));
+    out.push(...arrived());
     if (madeLine === true) out.push(line("unsaid"));
     out.push(...state());
     out.push(...where());
@@ -821,6 +909,7 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     out.push(line("sheet", { mode }));
     out.push(line("apparatus", {}));
     out.push(...you());
+    out.push(...repeated());
   } else if (mode === "round-entry") {
     if (resolution && resolution.kind === "move") out.push(...resultObligations(resolution, { speaker, entry: true }));
     else if (refusal?.premise) out.push(line("premise", { refusal }));
@@ -830,11 +919,18 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
     out.push(line("sheet", { mode }));
     out.push(line("apparatus", {}));
   } else if (mode === "oracle") {
+    // A journey's complication, told at the arrival (narrator.js
+    // narrateOracleFollowup): held to the place, as a beat of play is
+    // (PEOPLE-WAITING-AT-THE-ARRIVAL, round 8's a72).
+    out.push(...where());
     const answer = oracleAnswerOf(oracle);
     if (answer) {
       out.push(line("oracle", { oracle: answer, part: "tell" }));
       out.push(line("oracle", { oracle: answer, part: "not" }));
     }
+    // The table's words are no more the story's here than in a beat of play
+    // (issue #397, Code fix 4: TABLE-WORDS-IN-THE-FICTION).
+    out.push(line("apparatus", {}));
   } else if (mode === "set-piece") {
     const words = Array.isArray(material?.words) ? material.words.filter(w => typeof w === "string" && w) : [];
     if (words.length) {
@@ -843,6 +939,9 @@ export function obligationsFor({ mode, resolution = null, refusal = null, offer 
         onRecord: Array.isArray(material.onRecord) ? material.onRecord : [] });
     }
     out.push(...you());
+    // A session's opening, closing and spotlight too (issue #397, Code fix 4:
+    // round 1's a15 opening said "because Wits 3 is a lot of thinking").
+    out.push(line("apparatus", {}));
   }
   return out;
 }

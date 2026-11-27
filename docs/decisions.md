@@ -6,6 +6,121 @@ rejected.
 
 ---
 
+## Issue #397's code review: what the round-8 fixes missed, before round 9 (2026-11-27)
+
+**Decision** (the maintainer: "Issue 397 now has additional comments. Please read them all, then apply the code fixes, then open a PR, then kick off long haul 9"). The six code fixes of the review comments on issue #397, each on its plan's defaults. Fixes 1, 2 and 5 amend entries of the section below; the rest are recorded here.
+
+**A player character's place within the scene is the frame's alone** (RECAP-TOLD-A-PLACE-SHE-HAD-LEFT; Code fix 3):
+- A fact block's state change is not kept when its subject is a player character (the whole name, a word of it, "you", "PC", "the PC"), its attribute a place (`location`, `vessel`, `aboard`, `whereabouts`), and that character is in the scene: the campaign has one player character, or the block's own frame has them present (`factContinuity/placeClaims.js`, in the chain after `sheetClaims.js`, while the frame is on). The instruction says the same: the frame's `location` says where the player characters are, and no state change does.
+- The reason: two recaps told the character somewhere she had left. Round 7's a71 and round 8's a87 wrote a `location` entry for her from her line, which binds. Nothing replaced it: the next beats were card presses with no line, while each frame moved her on. The recap's WHERE THINGS STAND, the narrator's STANDING NOW and the judge all read it, and round 9 runs with the judge on.
+- Rejected: *keep the entry and retire it when a later frame's location differs.* It keeps a place the player's line set as binding, but the retirement must be undone when the X-Card or a burn takes the later narration back. One store needs no undo.
+- Left: a player character not present in a split party keeps her place entry, which can still go stale. The GM's own `!state set` is never filtered.
+
+**The table's words are caught in every narration of the story** (TABLE-WORDS-IN-THE-FICTION; Code fix 4):
+- [apparatus] gains three narrow certain patterns: a capitalised stat with a digit ("Wits 3"), a count then "boxes ago" or "ticks ago", and "N of ten" only beside a word of the track's. A bare "boxes" or "marks" is no pattern: cargo fiction is full of boxes. Each match re-asks, so a false one costs a call and can spoil a good line. Over the eight kept runs they tag the three intended narrations and nothing else.
+- Session set-pieces and oracle follow-ups carry [apparatus] too, told and checked: they already ran through the re-ask.
+- A tripwire's word counts in its possessive ("hulk's"), and [foe]'s list gains its words' other forms. [foe] stays a judge line.
+- The row said "Enough data: not yet". Five rounds now have samples.
+- Left: `@scene` answers stay unchecked; they are the table answering plainly. "Guns silent" and "goes dark" are no [foe] words.
+
+**The long haul's player acts where Mira is** (Code fix 6; test material only):
+- A player note: before she does anything in person, look at the last narration for where she is and who is with her; reach someone elsewhere over the comm, or go there first in a line of play. The relationship beats say Tamsin keeps her stall at Hollow Spire. The vow beat searches what is at hand where she is. The oracle question names the Cinder Wren instead of "the wreck".
+- The reason: several "wrong place" findings began with the scripted player, not the narrator — r1's meal and r2's minded counter with Tamsin at another station, r5's climb to a lounge, and the vow beat's "search the cutter's wreck" in r6, r7 and r8 when the wreck lay elsewhere. The one oracle question was answered about different wrecks in r4, r5 and r6.
+- b1 tells the player to answer the reward card when it shows buttons: no run had played the reward path. It is a tell alone; no `check` changed, because kept runs are compared with the charter on checks, facts, baits, dice and beat ids, and none of those changed.
+- The scripted progress dice stay as decided (the section below).
+
+---
+
+## After the eighth live round: a fight ends only by its move, a complication is the place's, the culprit is someone met, a quiet thread comes back, and the long haul's caps (2026-11-26)
+
+**Decision** (the maintainer: "Fix the fixable things. What needs my call? Also, raise the max calls from 100 to 400", then the recommended answer to each of four questions). Issue #396's findings were fixed where the record gives a definite answer. The four calls are recorded as decided.
+
+**The long haul's caps and its checks** (amends issue #373 decision 1, below):
+- The caps are **400 player actions, 1,600 model calls, 240 minutes and $15**. Calls rose with actions at #373's ratio. The budget did not change, so a run that costs more stops at $15.
+- The charter turns fact continuity's **consistency check on**, and with it the judge. Round 8 told [sheet] and never checked it (HARM-TOLD-WITHOUT-A-COST), and the 400-call cap that kept the judge off is gone.
+- The free rehearsal's stand-in answers `{}` to both calls, and both fail open, so the rehearsal is unchanged.
+- This supersedes the previous entry's "Rejected: turning the judge on in the long haul".
+
+**The one behind a who-vow is someone the story has met, where one fits** (VOW-WON-BY-A-STRANGER; the call "prefer someone met; show a new one first"):
+- A who-vow's DECIDE NOW lists the story's people (its connection cards, then the people met whom the table has not yet confirmed — the pending drafts — at most eight) and asks for one of them if one fits, else a new name.
+- A new name is shown in play, by name, before the truth is revealed.
+- A decided who-plan whose truth names someone not yet met is told "Not yet in play: X. Before this truth is revealed, show X in the story — seen, met, or spoken of by name — as one of its clues." The check is `skeletons.js` `strangerNamedIn`.
+- The line rides with the plan wherever the plan is told: written out under UNREVEALED, or named under IN PLAY FOR THIS NARRATION when the world snapshot holds it (`narratorPrompt.js` `strangerLine`, one wording for both). As first built it rode only with a plan the snapshot did not hold, so with the snapshot on, the default, it was never told (issue #397, Code fix 1).
+- A pending draft counts as met only by its whole name, as everywhere a draft is matched (`strangerNamedIn`'s `exact`). A recorded person is met by a word of their name, never by its filler ("the" of "The Broker"). As first built, round 8's draft "The Man From the Berth" made any truth with "the" in it name someone met. `truthNamesSomeone` shares the rule (`skeletons.js` `personMetIn`).
+- The reason: round 8's vow was won by "Dalen Voss … whose face is not one you have seen". That is a name, as VOW-FULFILLED-UNANSWERED asked, but an answer the player could not have reached.
+
+**A thread gone quiet comes back** (the call "yes, after a few quiet scenes"):
+- On a beat of play, the plan in play that has gone longest without coming up is named under A THREAD GONE QUIET, with its next clue, to be shown in the fiction and recorded in the sidecar.
+- A plan qualifies once it has gone `QUIET_SCENES` (3) scenes without a clue shown or a step played since it was made (`skeletons.js` `quietestPlan`).
+- It is a prompt line, with no extra call. It is the one exception to "a beat that does not touch a subject leaves it alone".
+- The reason: round 8 revealed one of its four hidden plans. The comm voice and the wreck went nowhere.
+
+**Only Take Decisive Action ends a fight** (FIGHT-PAST-ITS-END; the game's own rule):
+- Gain Ground, Strike, Clash and React Under Fire oblige NOT SO [foe]. The foe is never told destroyed, dead, fled, surrendered or beaten. On a full track the line also says the foe is beaten in all but the deciding blow, which is the player's.
+- It is a judge line, not a certain one, because its words ("wrecked", "crippled") also tell real harm short of the end.
+- The combat progress card and the reader's situation say when the track is full.
+- The runner gives up a burn beat whose roll came up unscripted, rather than attacking until one can be scripted.
+
+**A journey's complication is the place's** (PEOPLE-WAITING-AT-THE-ARRIVAL):
+- The follow-up of a complication at the destination is held by [here], its motion reading included. That is stricter than the review's proposal to turn motion off, and simpler.
+- It is told to come from what is at the destination.
+- A Set a Course rolled from a line with no word of travel says the crossing in a sentence ([journey], logged).
+
+**A line of speech is not said twice** (THE-REFRAINS-THE-LIST-CANNOT-NAME):
+- NOT SO [quote] is a certain check: a quoted sentence of six words or more that an earlier narration of the session gave.
+- A line the player's own words hold may be said back.
+- A meter named as the game names it is [apparatus].
+- The worn list leaves out names, filler and the scene's actors.
+
+**The recap's lines say where they happened** (RECAP-PLACES-AN-EVENT-BY-THE-NEXT): each source line is prefixed with its scene's place where it changes.
+
+**People met but not yet confirmed are tracked as real** (the maintainer: "Unconfirmed characters should be tracked as real until they are confirmed or dismissed"; PEOPLE-WAITING-AT-THE-ARRIVAL (c)).
+- **The canonical store.** A "New Entities Detected" card's pending person rows are the one store of such people, read by `entities/pendingDrafts.js` and never copied. Confirm makes a row the roster's; Dismiss drops it.
+- **Who is read.** `whereabouts.js pendingPeopleOf` reads the newest drafted first, at most eight. It never reads a dismissed name, a player character (round 8 drafted Mira Kestrel), or a name a recorded person goes by.
+- **Same evidence as a recorded person.** Their whereabouts are read as a recorded person's are: a scene's frame naming them. They join [here]'s people, [whereabouts], the frame a narration keeps, and a who-vow's people met.
+- **Matched by the whole name.** A draft's name is often a description ("Station Clerk", "Unknown Hatchway Figure"), whose words are anyone's. Across the eight kept runs, a word of the name would have "seen" Ilse Kestrel in 51 frames, by the PC's surname. There is one matcher for this, `nameMatch.js personSaidIn` (`exact`); the three copies in whereabouts, checks and the scene lifecycle now call it.
+- **The narrator is told them.** THE SCENE lists at most four, each with its description and where they are, so the fact block names them by the card's name. Before this, no frame in eight runs named a descriptive draft by its draft name.
+- **Where they came into the story is told, never checked.** It is the place of the scene their card was posted in. The detector drafts the people a narration mentions, not only those present, so a check on it would re-ask truthful narrations.
+- **The detector is told them too** (issue #397, Code fix 5): each pending person by name, pronouns and description, so a figure who fits one is that person whatever the narration calls them now. A name a narration reveals for one renames the row, never onto a name someone holds. And when the stored frame is the narration's own, who its fact block has here, so a new figure's draft takes the frame's words. Round 8 drafted one man twice, "Unknown Hatchway Figure" (a68) and "The Man From the Berth" (a72).
+- **`present` asks for everyone here in person** (Code fix 5): each player character in the scene, each named character, and an unnamed figure by the words the block's stateChanges use. In a one-character game a beat of play's stored frame lists her when the block's does not; with two or more the code adds no one, since it cannot tell a split party. Rejected: *a check that holds `present` to the block's own subjects*. A `location` state change can say where an absent person is, and the subjects do not tell a person from a thing.
+
+**A journey's arrival is held to who is where** (the maintainer's "sounds good"; PEOPLE-WAITING-AT-THE-ARRIVAL):
+- A hit on Set a Course or Finish an Expedition is told NOT SO [arrival]: whoever the record has at another place is not waiting at the arrival, nor arriving with the characters.
+- It leaves out anyone who was with the characters as they set out: the present of the record's latest frame, `departedWith`. They may have come along, and the record cannot tell.
+- It is a certain check on the fact block's present alone. The journey's narration speaks of the places it crosses, so the place and motion readings stay off.
+- The kept first-session recording holds under it: its departure frames had Vance aboard. The CI replay is its proof, with no re-record.
+
+**The Campaign Setup reminder is a setup card** (WORLD-TRUTHS-REMINDER-ON-RELOAD, six live rounds; amends issue #362 AC58):
+- A card already in chat stays where it is. AC58's "a load replaces the card an earlier load posted" kept it to one card, but moved that card to the foot of the chat on every load, mid-fight in the long haul's reloads.
+- Once a session has been begun (`sessionStartedId`), a load posts none: a table playing without World Truths has chosen to.
+
+**The small items of rounds 6–8, fixed as their rows proposed (2026-11-27):**
+- DICE-LINES-UNBOUNDED: never the table's own side, never the current scene's, at most two a subject.
+- SHIP-LEFT-NEAR-ON-SETTING-OUT: the ship sets out with the characters.
+- UNNAMED-FIGURE-PRONOUN-DRIFT: a pending person is told with their pronouns.
+- A gate reroute is told on its card ("↪ Strike becomes Clash: the character is in a bad spot"): the gate returns the reroute's reason (`insteadWhy`). A typed line's swap is recorded where it happens, by the line reader's position remap or the router's gate, in the position rule's one wording (`combat.js positionReason`); as first built only the pipeline's own gate recorded it, so a typed "I Strike" — round 8's own case — said nothing (issue #397, Code fix 2). The reader's write-only `positionConstraintApplied` and the interpreter's `keptInKind` are retired.
+- An upgrade's extra progress reads "once more".
+- The Begin card names its vow as the dialog's.
+- Set a Course has asides of its own.
+
+Left, as not small:
+- the vow link card's "will deepen" after the deepen is spent (a historical card);
+- the detector's reading of a ship's name as a faction;
+- `!truth list`'s length;
+- a second foe's marks on the fight's one track;
+- an oracle twist against the fight;
+- an object's place;
+- the opening's place.
+
+**Rejected or left for a call:**
+- *A certain check for harm on a beat whose price took no health.* The judge is measured first; the maintainer agreed ("Ok").
+- *Listing devices and beat endings as worn.* Round 8's "unhurried" and the comm voice's eight endings are not listed (THE-REFRAINS (d)). The maintainer wants something more systematic than more lists, and held its design for now.
+- *Changing the charter's scripted progress dice.* They let a 4-of-10 vow be won. The maintainer had no opinion, so they stay as they are.
+
+**Measured by** the next live long haul. The fight must be told unbeaten until Take Decisive Action. An arrival's complication must come from the place. The who-vow's culprit must be met before the reveal. Quiet plans must come back with a clue. No line of speech may be said twice. The recap must place each event. The judge's calls and re-asks are counted inside the new caps.
+
+---
+
 ## The narration held to the record in code, before it posts (2026-11-26)
 
 **Decision** (the maintainer: "Do all 6 fixes, open a pr, then another long haul" — the six of the review after seven live rounds). Where the record gives a definite answer, the narration is checked against it in code before it posts, and a draft that disagrees is asked again; where it gives none, the narrator is told what to reach past.
@@ -656,6 +771,9 @@ question"):
 
 1. **Caps per run: 100 player actions, 400 model calls, 60 minutes, $15.** A
    round is three runs. (The memory run: 12 actions, $0.34.)
+   *Amended 2026-11-26 by the maintainer: 400 actions, 1,600 calls,
+   240 minutes, $15, with the consistency check and its judge on — see
+   "After the eighth live round", at the top.*
 2. **The GM is fixed rules, no model.** A second model would add variance to
    the half of the table that must hold still, and a rule replays.
 3. **Six decisive rolls are scripted; the rest are real; all are recorded.**

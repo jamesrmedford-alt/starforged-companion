@@ -253,7 +253,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   (`scene.started` `cause: 'cutaway'`) passed over (issue #388 #1,
   OPENING-TOLD-FROM-THE-CUTAWAY) — its place (`scene.started`'s, else
   the session's end's), who was with them at the end (its last frame's
-  `present`, the PCs left out), what binds there (the truths its beats established — the
+  `present`, the PCs left out — a one-character game's frames hold her, issue
+  #397 Code fix 5), what binds there (the truths its beats established — the
   player's, the dice's, the GM's, the premise's, labelled; never colour), the
   question still open (the last frame's, unanswered) and what play let go,
   the ship from its live record — "WHERE THE LAST SESSION STOPPED — session
@@ -820,7 +821,8 @@ narration sends (`worldSnapshotStore.js` `resolveWorldSnapshot` →
   the snapshot holds no unit for keeps its card (ENTITIES IN SCENE / CURRENT
   LOCATION); UNREVEALED keeps its rules and DECIDE NOW and names the plans in
   play by heading and id (`coveredIds`), a plan the snapshot does not hold
-  printed as before. The ledger [6.5], CHARACTER, PARTY, clocks, tracks,
+  printed as before. A covered who-plan's stranger line rides under its name
+  there (`strangerLine`; issue #397 Code fix 1). The ledger [6.5], CHARACTER, PARTY, clocks, tracks,
   recent oracles and STORY SO FAR are unchanged. The rules name none of the
   sections one layout lacks — the sidecar's identity anchor is for "a
   character or faction who has no card of their own in this prompt", the
@@ -1023,7 +1025,21 @@ bring more — are filed with their rolls alone by the same apply
 ROUND-PLAN-REQUEST-CAP: the fifth onward was dropped, unfiled). Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
 asked requests list under DECIDE NOW with their oracle rolls, only when the sidecar
-is on; every prose mode, never a meta one; `formatUnrevealedBlock`. Outside
+is on; every prose mode, never a meta one; `formatUnrevealedBlock`.
+Round 8's calls add two things to it:
+- **A who-vow's culprit.** DECIDE NOW lists `extras.storyPeople` — the story's
+  connection cards, then the pending drafts, at most eight — as the culprit to
+  prefer.
+- **A stranger shown first.** A decided who-plan whose truth names someone not
+  met (`skeletons.strangerNamedIn` → `extras.strangers`; a pending draft met
+  only by its whole name, `exact`) is told "Not yet in play: X …" — under its
+  entry when the plan is written out, under its name in IN PLAY FOR THIS
+  NARRATION when the world snapshot holds it (one wording, `strangerLine`).
+- **A thread gone quiet.** On a beat of play, the plan in play quiet for
+  `QUIET_SCENES` scenes (`skeletons.quietestPlan` over `narrationCardTimes`,
+  `extras.quietThread`, its id added to `planIds`) is named under A THREAD GONE
+  QUIET with its next clue.
+Outside
 the prompt, the plans are read by one player-facing surface: the Session
 panel's What's open — a mystery's question while its truth is hidden, a
 revealed threat's or NPC agenda's subject and wants, no other field;
@@ -1037,7 +1053,9 @@ party roster · [8c] spotlight nudge · **[8d] THIS BEAT'S PROSE** (issue #354
 P2-21, P2-22, P2-27 — the move, paced and round modes only; with DETAILS
 ALREADY WORN since round 7 — `beatVariety`'s `wornDetails` over the same six
 cards, names, the scene frame's words and the player's line apart,
-NARRATION-REFRAINS-RISING — beside IMAGES ALREADY USED; its shape is
+NARRATION-REFRAINS-RISING — and, since round 8, words capitalised mid-sentence,
+more filler and the scene's actors (present, remote, the fight's foe) apart
+too — beside IMAGES ALREADY USED; its shape is
 said as the narrator's instruction about the narration, under `BEAT_SHAPE_LABEL`,
 never as a director's "Open on…", which came back as prose — issue #377 item 2:
 `buildNarratorExtras` → `beatVariety` reads the session's narrator cards, the
@@ -1313,6 +1331,34 @@ Consistency Check telemetry page (`kind: "obligation"`, mode `move` /
 to ([outcome], [stakes], [sheet], …) go to the post-narration audit with it
 (`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`, kind
 `obligation`).
+**After round 8** (issue #396; decisions.md → "After the eighth live round"):
+- **certain [quote]:** a quoted sentence of six words or more that an earlier
+  narration of the session gave. `proseVariety.js linesAlreadySaid` reads every
+  session card's `narrationText`, leaving out the player's own line;
+  `beatVariety` returns `extras.saidLines`, which is `obligationsFor`'s `quotes`
+  on the move and paced beats.
+- **[apparatus]** also catches a meter named mid-sentence ("…and Momentum
+  drains"), and since issue #397's Code fix 4 a stat with its number
+  ("Wits 3"), time counted in boxes ("Four boxes ago"), and a track read out
+  ("Two of ten") beside a word of the track's (box, track, progress,
+  milestone). It is told and checked on every beat of play, every oracle
+  follow-up (a complication's too) and every session set-piece. An `@scene`
+  answer is still not checked.
+- **A tripwire's word counts in its possessive** ("the hulk's guns" says
+  "hulk"; `trippedLines`, issue #397 Code fix 4).
+- **judge [foe]** (`FOE_DOWN_WORDS`), on Gain Ground, Strike, Clash and React
+  Under Fire. `narrator.js fightStandingOf` reads the open combat track after the
+  move marked it: the only one, else the roller's. `{ label, full }` rides on the
+  resolution as `fightStanding`.
+- **logged TELL [journey]:** on a Set a Course hit rolled from a typed line with
+  no word of travel.
+- **[here] on a complication at the destination.** Its oracle follow-up carries
+  [here] (`extras.here` is read for `oracle_followup` too;
+  `oracleObligationsFor({ here })`), and its message says it comes from what is
+  at the destination.
+- **A chosen complication is told once.** Its follow-up stamps its cost card told
+  (`toldCardId` → `markChosenCostsTold`), so [chosen-since] does not ask for it
+  again.
 
 **The refusal is told** — in the user message, never the system prompt
 (`rules/narrator-memory.md` invariant 7b): the paced message ends with a
@@ -1334,7 +1380,9 @@ Cinder Wren: engines hit and burning; driven off the docking ring with her guns
 silent. A line that takes otherwise for granted does not make it so: tell what
 is there." `narrator.js` `diceFactsOf` reads the record (`readRecord({ session:
 'campaign' })`, its names corrected): every session's established truths of
-basis `dice` whose subject the line names — a word of its name, or of what one
+basis `dice` — never a PC's or the command vehicle's own (`own`), nor the
+current scene's (`sceneId`; WHAT BINDS holds those), at most two a subject
+(DICE-LINES-UNBOUNDED) — whose subject the line names — a word of its name, or of what one
 of the record's name changes says it is ("the cutter's wreck" names the Cinder
 Wren, "raider cutter") — the latest first, at most four. A paced line and a
 typed move's narration carry it (a move made from a card has no line, and
@@ -1359,7 +1407,31 @@ one "in the scene's frame"; THE SCENE shows it as `Remote:`. The same
 read gives THE SCENE its `Elsewhere:` lines ("Tamsin Okoro — at Hollow Spire,
 not here"; "Hollow Spire — another place, reached only by a journey's move"),
 and a connection's card with no LAST KNOWN location says LAST SEEN with the
-characters (the session record). A move rolled
+characters (the session record). Since round 8, THE SCENE also lists the people
+met who are not yet on record (`Not yet on record —`, at most four):
+- **What it lists.** `extras.pendingPeople`, from `narrator.js
+  pendingPeopleTold` → `whereabouts.js pendingPeopleOf`, over the draft cards'
+  pending person rows. It is read in the move, paced, round, oracle-follow-up
+  and `@scene` modes.
+- **Each entry.** The draft's name, its pronouns as the detector read them
+  (UNNAMED-FIGURE-PRONOUN-DRIFT), its description, and where they are: "last
+  with the characters at X" from a frame that named them, else "came into the
+  story at X", the place of their card's scene (`placeAtTime`).
+- **Why.** The fact block names them by the card's name, so their whereabouts
+  can be kept.
+- **Who `present` holds** (issue #397, Code fix 5). The frame rule asks for
+  everyone here in person: each player character in the scene, each named
+  character, and an unnamed figure by a short handle — the words the block's
+  stateChanges use for them, kept from beat to beat. It had asked for "every
+  named character", so round 8's figure at a68 and a72 was never listed, and
+  40 of its 68 lists left Mira out. In a one-character game a beat of play's
+  stored frame lists her when the block's does not (`narrator.js
+  withTheOnePlayerCharacter`, the `QUESTION_MODES`, never a bookend); with two
+  or more nothing is added.
+A journey's hit carries NOT SO [arrival] in place of [here]. It names who the
+record has elsewhere, leaving out the people of the latest frame
+(`departedWith`, who may have come along). It is held by [here]'s people
+reading alone, with the tag `arrival`. A move rolled
 at the GM's word carries TELL `[overridden]` in its move message; a
 round's entry refused at the roll carries its `[premise]` block in the
 round's message (`####`, under the entry). The paced card says it too
@@ -1475,7 +1547,9 @@ the session it ends is under way, is the same source, so its cache opens the
 next session when nothing else has changed. Then WHERE THINGS STAND, read
 live from the sheets and tracks (`standingLines`: each PC's meters and impacts,
 the vows and their progress, the connections, the open tracks, the current
-place, the open scene's state and its question, answered or not); THE PLAYERS'
+place, the open scene's state and its question, answered or not — the place is
+the settlement: no narrator state entry says where a PC in the scene is within
+it, issue #397 Code fix 3); THE PLAYERS'
 OWN NOTES (their Chronicle entries — written, edited or pinned by a player);
 and EARLIER SESSIONS, a session from before the record as its Session Log story
 and Chronicle entries had it, labelled. The role says a recap says only what
@@ -1594,7 +1668,10 @@ narration's own reveals before the ledger and the plans read them — and, after
 it, `sheetClaims.withoutMeterClaims`, which drops a new truth or state change
 telling a PC's (or their ship's) health, spirit, supply or momentum changing:
 the sheet is the only source of meters (PRICE-TOLD-WITH-A-COST-NOT-PAID, round
-7's "the effort cost Mira supply") — takes
+7's "the effort cost Mira supply") — and, while the frame is on,
+`placeClaims.withoutPlaceClaims`, which drops a state change saying where a PC
+in the scene is: the frame's `location` is its one store
+(RECAP-TOLD-A-PLACE-SHE-HAD-LEFT, issue #397 Code fix 3) — takes
 "truth" off a reveal whose prose has none of the truth's own words
 (`skeletons.proseTellsTruth`, the plan's subject and question left out; the
 reveal's clues, step and ending stand, and the GM's console names the plan).
@@ -1742,7 +1819,8 @@ since stays (`revertPayThePrice` → `worldJournal.undoPlansFiledFor`, issue
 #364 REVERTED-PRICE-PLAN-STAYS-WAITING); a relayed sidecar carries its plan requests,
 issue #353 Phase 1): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
-append — the correction stands) / state supersede per subject+attribute
+append — the correction stands) / state supersede per subject+attribute (a
+PC-in-the-scene's own place never arrives: `withoutPlaceClaims`, above)
 (`ledgers.js`), subjects resolved against `collectAllEntities` (passed
 through in its own shape — `entityId` is the host document id; entity state
 keys are `entity:<id>`; issue #286 A1 — a name several entities share led by
@@ -1914,8 +1992,16 @@ follow-up's, a clock vignette's, the inciting incident's — sends none, and its
 prompt is as it was. (An oracle's question is not handed in: it is asked, not
 asserted — "is the captain called Vex?" answered no would name him.)
 
-The
-detection reply's cap is 1,500 tokens (`DETECTION_MAX_TOKENS`; it was 600):
+The detector is told the pending people by name, pronouns and description —
+a figure who fits one is that person whatever the narration calls them now,
+and a name it gives them is a `renames` entry onto the row
+(`applyEntityRenames` → `carryNameChangeToPendingDrafts`) — and, when the
+stored frame is this narration's (its `narrationId`), who the fact block has
+here, so an unnamed figure's draft takes the frame's words (WHO THIS
+NARRATION'S FACT BLOCK HAS HERE; issue #397, Code fix 5: round 8 drafted one
+man twice, as "Unknown Hatchway Figure" at a68 and "The Man From the Berth"
+at a72). Other pending drafts are listed by name, as before. The
+detection reply's cap is 2,000 tokens (`DETECTION_MAX_TOKENS`; it was 600):
 a reply cut off or not a JSON object is logged and the GM told
 (`notifyDetectionFailure`), where it used to drop the narration's entities,
 lore and factions silently (issue #321 U15). Lore about a

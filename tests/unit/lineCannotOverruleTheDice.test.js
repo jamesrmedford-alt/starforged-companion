@@ -106,6 +106,32 @@ describe('what the dice decided of what the line names (diceFactsOf)', () => {
     const broken = { get pages() { throw new Error('the journal is gone'); } };
     expect(diceFactsOf(A77_LINE, { source: broken })).toEqual([]);
   });
+
+  // DICE-LINES-UNBOUNDED (round 7): [dice] rode on 22 of 44 narrations of play,
+  // 61 lines — nine with four, the PC's own ship's two contradicting each other
+  // at a60–a61 ("lost her firing angle" beside "giving Mira the angle").
+  it('never the table\'s own side — a PC\'s or the command vehicle\'s facts are the line\'s to tell', async () => {
+    await seedSessionRecord('sess-4', [
+      recordedEvent('sess-4', 'session.begun', { d: { number: 4, table: {} } }),
+      truth('sess-4', 'tr-ship', 'Kobayashi IV', 'lost her firing angle on the cutter', 'dice'),
+    ], { number: 4, createdAt: Date.now() });
+    const line = 'I bring the Kobayashi IV about and look for the Cinder Wren';
+    expect(diceFactsOf(line).map(f => f.subject)).toEqual(['Kobayashi IV', 'Cinder Wren']);
+    expect(diceFactsOf(line, { own: ['Mira Kestrel', 'Kobayashi IV'] }).map(f => f.subject)).toEqual(['Cinder Wren']);
+  });
+
+  it('not the current scene\'s — WHAT BINDS holds them — and at most two a subject, the newest', async () => {
+    await seedSessionRecord('sess-4', [
+      recordedEvent('sess-4', 'session.begun', { d: { number: 4, table: {} } }),
+      truth('sess-4', 'tr-1', 'Cinder Wren', 'limped into the Drift with one engine dead', 'dice'),
+      truth('sess-4', 'tr-2', 'Cinder Wren', 'took on a salvage crew at the Drift', 'dice'),
+      truth('sess-4', 'tr-3', 'Cinder Wren', 'ran dark past the beacon', 'dice'),
+    ], { number: 4, createdAt: Date.now() });
+    expect(diceFactsOf('I go after the Cinder Wren').map(f => f.fact))
+      .toEqual(['ran dark past the beacon', 'took on a salvage crew at the Drift']);
+    // Session 4's scene is the current one: only session 2's truth is told.
+    expect(diceFactsOf('I go after the Cinder Wren', { sceneId: 'sc-sess-4' }).map(f => f.fact)).toEqual([A41_FACT]);
+  });
 });
 
 describe('NOT SO [dice]: the line does not make otherwise so', () => {

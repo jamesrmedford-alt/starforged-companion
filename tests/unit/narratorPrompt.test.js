@@ -1228,6 +1228,17 @@ describe('appendSidecarInstruction (narrator-memory contract)', () => {
     expect(out).toMatch(/Include it on EVERY response/);
   });
 
+  // Issue #397, Code fix 5: the rule asked for "every named character here in
+  // person" — so no unnamed figure, and no word on the player characters. 40 of
+  // round 8's 68 fact blocks left Mira out; r7 a63's and r8 a68/a72's figure was
+  // never listed.
+  it('the frame rule asks for each player character in the scene, and an unnamed figure by a short handle', () => {
+    const out = appendSidecarInstruction().replace(/\s+/g, ' ');
+    expect(out).toContain('"present": everyone here in person — each player character in the scene, by name; each named character; '
+      + 'and an unnamed figure by a short handle, the same words the fact block\'s stateChanges use for them, kept the same from beat to beat');
+    expect(out).toContain('"remote": a named character heard or seen over a comm, a screen or a call — never in "present"');
+  });
+
   it('omits the sceneFrame key and rule when disabled', () => {
     const out = appendSidecarInstruction({ sceneFrameEnabled: false });
     expect(out).not.toContain('"sceneFrame"');

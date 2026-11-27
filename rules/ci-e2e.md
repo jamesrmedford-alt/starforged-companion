@@ -769,7 +769,15 @@ and the rules that go with each:
   (a70, refuted by the narration it produced): it now asks for the finding
   first, and for nothing claimed beyond what the narrator has told. Its fight
   was told off Bleakhold's ring one step after the ship had docked: it is
-  fought at the ring now, the ship in her berth.
+  fought at the ring now, the ship in her berth. **Its player acts where Mira
+  is** (issue #397, Code fix 6): a line that takes a person or a thing to be
+  at hand when it is at another station leads the narration along — r1's meal
+  and r2's minded counter with Tamsin at Hollow Spire, r6–r8's search of a
+  wreck that lay elsewhere. A player note says to look at the last narration
+  for where she is and who is with her, and to use the comm or go there first;
+  the relationship beats say Tamsin keeps her stall at Hollow Spire; the vow
+  beat searches what is at hand where she is; and the oracle question names
+  its ship, the Cinder Wren, not "the wreck".
 - **Seven decisive rolls are scripted, the rest are real, all are recorded**
   (decision 3's six, and the expedition's finish; a beat's `dice`). They are
   armed at the GM's confirmation, by the move it names — never by whichever
@@ -885,8 +893,9 @@ and the rules that go with each:
   quarter of the beats were never exercised (the run is not counted in its
   round), then `suspected-quality-issue` for a fact lost or refused, else
   `pass`.
-- **Its caps are the charter's** (`caps`: 100 actions, 400 calls, 60 minutes,
-  $15 — issue #373 decision 1), over the config's.
+- **Its caps are the charter's** (`caps`: 400 actions, 1,600 calls, 240
+  minutes, $15 — issue #373 decision 1, raised by the maintainer after the
+  eighth round), over the config's.
 
 **A suite of short scenarios, beside the long haul** (`suites/scenarios.json`,
 `suite.mjs`, `lib/suite.mjs`; the maintainer's "overhaul 7", an addition and
@@ -1284,7 +1293,9 @@ id (`castConnection`): the charter renames it in beat 18.
 
 **A charter's player stays in the fiction** (decisions.md → "A player is
 never made to name a move"; `tests/unit/exploreFictionOnlyPlayer.test.js`
-holds the long haul to it). The second long haul's charter named the move in
+holds the long haul to it) — and in its place: she acts where the last
+narration has her, reaching anyone elsewhere over the comm or by going there
+first (issue #397, Code fix 6). The second long haul's charter named the move in
 each beat and told its player to "say the line again, plainly, as that
 move": sixteen of its lines named one, three plain lines that wanted a move
 were typed in the whole run, and the review could not say how often a plain

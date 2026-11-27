@@ -961,9 +961,12 @@ describe('the player\'s bounded memory', () => {
     expect(buildRequest({ model: 'm', effort: 'low', maxTokens: 1, system: 'S', user: 'U' }).system, 'unasked, a plain string as before').toBe('S');
   });
 
-  it('the player the long haul runs on is the maintainer\'s choice, and its caps are the issue\'s', () => {
+  it('the player the long haul runs on is the maintainer\'s choice, and so are its caps', () => {
     expect(CONFIG.player).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'low' });
-    expect(CHARTER.caps).toEqual({ actions: 100, calls: 400, minutes: 60, usd: 15 });
+    // Issue #373's 100 actions, 400 calls and 60 minutes, raised by the
+    // maintainer after round 8 stopped on the action cap at beat 26
+    // (decisions.md → the long haul's caps); the $15 stays.
+    expect(CHARTER.caps).toEqual({ actions: 400, calls: 1600, minutes: 240, usd: 15 });
   });
 });
 

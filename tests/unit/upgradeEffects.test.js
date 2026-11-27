@@ -158,7 +158,20 @@ describe("a combat move upgraded from a miss", () => {
     expect(pc.system.health.value).toBe(5);     // the price reverted
     expect(pc.system.momentum.value).toBe(2);   // reset
     expect(table.cards(f => f.combatProgressCard).map(c => c.flags[MODULE_ID].marksApplied)).toEqual([2]);
+    // The upgrade's marks are what its result adds: "more" (round 6's a40 read a second "once" as a double count).
+    expect(table.cards(f => f.combatProgressCard)[0].content).toContain("Marked progress 2 times more, for the upgraded result, on <strong>Boarders</strong>.");
     expect(content(card._id)).toContain("Also applied: progress marked 2 times on Boarders; in control.");
+  });
+
+  it("a blow that fills the fight's track says so on its card: only Attempt to Finish the Fight decides it (FIGHT-PAST-ITS-END)", async () => {
+    const boarders = await openTrack("Boarders", { ticks: 24 });
+    const card = await roll("strike", { moveTarget: "Boarders", combatRank: "dangerous" });
+    await click(card, BURN);
+    expect(track(boarders.id)).toMatchObject({ ticks: 40 });
+    const progress = table.cards(f => f.combatProgressCard);
+    expect(progress).toHaveLength(1);
+    expect(progress[0].content).toContain("The track is full: another blow marks nothing");
+    expect(progress[0].content).toContain("⚔ Attempt to Finish the Fight</strong> decides it.");
   });
 
   it("Clash burned from a miss to a weak hit marks once, stays in the bad spot, and keeps the price it already paid", async () => {

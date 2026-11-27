@@ -193,7 +193,6 @@ export function keepMischiefInKind(interpretation, pacingRead, mischiefLevel) {
     // The stakes were written for the other move.
     stakes:          null,
     mischiefApplied: false,
-    keptInKind:      interpretation.moveId,
     rationale:       `${interpretation.rationale ? `${interpretation.rationale} ` : ""}(Read as ${moveDisplayName(pacingRead.moveId)}: a line of dialogue is not turned into ${moveDisplayName(interpretation.moveId)}.)`,
   };
 }

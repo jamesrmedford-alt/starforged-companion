@@ -26,7 +26,9 @@
  *             "vow" (a fulfilment's hit says what the vow asked for),
  *             "milestone", "recommit" (a progress move's miss leaves the
  *             recommit to the player), "fight" (an Enter the Fray's fight
- *             still only offered). The generic kinds — [outcome], [stakes],
+ *             still only offered), "foe" (a blow in an open fight does not
+ *             end it — only Take Decisive Action does; FIGHT-PAST-ITS-END).
+ *             The generic kinds — [outcome], [stakes],
  *             [price], [cost], [chosen], [match], [overridden], [state],
  *             [sheet], [apparatus] — every move's result may carry, by what
  *             the resolution and its cards say
@@ -148,13 +150,13 @@ export const MOVE_CONTRACTS = Object.freeze({
   // ── Combat ──────────────────────────────────────────────────────────────
   enter_the_fray: row({ group: "combat", target: "fight", makes: ["fight"], obliges: ["fight"],
     trigger: "When you initiate combat or are forced into a fight, envision your objective and give it a rank." }),
-  gain_ground: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("in_control", { instead: "react_under_fire" })], makes: ["progress:fight"],
+  gain_ground: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("in_control", { instead: "react_under_fire" })], makes: ["progress:fight"], obliges: ["foe"],
     trigger: "When you are in control and take action in a fight to reinforce your position or move toward an objective, envision your approach and roll." }),
-  strike: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("in_control", { instead: "clash" })], makes: ["progress:fight"],
+  strike: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("in_control", { instead: "clash" })], makes: ["progress:fight"], obliges: ["foe"],
     trigger: "When you are in control and assault a foe at close quarters, roll +iron; when you attack at a distance, roll +edge." }),
-  clash: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("bad_spot", { instead: "strike" })], makes: ["progress:fight"],
+  clash: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("bad_spot", { instead: "strike" })], makes: ["progress:fight"], obliges: ["foe"],
     trigger: "When you are in a bad spot and fight back against a foe at close quarters, roll +iron; when you exchange fire at a distance, roll +edge." }),
-  react_under_fire: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("bad_spot", { instead: "gain_ground" })],
+  react_under_fire: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT, POSITION("bad_spot", { instead: "gain_ground" })], obliges: ["foe"],
     trigger: "When you are in a bad spot and take action in a fight to avoid danger or overcome an obstacle, envision your approach and roll." }),
   take_decisive_action: row({ group: "combat", target: "fight", requires: [OPEN_FIGHT], ends: ["fight"],
     trigger: "When you seize an objective in a fight, envision how you take decisive action." }),

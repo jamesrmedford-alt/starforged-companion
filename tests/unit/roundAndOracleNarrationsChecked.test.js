@@ -25,7 +25,7 @@ vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn() }));
 
 import { callerKind } from '../../test/ci/playwright/lib/claude.mjs';
 import { apiPost } from '../../src/api-proxy.js';
-import { narrateOracleFollowup, narrateRound } from '../../src/narration/narrator.js';
+import { narrateOracleFollowup, narrateRound, narrateSessionVignette } from '../../src/narration/narrator.js';
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
@@ -102,5 +102,32 @@ describe("the round's narration is checked", () => {
     expect(userOf(apiPost.mock.calls[1])).toContain('## YOUR DRAFT — NOT POSTED');
     expect(kinds.slice(0, 2)).toEqual(['callNarratorAPI>narrateRound', 'callNarratorAPI>narrateRound']);
     expect(ChatMessage._created.some(m => /sf-narration-prose">Kira braces, and the lock holds\.</.test(m.content ?? ""))).toBe(true);
+  });
+});
+
+// Issue #397, Code fix 4 (TABLE-WORDS-IN-THE-FICTION): round 1's a15 opening
+// said "because Wits 3 is a lot of thinking to do on bland food", and session
+// set-pieces and oracle follow-ups carried no [apparatus] line.
+describe('a set-piece and an oracle follow-up are held to the table\'s words', () => {
+  it('an opening that says a stat with its number is asked once more', async () => {
+    answer('You stir the paste, because Wits 3 is a lot of thinking to do on bland food.' + SIDECAR,
+      'You stir the paste and watch the station lights wink through the porthole.' + SIDECAR);
+    const text = await narrateSessionVignette({ userMessage: 'OPENING VIGNETTE — the galley, before the session begins.',
+      campaignState: game.settings.get(MODULE_ID, 'campaignState') });
+    expect(apiPost.mock.calls.map(labelOf)).toEqual(['narrator:narrateSessionVignette', 'narrator:narrateSessionVignette:reask']);
+    expect(userOf(apiPost.mock.calls[1])).toContain('## YOUR DRAFT — NOT POSTED');
+    expect(text).toBe('You stir the paste and watch the station lights wink through the porthole.');
+  });
+
+  it('a follow-up that reads a track out is asked once more', async () => {
+    answer('The voice laughs. "Still counting your boxes? Two of ten." Then the channel dies.' + SIDECAR,
+      'The voice laughs once, and the channel dies.' + SIDECAR);
+    const text = await narrateOracleFollowup({
+      kind: 'oracle_yes_no', oracleName: 'Ask the Oracle (likely)', question: 'Does the voice answer?',
+      rolledLine: 'd100 = 12 → YES', campaignState: game.settings.get(MODULE_ID, 'campaignState'),
+    });
+    // A certain check: asked again with no judge call.
+    expect(apiPost.mock.calls.map(labelOf)).toEqual(['narrator:narrateOracleFollowup', 'narrator:narrateOracleFollowup:reask']);
+    expect(text).toBe('The voice laughs once, and the channel dies.');
   });
 });

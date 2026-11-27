@@ -1809,3 +1809,77 @@ describe("parseDetectionResponse — pronoun sanitization", () => {
     expect(out.entities[1].pronouns).toBe("");
   });
 });
+
+// Issue #397, Code fix 5: one man drafted twice. Round 8 drafted "Unknown
+// Hatchway Figure" at a68 and "The Man From the Berth" at a72 — the detector
+// was given the pending drafts by name only, and no frame.
+describe("the detector is told who is pending, and who the fact block has here", () => {
+  const card = (drafts, id = "card-a68", narrationId = "nar-a68") => ({ id, timestamp: 1, flags: { [MODULE_ID]: { draftEntityCard: true, narrationId, drafts } } });
+  afterEach(() => { global.game.messages = { contents: [] }; });
+
+  it("a pending person by name, pronouns and description; a pending ship by name alone", () => {
+    const fixture = buildFullCampaignState();
+    global.game.messages = { contents: [card([
+      { index: 0, type: "connection", name: "Unknown Hatchway Figure", status: "pending", pronouns: "he/him", description: "an unnamed man at the berth hatch" },
+      { index: 1, type: "ship", name: "Marrow Dray", status: "pending", description: "a salvage hauler" },
+    ])] };
+    const prompt = buildCombinedDetectionPrompt("The man from the berth sets a hand on the counter.", "paced_narrative", "n/a", fixture.campaignState);
+    expect(prompt).toContain("- Unknown Hatchway Figure (he/him) — an unnamed man at the berth hatch");
+    expect(prompt).toContain("A figure in this narration who fits one of these people is that person, whatever the narration calls them now");
+    expect(prompt).toContain("Marrow Dray");
+    expect(prompt).not.toContain("Marrow Dray (");
+    expect(prompt).not.toContain("a salvage hauler");
+    fixture.restore();
+  });
+
+  it("the people this narration's fact block has here, when the stored frame is this narration's — not a later one's", () => {
+    const fixture = buildFullCampaignState();
+    const cs = { ...fixture.campaignState, sceneFrame: { location: "Tamsin's ledger stall", present: ["Tamsin Okoro", "visitor"], remote: ["Vance Oduya"], narrationId: "nar-a72" } };
+    const told = buildCombinedDetectionPrompt("The man from the berth sets a hand on the counter.", "paced_narrative", "n/a", cs, { narrationId: "nar-a72" });
+    expect(told).toContain("WHO THIS NARRATION'S FACT BLOCK HAS HERE: present — Tamsin Okoro, visitor; remote — Vance Oduya.");
+    expect(told).toContain("name the draft with those words");
+    const later = buildCombinedDetectionPrompt("The man from the berth sets a hand on the counter.", "paced_narrative", "n/a", cs, { narrationId: "nar-a71" });
+    expect(later).not.toContain("WHO THIS NARRATION'S FACT BLOCK HAS HERE");
+    fixture.restore();
+  });
+});
+
+// Issue #397, Code fix 5 (e): a pending person who gives a name keeps their row.
+describe("a name revealed for a person still pending renames the row", () => {
+  beforeEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+    global.game.user = { ...(global.game.user ?? {}), isGM: true };
+  });
+  afterEach(() => {
+    global.ChatMessage._created = [];
+    global.game.messages = { contents: global.ChatMessage._created };
+  });
+
+  it("the pending \"Unknown Suited Figure\" becomes \"Vex\" on its card, and no second card is drafted", async () => {
+    const fixture = buildFullCampaignState();
+    await routeEntityDrafts([{ type: "connection", name: "Unknown Suited Figure", description: "a suited figure at the hatch" }],
+      fixture.campaignState, { autoCreateConnection: false });
+    const contents = global.ChatMessage._created.slice();
+    global.game.messages = { contents, get: (id) => contents.find(m => m.id === id) ?? null };
+    const cards = () => global.ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.draftEntityCard);
+    expect(cards()).toHaveLength(1);
+    const reply = JSON.stringify({ entities: [{ type: "connection", name: "Vex", description: "the suited figure", confidence: "high" }],
+      renames: [{ from: "Unknown Suited Figure", to: "Vex" }] });
+    const parsed = parseDetectionResponse(reply, fixture.campaignState);
+    // The revealed name is no new person: its rename lands on the pending row.
+    expect(parsed.entities).toEqual([]);
+    const applied = await applyEntityRenames(parsed.renames, fixture.campaignState, { isGM: true, postNotice: async () => {} });
+    expect(applied).toEqual([{ from: "Unknown Suited Figure", to: "Vex", id: null }]);
+    expect(cards()).toHaveLength(1);
+    expect(cards()[0].flags[MODULE_ID].drafts.map(d => [d.name, d.status])).toEqual([["Vex", "pending"]]);
+    fixture.restore();
+  });
+
+  it("a rename from a name no row or card holds changes nothing", async () => {
+    const fixture = buildFullCampaignState();
+    const applied = await applyEntityRenames([{ from: "Unknown Hatchway Figure", to: "Dalen Voss" }], fixture.campaignState, { isGM: true, postNotice: async () => {} });
+    expect(applied).toEqual([]);
+    fixture.restore();
+  });
+});

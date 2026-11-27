@@ -346,6 +346,50 @@ export function normaliseNewThreats(threats) {
   return out;
 }
 
+/** How many scenes a plan in play may go without coming up before a narration is asked to bring it back. */
+export const QUIET_SCENES = 3;
+
+/**
+ * The plan in play that has gone quiet longest — the maintainer's call after
+ * round 8, whose four hidden plans saw one revealed and the comm voice's and
+ * the wreck's go nowhere (VOW-WON-BY-A-STRANGER). A plan comes up when a
+ * narration shows one of its clues or plays one of its steps (the marks
+ * `revealedBy` / `playedBy`), and when it is made; it is quiet over the scenes
+ * begun since. One that is decided, unrevealed, active, with a clue still to
+ * show, and quiet for QUIET_SCENES or more; the quietest, the oldest first.
+ * Pure.
+ *
+ * @param {Object[]} records — normaliseSkeleton's
+ * @param {{ cards?: Array<{ narrationId?: string|null, sceneId?: string|null, at?: number }>, min?: number }} [opts]
+ *   `cards`: the narrations, oldest first — each one's id, its scene and when it posted
+ * @returns {{ plan: Object, scenes: number, clue: string }|null}
+ */
+export function quietestPlan(records, { cards = [], min = QUIET_SCENES } = {}) {
+  const posted = new Map();
+  const starts = new Map();
+  for (const c of Array.isArray(cards) ? cards : []) {
+    const at = Number(c?.at);
+    if (!Number.isFinite(at)) continue;
+    if (typeof c.narrationId === "string" && c.narrationId) posted.set(c.narrationId, at);
+    if (typeof c.sceneId === "string" && c.sceneId && !starts.has(c.sceneId)) starts.set(c.sceneId, at);
+  }
+  const sceneStarts = [...starts.values()];
+  let best = null;
+  for (const r of Array.isArray(records) ? records : []) {
+    if (!r || r.status !== "active" || r.truthRevealed || !(typeof r.truth === "string" && r.truth.trim())) continue;
+    const clue = (r.clues ?? []).find(c => !c.revealed && c.text);
+    if (!clue) continue;
+    const marks = [...(r.clues ?? []).map(c => c.revealedBy), ...(r.escalation ?? []).map(e => e.playedBy)]
+      .map(id => posted.get(id)).filter(Number.isFinite);
+    const made = Date.parse(r.createdAt ?? "");
+    const last = marks.length ? Math.max(...marks) : (Number.isFinite(made) ? made : 0);
+    const scenes = sceneStarts.filter(t => t > last).length;
+    if (scenes < min) continue;
+    if (!best || scenes > best.scenes) best = { plan: r, scenes, clue: clue.text };
+  }
+  return best;
+}
+
 /** The kinds of plan that can be about one being: an enemy the story revealed, a threat, an NPC's agenda. */
 export const BEING_KINDS = Object.freeze(["threat", "npcAgenda"]);
 
@@ -541,21 +585,68 @@ const NOT_A_NAME = new Set(["the", "a", "an", "this", "that", "their", "her", "h
 export function truthNamesSomeone(truth, { people = [], notNames = [] } = {}) {
   const text = String(truth ?? "");
   if (!text.trim()) return false;
-  // One of the story's people: their whole name, or a word of it of three
-  // letters or more ("Tamsin" for Tamsin Okoro), as a whole word.
+  if (personMetIn(text, people)) return true;
+  return nameWrittenIn(text, notNames) !== null;
+}
+
+/**
+ * Whether a text names one of the story's people: their whole name, or —
+ * for a recorded person — a word of it of three letters or more that is no
+ * filler ("Tamsin" for Tamsin Okoro; never "the" of "The Broker"), as a whole
+ * word. A name on `exact` — a pending draft's, often a description ("The Man
+ * From the Berth"), whose words are anyone's — counts only whole (issue #397,
+ * Code fix 1: round 8's draft made every truth with "the" in it name someone
+ * met). Pure.
+ *
+ * @param {string} text
+ * @param {string[]} [people] — the people met
+ * @param {string[]} [exact] — the names matched only whole
+ * @returns {boolean}
+ */
+function personMetIn(text, people = [], exact = []) {
+  const whole = new Set((exact ?? []).map(n => String(n ?? "").trim().toLowerCase()).filter(Boolean));
   const said = new Set(words(text).map(w => w.replace(/'s$/, "")));
-  if ((people ?? []).some(n => String(n ?? "").trim() && (nameMentioned(n, text) || words(n).some(w => w.length >= 3 && said.has(w))))) return true;
+  return [...(people ?? []), ...(exact ?? [])].some((n) => {
+    const name = String(n ?? "").trim();
+    if (!name) return false;
+    if (nameMentioned(name, text)) return true;
+    if (whole.has(name.toLowerCase())) return false;
+    return words(name).some(w => w.length >= 3 && !NAME_FILLER.has(w) && said.has(w));
+  });
+}
+
+/** The first person's name a text writes — "Dalen Voss", "Captain Ree" — not one of `notNames`, or null. */
+function nameWrittenIn(text, notNames = []) {
   const blocked = new Set((notNames ?? []).flatMap(n => String(n ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u)).filter(w => w.length >= 3));
   const re = new RegExp(`(?:\\b(?:${NAME_TITLES})\\s+\\p{Lu}[\\p{L}'’-]+|\\p{Lu}[\\p{L}'’-]+(?:\\s+\\p{Lu}[\\p{L}'’-]+)+)`, "gu");
-  for (const m of text.matchAll(re)) {
+  for (const m of String(text ?? "").matchAll(re)) {
     const own = m[0].replace(/['’]s\b/g, "").split(/\s+/)
       .filter((w, i, all) => !TITLE_RE.test(w) && !(i === 0 && NOT_A_NAME.has(w.toLowerCase()) && all.length > 1));
     const titled = TITLE_RE.test(m[0].split(/\s+/)[0]);
     if (!own.length || (own.length < 2 && !titled)) continue;
     if (own.some(w => blocked.has(w.toLowerCase()) || NOT_A_NAME.has(w.toLowerCase()))) continue;
-    return true;
+    return own.join(" ");
   }
-  return false;
+  return null;
+}
+
+/**
+ * The one a who-vow's truth names, when the story has not met them — round
+ * 8's "Dalen Voss, of the Spire's own administration", whom the player never
+ * saw before the vow was won (VOW-WON-BY-A-STRANGER). Null when the truth
+ * names one of the story's people (`people`; a pending draft's name, on
+ * `exact`, only whole — personMetIn) or no one. Pure.
+ *
+ * @param {string} truth
+ * @param {{ people?: string[], exact?: string[], notNames?: string[] }} [opts] — the people met; the names of
+ *   theirs matched only whole (the pending drafts'); words that are no name (places, ships)
+ * @returns {string|null}
+ */
+export function strangerNamedIn(truth, { people = [], exact = [], notNames = [] } = {}) {
+  const text = String(truth ?? "");
+  if (!text.trim()) return null;
+  if (personMetIn(text, people, exact)) return null;
+  return nameWrittenIn(text, notNames);
 }
 
 /**

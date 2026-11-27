@@ -684,3 +684,40 @@ describe('"Plain lines" counts a right nothing-to-recover reading as right (the 
     expect(text).toContain(`| a62 | 22 | ${RUN_4.actions[61].text} |  | narrated — right: nothing to recover (health full) |`);
   });
 });
+
+// ── issue #397, Code fix 6: the player acts where Mira is ───────────────────
+
+describe('the charter\'s player acts where Mira is (issue #397, Code fix 6)', () => {
+  const beat = (id) => CHARTER.beats.find(b => b.id === id);
+
+  it('a player rule: before she does anything in person, where she is and who is with her — else the comm, or go there first', () => {
+    const notes = CHARTER.playerNotes.join('\n');
+    expect(notes).toContain('Mira acts where she is.');
+    expect(notes).toContain('look at the last narration for where she is and who is with her');
+    expect(notes).toContain('raise them on the comm, or go there first in a line of play');
+    // The rule names no move (the fiction-only player).
+    expect(movesNamedIn(CHARTER.playerNotes.find(n => n.startsWith('Mira acts where she is.')))).toEqual([]);
+  });
+
+  it('the relationship beats reach Tamsin over the comm when Mira is elsewhere — r1 a62, r2 a60 shared a meal and minded her counter from another station', () => {
+    for (const id of ['b22', 'b23']) {
+      expect(beat(id).tell, id).toContain('Tamsin keeps her stall at Hollow Spire; if Mira is elsewhere, reach her over the comm or go to her first.');
+    }
+  });
+
+  it('the vow beat searches what is at hand where she is — r6 a77, r7 a71 and r8 a86 searched a wreck that lay elsewhere', () => {
+    expect(beat('b24').tell).not.toContain('search the cutter\'s wreck');
+    expect(beat('b24').tell).toContain('search what is at hand where Mira is — the station\'s records, or the cutter\'s wreck if it lies here — for who sent her');
+  });
+
+  it('the oracle beat names its ship, and the rehearsal asks the same — r4, r5 and r6 answered it about different wrecks', () => {
+    expect(beat('b17').tell).toBe('Type exactly: !oracle yes likely Is anyone left alive aboard the Cinder Wren?');
+    const asked = CHARTER.rehearsal.filter(e => typeof e.text === 'string' && e.text.startsWith('!oracle')).map(e => e.text);
+    expect(asked).toEqual(['!oracle yes likely Is anyone left alive aboard the Cinder Wren?']);
+  });
+
+  it('the swear answers the reward card when it shows buttons — no run before round 9 played the reward path', () => {
+    expect(beat('b1').tell).toContain('When the "🎁 Choose your reward" card follows, press one of its two reward buttons if it shows any.');
+    expect(beat('b1').check).toEqual({ type: 'sessionBegun', n: 1, vow: { rank: 'dangerous' }, sworn: true });
+  });
+});

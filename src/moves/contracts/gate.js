@@ -20,7 +20,7 @@
  * never throws (a precondition that throws holds — an unknown is never a
  * refusal).
  *
- *   checkMove(...) → { ok: true,  moveId, instead: null|moveId, note: null|string }
+ *   checkMove(...) → { ok: true,  moveId, instead: null|moveId, insteadWhy: null|string, note: null|string }
  *                  | { ok: false, moveId, code, hard, why, premise, offer: null|moveId }
  *
  * `instead` is applied by the caller as the reroutes always were (the
@@ -67,12 +67,16 @@ const call = (fn, s, r, fallback = null) => {
  *       premise: { claim: string, never: string|null }|null, offer: string|null }}
  */
 export function checkMove(moveId, situation, reading = {}, { stage = "read", override = false, _rerouted = false } = {}) {
-  const pass = { ok: true, moveId: moveId ?? null, instead: null, note: null };
+  const pass = { ok: true, moveId: moveId ?? null, instead: null, insteadWhy: null, note: null };
   const contract = contractFor(moveId);
   if (!contract || contract.gated || !situation) return pass;
   const r = { ...(reading ?? {}), moveId };
   const inFight = Array.isArray(situation.tracks?.fights) && situation.tracks.fights.length > 0;
   let instead = null;
+  // Why the move is made as another — told on its card ("Strike becomes Clash:
+  // the character is in a bad spot"; the eighth live round's "I Strike" rolled
+  // Clash with no word why).
+  let insteadWhy = null;
   let note = null;
   for (const p of contract.requires) {
     if (Array.isArray(p.stages) && !p.stages.includes(stage)) continue;
@@ -88,7 +92,10 @@ export function checkMove(moveId, situation, reading = {}, { stage = "read", ove
     if (held !== false) continue;
     if (reroute) {
       const to = call(p.instead, situation, r);
-      if (!instead && typeof to === "string" && to && to !== moveId) instead = to;
+      if (!instead && typeof to === "string" && to && to !== moveId) {
+        instead = to;
+        insteadWhy = String(call(p.why, situation, r, "") || "") || null;
+      }
       continue;
     }
     const why = String(call(p.why, situation, r, "") || "it cannot be made now");
@@ -108,7 +115,7 @@ export function checkMove(moveId, situation, reading = {}, { stage = "read", ove
     if (!then.ok) return then;
     note = note ?? then.note;
   }
-  return { ...pass, instead, note };
+  return { ...pass, instead, insteadWhy, note };
 }
 
 /**

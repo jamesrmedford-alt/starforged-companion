@@ -89,7 +89,8 @@ recorded under its name promoted to it; its bond is §2's.
   dismissed names, the records and the reply's other names, a name with or
   without its leading article (`draftNameKey` — "The Ashen Wake" and "Ashen
   Wake" were two pending cards for one ship, known-issues
-  DRAFT-CARDS-FOR-ONE-SHIP) — reads the store's entity id lists as well
+  DRAFT-CARDS-FOR-ONE-SHIP; a pending person is listed with their pronouns and
+  description, issue #397 Code fix 5) — reads the store's entity id lists as well
   as the move's copy (`withStoredEntityIds`): the move holds the copy it
   read before its lock claim, and an NPC the GM confirmed from a draft card
   while the move was confirmed or narrated was in no list it read, so the
@@ -206,7 +207,26 @@ recorded under its name promoted to it; its bond is §2's.
   removal): keyed to an id no card answers, a kept narration's facts about the
   NPC fell out of every prompt's scope and out of the scene-end migration.
 - **Entity-extraction drafts** — connections detected in any other narration
-  queue on the GM-whispered "New Entities Detected" card; Confirm creates the
+  queue on the GM-whispered "New Entities Detected" card. **A pending person
+  row is tracked as real** until Confirm or Dismiss (the maintainer's call
+  after round 8):
+  - The card's pending rows are its one store, read by
+    `entities/pendingDrafts.js pendingDraftRows`. `whereabouts.js
+    pendingPeopleOf` reads them, newest first and at most eight, never a
+    dismissed name, a PC's or a recorded person's.
+  - They join where people are: [here]'s people, [whereabouts], the frame a
+    narration keeps, and a who-vow's people met. Each is matched by its whole
+    name (`nameMatch.js personSaidIn` `exact`).
+  - THE SCENE lists them, so the fact block names them by the card's name.
+  - Confirm keeps them by that name; Dismiss drops them.
+  - The detector is told each one by name, pronouns and description, so a
+    figure who fits one is not drafted again, and a name a later narration
+    gives them renames the row (`applyEntityRenames` → `pendingPersonRowNamed`
+    → `carryNameChangeToPendingDrafts`), never onto a name someone already
+    holds. It is also told who the narration's own fact block has here, so a
+    new figure's draft takes the frame's words (issue #397, Code fix 5).
+
+  Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
   #302), Dismiss records the name in `dismissedEntities` (a copy of the
   latest store, on the GM's campaignState write chain —
