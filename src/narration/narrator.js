@@ -2699,7 +2699,9 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       // narration shows is that person's name. A round hands in each acting
       // character's (`options.playerLines`); a Burn Momentum / Improve Result
       // re-narration has none (writtenLine).
-      { playerLines: detectionPlayerLinesOf(options.playerLines ?? writtenLine(resolution)) },
+      // …and the narration's id: the detector is told who its fact block has
+      // in the scene (issue #397, Code fix 5).
+      { playerLines: detectionPlayerLinesOf(options.playerLines ?? writtenLine(resolution)), narrationId },
     );
     if (isNarrationXCarded(narrationId)) return;
     await routeWorldJournalResults(detection.worldJournal, campaignState, { narrationId });
@@ -4958,6 +4960,28 @@ function storyNamesOf(campaignState) {
   return names;
 }
 
+/**
+ * A beat of play's frame with the one player character in `present` when the
+ * game has exactly one and no entry of `present` or `remote` names her — she
+ * has just acted, so she is here (issue #397, Code fix 5). Two or more: as it
+ * came — the code cannot tell a split party. Pure.
+ *
+ * @param {Object|null} frame — the fact block's sceneFrame
+ * @param {string[]} pcs — the player characters' names
+ * @returns {Object|null}
+ */
+function withTheOnePlayerCharacter(frame, pcs) {
+  if (!frame || typeof frame !== 'object' || !Array.isArray(pcs) || pcs.length !== 1) return frame;
+  const name = String(pcs[0] ?? '').trim();
+  if (!name) return frame;
+  const whole = name.toLowerCase();
+  const names = (p) => { const s = String(p ?? '').trim().toLowerCase(); return !!s && (s.includes(whole) || (!s.includes(' ') && whole.split(' ').includes(s))); };
+  const present = Array.isArray(frame.present) ? frame.present : [];
+  const remote = Array.isArray(frame.remote) ? frame.remote : [];
+  if (present.some(names) || remote.some(names)) return frame;
+  return { ...frame, present: [name, ...present] };
+}
+
 /** The player characters' names (actorBridge getPlayerActors), for the fact block's place claims (placeClaims.js). Never throws. */
 function playerNamesOf() {
   try { return (getPlayerActors() ?? []).map(a => String(a?.name ?? '').trim()).filter(Boolean); }
@@ -5780,7 +5804,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
       PACED_NARRATIVE_MOVE_ID,
       PACED_NARRATIVE_OUTCOME,
       campaignState,
-      { playerLines: detectionPlayerLinesOf(options.playerText ?? '') },
+      { playerLines: detectionPlayerLinesOf(options.playerText ?? ''), narrationId: options.narrationId ?? null },
     );
     if (isNarrationXCarded(options.narrationId)) return;
     // The inciting incident records its own cohesive lore entry (the "Situation"
@@ -7635,7 +7659,11 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       // Nor is anyone present in person whom the record has at another place
       // — the beat's [here] people (CHARACTERS-MOVED-BY-THE-NARRATION, round 7).
       const away = (Array.isArray(ctx.obligations) ? ctx.obligations : []).find(o => o?.kind === 'here' || o?.kind === 'arrival')?.people ?? [];
-      const framed = framedAtThePlace(playersFrame(bookend ? bookendFrame(sidecar.sceneFrame) : sidecar.sceneFrame, prior, {
+      // In a one-character game a beat of play's frame has her present: she
+      // has just acted (issue #397, Code fix 5 — round 8's lists left Mira out
+      // of 40 of 68, and each change of `present` is a new frame event).
+      const told = !bookend && QUESTION_MODES.has(ctx.mode) ? withTheOnePlayerCharacter(sidecar.sceneFrame, playerNamesOf()) : sidecar.sceneFrame;
+      const framed = framedAtThePlace(playersFrame(bookend ? bookendFrame(told) : told, prior, {
         sceneId: campaignState.currentSceneId ?? null, line, about,
       }), prior, campaignState, { elsewhere: away.filter(p => p?.name).map(p => (p.exact ? { name: p.name, exact: true } : p.name)) });
       if (framed && applySceneFrame(framed, campaignState, { narrationId })) {

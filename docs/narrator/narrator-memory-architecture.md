@@ -558,8 +558,11 @@ binding only).
 
 ## 4. Surface 3 — the scene frame
 
-`campaignState.sceneFrame = { location, present[], situation, question?,
-questionAnswered?, questionBeats?, sceneId, updatedAt }`. The narrator emits a
+`campaignState.sceneFrame = { location, present[], remote[], situation, question?,
+questionAnswered?, questionBeats?, letGo?, sceneId, narrationId, updatedAt }`.
+`present` is everyone here in person — each player character in the scene, each
+named character, an unnamed figure by a short handle — and `remote` anyone heard
+or seen over a comm (issue #397, Code fix 5). The narrator emits a
 **full-replacement snapshot** in every sidecar (`sceneFrame` key); an omitted
 frame keeps the previous one. The **scene question** (issue #353 R2) is the
 exception to full replacement: what the scene is deciding — what the player's

@@ -247,9 +247,16 @@ export function appendSidecarInstruction(options = {}) {
       '  player\'s line moves it. "location": where the characters are, in a',
       '  few words — a room, a street, a deck, a stall — never where the ship',
       '  is in space: the ship\'s position says that, and a move of the ship is',
-      '  a ship/position change. "present": every named character here in',
-      '  person; "remote": a named character heard or seen over a comm, a',
-      '  screen or a call — never in "present"; "situation": the',
+      // Issue #397, Code fix 5: it asked for "every named character here in
+      // person" — no unnamed figure (r7 a63, r8 a68 and a72 left theirs out,
+      // though the same block's stateChanges named them), and nothing of the
+      // player characters (round 8's lists left Mira out of 40 of 68).
+      '  a ship/position change. "present": everyone here in person — each',
+      '  player character in the scene, by name; each named character; and an',
+      '  unnamed figure by a short handle, the same words the fact block\'s',
+      '  stateChanges use for them, kept the same from beat to beat; "remote": a',
+      '  named character heard or seen over a comm, a screen or a call — never in',
+      '  "present"; "situation": the',
       '  situation in one sentence. Include it on EVERY response — it replaces',
       '  the previous snapshot. Keep names exactly as established. When the',
       '  player\'s line has moved the scene within the characters\' place, write',

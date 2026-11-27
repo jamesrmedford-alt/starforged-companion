@@ -253,7 +253,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   (`scene.started` `cause: 'cutaway'`) passed over (issue #388 #1,
   OPENING-TOLD-FROM-THE-CUTAWAY) — its place (`scene.started`'s, else
   the session's end's), who was with them at the end (its last frame's
-  `present`, the PCs left out), what binds there (the truths its beats established — the
+  `present`, the PCs left out — a one-character game's frames hold her, issue
+  #397 Code fix 5), what binds there (the truths its beats established — the
   player's, the dice's, the GM's, the premise's, labelled; never colour), the
   question still open (the last frame's, unanswered) and what play let go,
   the ship from its live record — "WHERE THE LAST SESSION STOPPED — session
@@ -1418,6 +1419,15 @@ met who are not yet on record (`Not yet on record —`, at most four):
   story at X", the place of their card's scene (`placeAtTime`).
 - **Why.** The fact block names them by the card's name, so their whereabouts
   can be kept.
+- **Who `present` holds** (issue #397, Code fix 5). The frame rule asks for
+  everyone here in person: each player character in the scene, each named
+  character, and an unnamed figure by a short handle — the words the block's
+  stateChanges use for them, kept from beat to beat. It had asked for "every
+  named character", so round 8's figure at a68 and a72 was never listed, and
+  40 of its 68 lists left Mira out. In a one-character game a beat of play's
+  stored frame lists her when the block's does not (`narrator.js
+  withTheOnePlayerCharacter`, the `QUESTION_MODES`, never a bookend); with two
+  or more nothing is added.
 A journey's hit carries NOT SO [arrival] in place of [here]. It names who the
 record has elsewhere, leaving out the people of the latest frame
 (`departedWith`, who may have come along). It is held by [here]'s people
@@ -1982,8 +1992,16 @@ follow-up's, a clock vignette's, the inciting incident's — sends none, and its
 prompt is as it was. (An oracle's question is not handed in: it is asked, not
 asserted — "is the captain called Vex?" answered no would name him.)
 
-The
-detection reply's cap is 1,500 tokens (`DETECTION_MAX_TOKENS`; it was 600):
+The detector is told the pending people by name, pronouns and description —
+a figure who fits one is that person whatever the narration calls them now,
+and a name it gives them is a `renames` entry onto the row
+(`applyEntityRenames` → `carryNameChangeToPendingDrafts`) — and, when the
+stored frame is this narration's (its `narrationId`), who the fact block has
+here, so an unnamed figure's draft takes the frame's words (WHO THIS
+NARRATION'S FACT BLOCK HAS HERE; issue #397, Code fix 5: round 8 drafted one
+man twice, as "Unknown Hatchway Figure" at a68 and "The Man From the Berth"
+at a72). Other pending drafts are listed by name, as before. The
+detection reply's cap is 2,000 tokens (`DETECTION_MAX_TOKENS`; it was 600):
 a reply cut off or not a JSON object is logged and the GM told
 (`notifyDetectionFailure`), where it used to drop the narration's entities,
 lore and factions silently (issue #321 U15). Lore about a

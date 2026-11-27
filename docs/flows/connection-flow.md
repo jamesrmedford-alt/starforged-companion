@@ -89,7 +89,8 @@ recorded under its name promoted to it; its bond is §2's.
   dismissed names, the records and the reply's other names, a name with or
   without its leading article (`draftNameKey` — "The Ashen Wake" and "Ashen
   Wake" were two pending cards for one ship, known-issues
-  DRAFT-CARDS-FOR-ONE-SHIP) — reads the store's entity id lists as well
+  DRAFT-CARDS-FOR-ONE-SHIP; a pending person is listed with their pronouns and
+  description, issue #397 Code fix 5) — reads the store's entity id lists as well
   as the move's copy (`withStoredEntityIds`): the move holds the copy it
   read before its lock claim, and an NPC the GM confirmed from a draft card
   while the move was confirmed or narrated was in no list it read, so the
@@ -218,6 +219,12 @@ recorded under its name promoted to it; its bond is §2's.
     name (`nameMatch.js personSaidIn` `exact`).
   - THE SCENE lists them, so the fact block names them by the card's name.
   - Confirm keeps them by that name; Dismiss drops them.
+  - The detector is told each one by name, pronouns and description, so a
+    figure who fits one is not drafted again, and a name a later narration
+    gives them renames the row (`applyEntityRenames` → `pendingPersonRowNamed`
+    → `carryNameChangeToPendingDrafts`), never onto a name someone already
+    holds. It is also told who the narration's own fact block has here, so a
+    new figure's draft takes the frame's words (issue #397, Code fix 5).
 
   Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
