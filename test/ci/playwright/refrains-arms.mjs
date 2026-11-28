@@ -14,11 +14,14 @@
  *
  * It spends real money: `--dry` prints what it would ask, and what that
  * costs at most, and asks nothing. A live run needs ANTHROPIC_API_KEY, and
- * stops at `--usd` (default 15).
+ * stops at `--usd` (default 15). Each reply's row is written as it comes
+ * (`<run>/refrains-arms.rows.jsonl`), and a run started again asks only
+ * what has no row yet; `--seed-log <file>` takes the rows of an earlier
+ * run's log lines ("[arms] a9 arm 0 #1: 1/1 again ..."), which keep no reply.
  *
  * Usage:
  *   node test/ci/playwright/refrains-arms.mjs --run <kept run folder> [--askings 5] [--arms 0,1,2,3,4,5]
- *     [--max-beats 15] [--usd 15] [--out <file.json>] [--dry]
+ *     [--max-beats 15] [--usd 15] [--out <file.json>] [--seed-log <file>] [--dry]
  */
 
 import fs from "node:fs";
@@ -31,7 +34,7 @@ import { costOf } from "./lib/budget.mjs";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 function argsOf(argv) {
-  const o = { run: null, askings: 5, arms: [...ARMS], maxBeats: 15, usd: 15, out: null, dry: false };
+  const o = { run: null, askings: 5, arms: [...ARMS], maxBeats: 15, usd: 15, out: null, dry: false, seedLog: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--run") o.run = argv[++i];
@@ -41,22 +44,24 @@ function argsOf(argv) {
     else if (a === "--usd") o.usd = Number(argv[++i]);
     else if (a === "--out") o.out = argv[++i];
     else if (a === "--dry") o.dry = true;
+    else if (a === "--seed-log") o.seedLog = argv[++i];
   }
   if (!o.run) { console.error("usage: refrains-arms.mjs --run <kept run folder> [--askings 5] [--arms 0,1,2,3,4,5] [--max-beats 15] [--usd 15] [--out f.json] [--dry]"); process.exit(2); }
   return o;
 }
 
-async function ask({ model, system, user }, apiKey) {
+async function ask({ model, system, user }, apiKey, maxTokens = 4000) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": apiKey },
-    body: JSON.stringify({ model, max_tokens: 1500, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    // Room for a fact block that decides plans: one cut off reads as no one present (the first run's 1500 cut many off).
+    body: JSON.stringify({ model, max_tokens: maxTokens, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: user }] }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
   const data = JSON.parse(text);
-  return { reply: (data.content ?? []).filter(c => c?.type === "text").map(c => c.text).join(""), usage: data.usage ?? {} };
+  return { reply: (data.content ?? []).filter(c => c?.type === "text").map(c => c.text).join(""), usage: data.usage ?? {}, stop: data.stop_reason ?? null };
 }
 
 async function main() {
@@ -74,25 +79,40 @@ async function main() {
       const r = armRequest(b, arm, b);
       console.log(`\n[arms] ${b.step} arm ${arm}: system ${r.system.length} chars (as sent ${b.system.length}), user ${r.user.length} chars (as sent ${b.user.length})`);
     }
-    return;
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) { console.error("[arms] ANTHROPIC_API_KEY is not set — use --dry to see the plan"); process.exit(2); }
-  const rows = [];
+  if (!apiKey && !o.dry) { console.error("[arms] ANTHROPIC_API_KEY is not set — use --dry to see the plan"); process.exit(2); }
+  // The rows so far — this run's file, and an earlier run's log lines — and each new one written as it comes.
+  const rowsFile = path.join(o.run, "refrains-arms.rows.jsonl");
+  const rows = fs.existsSync(rowsFile) ? fs.readFileSync(rowsFile, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l)) : [];
+  const keyOf = (r) => `${r.step}|${r.arm}|${r.asking}`;
+  const keep = (row) => { rows.push(row); fs.appendFileSync(rowsFile, `${JSON.stringify(row)}\n`); };
+  if (o.seedLog) {
+    const have = new Set(rows.map(keyOf));
+    const LINE = /\[arms\] (\S+) arm (\d+) #(\d+): (\d+)\/(\d+) again( — a guard broken)?/g;
+    for (const m of fs.readFileSync(o.seedLog, "utf8").matchAll(LINE)) {
+      const row = { step: m[1], arm: Number(m[2]), asking: Number(m[3]) - 1, locked: Number(m[5]), again: Number(m[4]), ok: !m[6], fromLog: true };
+      if (!have.has(keyOf(row))) { keep(row); have.add(keyOf(row)); }
+    }
+  }
+  const done = new Set(rows.map(keyOf));
+  console.log(`[arms] ${done.size} of ${calls} already answered`);
+  if (o.dry) return;
   let usd = 0;
   for (const b of beats) {
     for (const arm of o.arms) {
       const request = { model: b.model, ...armRequest(b, arm, b) };
       for (let k = 0; k < o.askings; k++) {
+        if (done.has(keyOf({ step: b.step, arm, asking: k }))) continue;
         if (usd >= o.usd) { console.log(`[arms] stopped at the cap: $${usd.toFixed(2)}`); break; }
         try {
-          const { reply, usage } = await ask(request, apiKey);
+          const { reply, usage, stop } = await ask(request, apiKey);
           const price = prices[b.model] ?? Object.values(prices)[0];
           usd += costOf(price, usage);
           const guards = guardsOf(reply, request.user);
           const again = writtenAgain(b.locked, guards.prose);
-          rows.push({ step: b.step, arm, asking: k, locked: b.locked.length, again: again.length, details: again, ok: guards.ok,
-            words: guards.words, ceiling: guards.ceiling, present: guards.present, reply });
+          keep({ step: b.step, arm, asking: k, locked: b.locked.length, again: again.length, details: again, ok: guards.ok,
+            words: guards.words, ceiling: guards.ceiling, inBudget: guards.inBudget, present: guards.present, stop, reply });
           console.log(`[arms] ${b.step} arm ${arm} #${k + 1}: ${again.length}/${b.locked.length} again${guards.ok ? "" : " — a guard broken"} ($${usd.toFixed(2)})`);
         } catch (err) {
           console.warn(`[arms] ${b.step} arm ${arm} #${k + 1} failed: ${err.message}`);

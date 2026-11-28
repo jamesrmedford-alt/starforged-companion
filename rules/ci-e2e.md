@@ -1441,7 +1441,13 @@ without paying to read them again.
   5 the list moved into NOT SO. Each reply is scored by the share of locked-in details it writes
   again and held to its guards (in budget; its fact block lists who is present); an arm wins if
   it halves arm 0 in every asking and breaks no more guards (`verdict`). `--dry` prints the plan
-  and asks nothing; a live run needs ANTHROPIC_API_KEY and stops at `--usd` (15).
+  and asks nothing; a live run needs ANTHROPIC_API_KEY and stops at `--usd` (15). Each reply's row
+  is written as it comes (`<run>/refrains-arms.rows.jsonl`), and a run started again asks only what
+  has none (`--seed-log <log>` takes an earlier run's lines, which keep no reply). Its 180 calls
+  outrun a background command's 30-minute default: give it a longer timeout. A reply is asked for
+  4,000 tokens — at 1,500 a fact block that decides plans was cut off and read as no one present.
+  The first result is kept at `explorations/standing-scene-live-20261128-041322/` (decisions.md →
+  "Part 7's result").
 
 ## Quench batch coupling — shared defaults and hooks
 
