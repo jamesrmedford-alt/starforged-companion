@@ -24,7 +24,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn(async () => ({ content: [{ type: 'text', text: '{"contradictions":[]}' }] })) }));
 
-import { applyNarratorSidecar, postNarrationCard, restoreShipPositionAfterXCard } from '../../src/narration/narrator.js';
+import { postNarrationCard, restoreShipPositionAfterXCard } from '../../src/narration/narrator.js';
+import { applyAsTheTable } from '../helpers/tableFacts.js';
 import { suppressScene } from '../../src/context/safety.js';
 import { maybeUpdateShipPositionFromName } from '../../src/index.js';
 import { handleCommandVehicleTokenReposition, computeTokenPositionRecord } from '../../src/sectors/sectorSceneHooks.js';
@@ -95,8 +96,8 @@ beforeEach(() => {
 
 /** A narration that moves the ship to Krell's Den (the REQUIRED ship/position emission), then its card. */
 async function narrateToKrell(narrationId = 'nar-krell') {
-  const sidecar = { newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value: "Krell's Den", from: 'result' }] };
-  const text = applyNarratorSidecar(`The Wayfinder noses into Krell's Den.\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(), { narrationId, mode: 'move_resolution', ground: { line: '', decided: '', rolled: true } });   // a rolled move's result: it binds, and moves the ship (overhaul 2 §6.3; issue #388 #2)
+  const sidecar = { newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value: "Krell's Den", from: 'line' }] };
+  const text = applyAsTheTable(`The Wayfinder noses into Krell's Den.\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(), { narrationId, mode: 'move_resolution' });   // the table's line took her there: it binds, and moves the ship (D17; a `result` tag binds nothing — issue #402, D1)
   await postNarrationCard(text, { moveId: 'set_a_course', outcome: 'strong_hit', _id: `res-${narrationId}` },
     stored(), { playerText: 'We burn for the outpost.', playerName: 'Kira', narrationId });
   await vi.waitFor(() => expect(position().nearestSettlementId).toBe('act-krell'));

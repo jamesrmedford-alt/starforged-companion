@@ -111,8 +111,10 @@ layers. This file is the never-break list.
    (`secrets.withoutUntoldTruths`, before the ledger and the plans read the
    block — VOW-FULFILLED-WITH-NOBODY-NAMED). It is a floor; the instruction
    (UNREVEALED, THIS BEAT ENDS A VOW) is what asks for the truth to be stated.
-   A newTruth's and a stateChange's `from` ("line" | "result", else null —
-   the narrator's own colour) is normalised in `sidecarParser.js`, asked for
+   A newTruth's and a stateChange's `from` ("line", else null — the
+   narrator's own colour; "result" is no tag since issue #402's D1: what the
+   dice decided the code files itself, `narrator.js moveDiceFacts` /
+   `ledgers.js fileDiceFact`) is normalised in `sidecarParser.js`, asked for
    in `appendSidecarInstruction` (a fact the player's own line states is
    always tagged "line", shown by a worked example whose facts pass the
    floor — the tag is the only way a narrator fact binds), and floored in

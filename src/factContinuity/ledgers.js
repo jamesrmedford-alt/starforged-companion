@@ -978,31 +978,33 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
 }
 
 /**
- * An answered yes/no oracle question, filed as a fact the dice decided (issue
- * #402, change 1a): the question its subject and "the oracle answered YES" its
- * fact — in those words, with no tag and no word test. Round 10's a43 asked
- * "Is anyone left alive aboard the Cinder Wren?" and the oracle answered YES;
- * the narration's own fact ("at least one crew member survived…") shared no
- * telling word with the question and was refused, and the survivor was gone
- * after the session break. Stamped with the narration that told it, as the
- * narration's own facts are: the X-Card on it takes this with them
- * (retractNarrations), and the record's removal of it too. Mutates
+ * A fact the dice decided, filed by the code (issue #402 — D1 and change 1a):
+ * a rolled move's stakes line its outcome delivered (provenance.js
+ * decidedOfMove), and an answered yes/no oracle question — the question its
+ * subject, "the oracle answered YES" its fact — in those words, basis `dice`,
+ * with no tag and no word test. Round 10's a43 asked "Is anyone left alive
+ * aboard the Cinder Wren?" and the oracle answered YES; the narration's own
+ * fact ("at least one crew member survived…") shared no telling word with the
+ * question and was refused, and the survivor was gone after the break. And a
+ * narrator's `result` tag on a rolled move bound its own inventions as the
+ * dice's 111 times in 155 over rounds 5 to 10. Stamped with the narration
+ * that told it, as the narration's own facts are: the X-Card on it takes this
+ * with them (retractNarrations), and the record's removal of it too. Mutates
  * campaignState; the caller persists. Nothing is filed twice — nor again once
  * struck or removed.
  *
  * @param {Object} campaignState
- * @param {{ question: string, answer: string }} answered — oracleMemory.js yesNoAnswerOfCard's
+ * @param {{ subject: Object, fact: string, source: "move_result"|"oracle_answer" }} decided —
+ *   `subject` resolved (resolveSubject's shape)
  * @param {{ narrationId?: string|null, sessionId?: string|null, sceneId?: string|null }} [ctx]
  * @returns {Object|null} the entry filed
  */
-export function fileOracleAnswer(campaignState, answered, ctx = {}) {
+export function fileDiceFact(campaignState, decided, ctx = {}) {
   if (!campaignState) return null;
-  const question = String(answered?.question ?? '').replace(/\s+/g, ' ').trim();
-  const answer = String(answered?.answer ?? '').trim();
-  if (!question || !answer) return null;
+  const fact = String(decided?.fact ?? '').replace(/\s+/g, ' ').trim();
+  const subject = decided?.subject && typeof decided.subject === 'object' ? decided.subject : null;
+  if (!fact || !subject) return null;
   ensureLedgerShape(campaignState);
-  const subject = { kind: 'text', text: question };
-  const fact = `the oracle answered ${answer}`;
   const place = assertedLocation(campaignState);
   if (findEquivalentTruth(campaignState.sceneTruths, subject, fact, { place })) return null;
   const narrationId = typeof ctx.narrationId === 'string' && ctx.narrationId ? ctx.narrationId : null;
@@ -1013,8 +1015,8 @@ export function fileOracleAnswer(campaignState, answered, ctx = {}) {
     sessionId:   ctx.sessionId ?? campaignState.currentSessionId ?? null,
     sessionNum:  sessionNumberOf(campaignState),
     sceneId:     ctx.sceneId   ?? campaignState.currentSceneId   ?? null,
-    moveId:      null,
-    source:      'oracle_answer',
+    moveId:      ctx.moveId    ?? null,
+    source:      decided.source === 'oracle_answer' ? 'oracle_answer' : 'move_result',
     asserter:    'narrator',
     basis:       'dice',
     createdAt:   Date.now(),

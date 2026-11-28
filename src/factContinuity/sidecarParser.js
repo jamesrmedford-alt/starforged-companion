@@ -219,17 +219,21 @@ export function normaliseSidecar(parsed) {
   };
 }
 
-/** The two places a narrator fact may say it comes from (overhaul 2 §5.2). */
-const FROM_VALUES = new Set(['line', 'result']);
+/**
+ * The one place a narrator fact may say it comes from (overhaul 2 §5.2):
+ * the player's line. "result" is no tag since issue #402's D1 — what the dice
+ * decided the code files itself — and reads as untagged.
+ */
+const FROM_VALUES = new Set(['line']);
 
 /**
  * A fact's `from` as the narrator gave it (overhaul 2 §5.2, D5): "line" —
- * the player's line says it — or "result" — the move's outcome or the
- * oracle's answer decides it — else null: absent, misspelled, another value,
- * a non-string. Untagged is the narrator's own colour. Case and spaces aside.
+ * the player's line says it — else null: absent, misspelled, "result" (issue
+ * #402, D1), another value, a non-string. Untagged is the narrator's own
+ * colour. Case and spaces aside.
  *
  * @param {unknown} from
- * @returns {"line"|"result"|null}
+ * @returns {"line"|null}
  */
 function normaliseFrom(from) {
   const v = typeof from === 'string' ? from.trim().toLowerCase() : '';

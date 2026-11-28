@@ -15,9 +15,10 @@
  *     source of the distress call, in a drift of frozen asteroids";
  *   - a26: an untagged restatement undid the expedition's arrival.
  *
- * Now the narration moves her only by what binds (the player's line, a
- * rolled move's result, the premise — D17), and one that says where she
- * already is keeps her record. A line that moves her, docked to drifting
+ * Now the narration moves her only by what binds (the player's line, the
+ * premise — D17; a rolled move's `result` tag binds nothing since issue
+ * #402's D1, and a journey's hit moves her in code), and one that says where
+ * she already is keeps her record. A line that moves her, docked to drifting
  * clear, still does.
  */
 
@@ -71,7 +72,7 @@ beforeEach(() => {
 describe('the ship\'s record against her narration (issue #388 #2)', () => {
   it('a27: Set a Course\'s narration restating "Bleakhold Station" keeps her docked', async () => {
     narrate({ value: 'Bleakhold Station', from: 'line' }, { mode: 'move_resolution',
-      ground: { line: 'I leave the hauler behind, plot the route to Bleakhold Station, and take the Kobayashi IV there.', decided: '', rolled: true } });
+      ground: { line: 'I leave the hauler behind, plot the route to Bleakhold Station, and take the Kobayashi IV there.' } });
     await settle();
     expect(position()).toMatchObject(DOCKED);
     expect(formatShipPositionLine(position(), stored(), 'Kobayashi IV')).toBe('SHIP POSITION: Kobayashi IV docked at Bleakhold Station');
@@ -79,7 +80,7 @@ describe('the ship\'s record against her narration (issue #388 #2)', () => {
 
   it('…and "docked at Bleakhold Station" or "in her berth at Bleakhold Station" restates it too', async () => {
     for (const value of ['docked at Bleakhold Station', 'in her berth at Bleakhold Station', "Bleakhold Station's docking bay"]) {
-      narrate({ value, from: 'result' }, { mode: 'move_resolution', ground: { line: '', decided: '', rolled: true } });
+      narrate({ value, from: 'line' }, { mode: 'move_resolution', ground: { line: `I bring her in, ${value}.` } });
       await settle();
       expect(position(), value).toMatchObject(DOCKED);
     }
@@ -87,21 +88,21 @@ describe('the ship\'s record against her narration (issue #388 #2)', () => {
 
   it('a25: the narration\'s colour — an untagged block — never moves her', async () => {
     narrate({ value: 'at the source of the distress call, in a drift of frozen asteroids in uncharted space' }, { mode: 'move_resolution',
-      ground: { line: 'I slow the Kobayashi IV at the source of the call and go over the place carefully.', decided: '', rolled: true } });
+      ground: { line: 'I slow the Kobayashi IV at the source of the call and go over the place carefully.' } });
     await settle();
     expect(position()).toMatchObject(DOCKED);
   });
 
-  it('a result tag on a move with no roll, or a line tag the line does not bear out, is colour too', async () => {
-    narrate({ value: 'off the far side of the ring', from: 'result' }, { mode: 'move_resolution', ground: { line: '', decided: '' } });
-    narrate({ value: 'off the far side of the ring', from: 'line' }, { mode: 'paced_narrative', ground: { line: 'I sit with Tamsin over the ledger.', decided: '' } });
+  it('a result tag — a rolled move\'s too (issue #402, D1) — or a line tag the line does not bear out, is colour too', async () => {
+    narrate({ value: 'off the far side of the ring', from: 'result' }, { mode: 'move_resolution', ground: { line: '' } });
+    narrate({ value: 'off the far side of the ring', from: 'line' }, { mode: 'paced_narrative', ground: { line: 'I sit with Tamsin over the ledger.' } });
     await settle();
     expect(position()).toMatchObject(DOCKED);
   });
 
   it('a line that moves her does: docked, then drifting clear of the ring, read as near', async () => {
     narrate({ value: "drifting clear of Bleakhold Station's docking ring", from: 'line' }, { mode: 'paced_narrative',
-      ground: { line: 'I release the clamps and let her drift clear of the docking ring.', decided: '' } });
+      ground: { line: 'I release the clamps and let her drift clear of the docking ring.' } });
     await vi.waitFor(() => expect(position().updatedBy).toBe('narrator_sidecar'));
     expect(position().nearestSettlementId).toBe('act-bleak');
     expect(formatShipPositionLine(position(), stored(), 'Kobayashi IV')).toBe('SHIP POSITION: Kobayashi IV near Bleakhold Station');
@@ -109,7 +110,7 @@ describe('the ship\'s record against her narration (issue #388 #2)', () => {
 
   it('a24: the player\'s line taking her out into uncharted space moves her', async () => {
     narrate({ value: "uncharted space off the Cinder Expanse lane, following the distress call's bearing", from: 'line' }, { mode: 'move_resolution',
-      ground: { line: "I turn the Kobayashi IV off the charted lane, out into uncharted space along its bearing.", decided: '', rolled: true } });
+      ground: { line: "I turn the Kobayashi IV off the charted lane, out into uncharted space along its bearing." } });
     await vi.waitFor(() => expect(position().freeText).toBe("uncharted space off the Cinder Expanse lane, following the distress call's bearing"));
   });
 });

@@ -35,7 +35,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn() }));
 
-import { applyNarratorSidecar } from '../../src/narration/narrator.js';
+import { applyAsTheTable } from '../helpers/tableFacts.js';
 import { buildLedgerBlock } from '../../src/narration/narratorPrompt.js';
 import { matchSeedAgainstIndex } from '../../src/factContinuity/shipPosition.js';
 import { buildNameIndex } from '../../src/context/relevanceResolver.js';
@@ -99,8 +99,8 @@ describe('issue #364 SHIP-SEED-PLACE-NAME-PREFIX-OF-SHIP — a narration that pu
 
   /** A narration's sidecar, applied as the narrator applies one. */
   function narrate(narrationId, prose, position) {
-    const sidecar = { newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value: position, from: 'result' }] };
-    applyNarratorSidecar(`${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(), { narrationId, mode: 'move_resolution', ground: { line: '', decided: '', rolled: true } });   // a rolled move's result: it binds, and moves the ship (overhaul 2 §6.3; issue #388 #2)
+    const sidecar = { newTruths: [], stateChanges: [{ subject: 'ship', attribute: 'position', value: position, from: 'line' }] };
+    applyAsTheTable(`${prose}\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``, stored(), { narrationId, mode: 'move_resolution' });   // the table's line took her there: it binds, and moves the ship (D17; a `result` tag binds nothing — issue #402, D1)
   }
 
   beforeEach(() => {

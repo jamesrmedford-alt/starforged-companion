@@ -521,13 +521,16 @@ D13). Every truth and state entry carries its `basis`: `player` (the
 player's line), `dice` (a move's result, an oracle's answer), `gm` (a
 command, a correction, a Keep), `setup` (the inciting premise) — these bind —
 or `narrator`, the narration's own colour. A narrator fact says where it
-comes from (`"from": "line"` / `"result"`, normalised in `sidecarParser.js`);
+comes from (`"from": "line"`, normalised in `sidecarParser.js`);
 `narrator.js applySidecarSideData` floors the claim against the beat's own
-words (`ctx.ground` — `groundOf`: the player's line, and `decided`: the stakes
-line the outcome delivered, the move's target, the oracle's question and
-answer, a triggered clock's name — `decidedOfMove`) with `provenance.js
+words (`ctx.ground` — `groundOf`: the player's line) with `provenance.js
 factBasis`: one of the fact's own telling words, stemmed, in the ground, a
-name no evidence. Anything else is colour. The inciting incident's block is
+name no evidence. Anything else is colour. What the dice decided is filed by
+the code, basis `dice` (issue #402 — D1 and change 1a): a rolled move's
+delivered stakes line (`ctx.decidedFacts`, `narrator.js moveDiceFacts` over
+`provenance.js decidedOfMove`) and an answered yes/no question (from its
+card), both through `ledgers.js fileDiceFact`; the `"result"` tag is gone —
+of the 155 a rolled move's narration bound in rounds 5 to 10, 44 were right. The inciting incident's block is
 `setup` whole; a bookend, a clock vignette that triggered nothing and the
 oath scene beyond its vow write colour only. A `!truth set` / `!state set` /
 correction stamps the actor's basis. An entry from before bases reads as its

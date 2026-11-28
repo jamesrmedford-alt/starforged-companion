@@ -1925,10 +1925,9 @@ full-replacement snapshot — a session vignette's with its question taken off
 play — it sets no question and changes none); every beat's frame is first
 read against the beat's player words (`playersFrame`, overhaul 2 §7.2–7.3:
 `ctx.ground` — `provenance.js groundOf`, the move's written line, the paced
-line, a round's lines, the oracle's typed question, and `rolled` — whether a
-rolled move decided the beat, whose `result` facts then bind as the dice's
-(`rolledMove`; a move with no roll decides nothing — issue #388 #5) — and
-`ctx.mode`): a
+line, a round's lines, the oracle's typed question; what the dice decided is
+no ground since issue #402's D1 — the code files it, `ctx.decidedFacts`
+below — and `ctx.mode`): a
 question the frame does not already hold stands only when the mode may set
 one (`QUESTION_MODES`), it shares a telling word with those words (the PCs'
 and the command vehicle's names are no evidence — `namesNoEvidence`) and it
@@ -2155,10 +2154,16 @@ answered yes/no question is a fact the dice decided as well (issue #402
 change 1a): the follow-up's sidecar apply, on the canonical GM, files the
 card's question with its answer — "the oracle answered YES", basis `dice`,
 read from the card itself (`oracleMemory.yesNoAnswerOfCard` →
-`ledgers.fileOracleAnswer`, relayed by card id from a player's own key and
+`ledgers.fileDiceFact`, relayed by card id from a player's own key and
 filed only from that player's card) — stamped with the follow-up narration,
 so it binds, is on the record in that beat, and goes with the narration's
-X-Card — for section [3b]
+X-Card. So is a rolled move's delivered stakes line (issue #402, D1): a
+narration's `ctx.decidedFacts` (`narrator.js moveDiceFacts` over
+`provenance.js decidedOfMove` — the hit on a strong or a weak hit, the miss
+where `priceStated`, none for a Repair hit before its spend or a move with
+no roll; a round's entries each theirs) are filed the same way, about the
+move's target (else the scene), with the move's id — and a narrator's
+`result` tag binds nothing — for section [3b]
 (the retired assembler's RECENT ORACLES section went with the module, 2026-07
 — issue #271).
 

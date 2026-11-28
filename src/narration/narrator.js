@@ -39,7 +39,7 @@ import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlig
 import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS, wornDetails, linesAlreadySaid } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { markSeedsUsed, rolledWordsOf } from '../session/sceneSeeds.js';
-import { applySidecar, applySceneFrame, retractNarrations, newNarrationId, fileOracleAnswer } from '../factContinuity/ledgers.js';
+import { applySidecar, applySceneFrame, retractNarrations, newNarrationId, fileDiceFact, resolveSubject } from '../factContinuity/ledgers.js';
 import { normalisePronounList, pronounsIn, pronounBreaks } from '../factContinuity/pronouns.js';
 import { readRecentOracleResults, dropOracleResultsFor, yesNoAnswerOfCard } from '../oracles/oracleMemory.js';
 import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js';
@@ -49,8 +49,8 @@ import { inferShipPosition, formatShipPositionLine }  from '../factContinuity/sh
 import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, framedAtThePlace } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
 import { runConsistencyCheck, postStillBrokenNote, postPlanRevealNote } from '../factContinuity/consistencyCheck.js';
-import { revealFault } from '../moves/contracts/blockCheck.js';
-import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, rolledMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
+import { revealFault, SPEND_EFFECTS } from '../moves/contracts/blockCheck.js';
+import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
 import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
 import { contractFor } from '../moves/contracts/table.js';
 import { vowAsksWho } from '../world/tellingWords.js';
@@ -153,7 +153,8 @@ const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '')
  * LINE-CLAIM-OVER-THE-DICE; decisions.md: players can't overrule dice). Every
  * session's record (record/read.js readRecord, in the names the table uses
  * now — a correction's old name is read as the new one), its truths of the
- * dice (basis "dice": a rolled move's result), whose subject the line names:
+ * dice (basis "dice": a rolled move's delivered stakes line or an oracle's
+ * answer, filed by the code — issue #402, D1), whose subject the line names:
  * by a word of its name, or of what one of the record's name changes says it
  * is — "raider cutter" for the Cinder Wren, the sixth live long haul's "the
  * cutter's wreck" — or the name of what a change says the subject is. The
@@ -1653,8 +1654,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
   let sideDataApplied = false;
   // What its fact block is checked against: the line the player wrote — a
   // burn's or an improve's re-narration has none (overhaul 2 §5.2, §7.2).
-  const ground = groundOf({ line: writtenLine(resolution), decided: decidedOfMove(resolution, { moveTarget: options?.moveTarget ?? null }),
-    rolled: rolledMove(resolution) });
+  const ground = groundOf({ line: writtenLine(resolution) });
+  // What its dice decided, which the code files with it (issue #402, D1).
+  const decidedFacts = moveDiceFacts(resolution, { moveTarget: options?.moveTarget ?? null });
 
   try {
     // Checked against its obligations before it posts (overhaul 4, slice 4 —
@@ -1693,6 +1695,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       endingTrackIds,
       mode:             'move_resolution',
       ground,
+      decidedFacts,
     });
 
     if (!narration?.trim()) {
@@ -2203,9 +2206,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       }
       const narration = applyNarratorSidecar(raw, campaignState, { obligations: roundObligations,
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
-        endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text),
-          decided: entries.flatMap(e => (e.input?.kind === 'move' ? decidedOfMove(e.input) : [])),
-          rolled: entries.some(e => e.input?.kind === 'move' && rolledMove(e.input)) }),
+        endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text) }),
+        // What each entry's dice decided, filed with the round's narration (issue #402, D1).
+        decidedFacts: entries.flatMap(e => (e.input?.kind === 'move' ? moveDiceFacts(e.input) : [])),
       });
       if (!narration?.trim()) {
         failure = EMPTY_REPLY_REASON;
@@ -4622,7 +4625,7 @@ export async function narrateOracleFollowup({
   try {
     const raw = (await narrateKeepingObligations(ask, oracleObligations, checking)).raw;
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }), oracleCardId });
+    const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question }), oracleCardId });
 
     if (!text?.trim()) {
       fileUnansweredPlanRequests(extras.planRequests, campaignState);
@@ -4645,7 +4648,7 @@ export async function narrateOracleFollowup({
         // Checked as the first try is.
         const raw = (await narrateKeepingObligations(ask, oracleObligations, checking)).raw;
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }), oracleCardId });
+        const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question }), oracleCardId });
         if (text?.trim()) {
           sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -5336,7 +5339,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
       const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
       if (xCard.interrupted('narrateClockAdvancement')) return null;
       if (!(await triggerStands())) return null;
-      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
+      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({}) });
       if (!text?.trim()) return null;
       // The developments of the recorded NPCs it names → their cards, as a
       // session vignette's (#286 D4) — every post site goes through here
@@ -5356,7 +5359,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
           const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
           if (xCard.interrupted('narrateClockAdvancement')) return null;
           if (!(await triggerStands())) return null;
-          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
+          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({}) });
           if (!text?.trim()) return null;
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
           narrated = true;
@@ -7407,9 +7410,13 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     console.debug?.(`${MODULE_ID} | factContinuity: the narrator's reply had no prose — its fact block is not recorded.`);
   }
   const applySidecarHere = isCanonicalGM();
-  // An answered yes/no question is filed by the code whatever the fact block
-  // holds (issue #402, change 1a): with none, an empty one carries it.
-  const applied = sidecar ?? (narrated && typeof ctx.oracleCardId === 'string' && ctx.oracleCardId ? normaliseSidecar({}) : null);
+  // What the dice decided is filed by the code whatever the fact block holds
+  // (issue #402 — change 1a's answered yes/no question, D1's delivered stakes
+  // line): with none, an empty one carries it. A move is narrated on the
+  // canonical GM alone (the pipeline), so its dice facts are never relayed.
+  const decides = (typeof ctx.oracleCardId === 'string' && ctx.oracleCardId !== '')
+    || (Array.isArray(ctx.decidedFacts) && ctx.decidedFacts.length > 0);
+  const applied = sidecar ?? (narrated && decides ? normaliseSidecar({}) : null);
   if (applied && campaignState && narrated && !applySidecarHere) {
     relayNarratorSidecar(applied, campaignState, ctx);
   }
@@ -7612,6 +7619,27 @@ export async function applyRelayedNarratorSidecar(payload = {}, relay = {}) {
     ...(typeof payload.oracleCardId === 'string' && /^[\w-]{1,64}$/.test(payload.oracleCardId)
       ? { oracleCardId: payload.oracleCardId, requesterId: relay?.requesterId ?? null, requesterIsGM: relay?.requesterIsGM === true } : {}),
   });
+}
+
+/**
+ * What a rolled move's dice decided, for the code to file with its narration
+ * (issue #402, D1): the stakes line its outcome delivered (provenance.js
+ * decidedOfMove), about the move's target when it has one. A hit whose effect
+ * waits on the player's spend decides nothing yet (blockCheck.js
+ * SPEND_EFFECTS — a Repair's points, R2). Pure.
+ *
+ * @param {Object|null} resolution — a move's (or a round entry's input)
+ * @param {{ moveTarget?: string|null }} [opts]
+ * @returns {Array<{ about: string|null, fact: string, moveId: string|null }>}
+ */
+function moveDiceFacts(resolution, { moveTarget = null } = {}) {
+  const facts = decidedOfMove(resolution);
+  if (!facts.length) return [];
+  const hit = resolution?.outcome === 'strong_hit' || resolution?.outcome === 'weak_hit';
+  if (hit && SPEND_EFFECTS[resolution?.moveId]) return [];
+  const about = String(moveTarget ?? resolution?.moveTarget ?? '').replace(/\s+/g, ' ').trim() || null;
+  const moveId = typeof resolution?.moveId === 'string' && resolution.moveId ? resolution.moveId : null;
+  return facts.map(fact => ({ about, fact, moveId }));
 }
 
 /**
@@ -7897,7 +7925,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     // decided — a name no evidence. The inciting incident's block is the
     // premise whole (`setup`); a mode with no ground writes colour only.
     const noEvidence = namesNoEvidence(campaignState);
-    const ground = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '', decided: '' };
+    const ground = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '' };
     const basisOf = ctx.mode === 'inciting_incident'
       ? () => 'setup'
       : ({ from, text, subject }) => factBasis(from, text, ground, { about: [subject, ...noEvidence].filter(Boolean) });
@@ -7916,14 +7944,21 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       // (issue #345 AA04 — W05's live read, for the write half).
       storedLedger: liveSceneLedger(campaignState),
     });
-    // The yes/no question this narration answers, filed as the dice decided
-    // it (issue #402, change 1a) — read from its card on this GM, never from
-    // the narration or a relay's word for it.
+    // What the dice decided, filed by the code (issue #402): the yes/no
+    // question this narration answers (change 1a) — read from its card on
+    // this GM, never from the narration or a relay's word for it — and the
+    // stakes line a rolled move's outcome delivered (D1: a `result` tag binds
+    // nothing; factBasis).
+    const filedAt = { narrationId, sessionId: campaignState.currentSessionId ?? null, sceneId: campaignState.currentSceneId ?? null };
     const answered = oracleAnswerOf(ctx);
     if (answered) {
-      fileOracleAnswer(campaignState, answered, {
-        narrationId, sessionId: campaignState.currentSessionId ?? null, sceneId: campaignState.currentSceneId ?? null,
-      });
+      fileDiceFact(campaignState, { subject: { kind: 'text', text: answered.question }, fact: `the oracle answered ${answered.answer}`,
+        source: 'oracle_answer' }, filedAt);
+    }
+    for (const d of Array.isArray(ctx.decidedFacts) ? ctx.decidedFacts : []) {
+      const about = typeof d?.about === 'string' ? d.about.trim() : '';
+      const subject = about ? resolveSubject(about, campaignState, entities) : { kind: 'scene', sceneId: campaignState.currentSceneId ?? null };
+      fileDiceFact(campaignState, { subject, fact: d?.fact, source: 'move_result' }, { ...filedAt, moveId: d?.moveId ?? ctx.moveId ?? null });
     }
 
     // Narrator-memory A4 — merge the scene-frame snapshot (full
@@ -7996,7 +8031,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // colour never moves the ship — the fifth live long haul's a25 moved her "at
   // the source of the distress call, in a drift of frozen asteroids" on no tag
   // at all, and its a26 restated the expedition's arrival as colour.
-  const shipGround = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '', decided: '' };
+  const shipGround = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '' };
   const shipBinds = (c) => ctx.mode === 'inciting_incident'
     || factBinds({ basis: factBasis(c?.from ?? null, String(c?.value ?? ''), shipGround, { about: ['ship'] }) });
   // A journey's arrival is its move's own (the walk rule's, above): a line

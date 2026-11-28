@@ -97,7 +97,7 @@ export function appendSidecarInstruction(options = {}) {
     '    ```json',
     '    {',
     '      "newTruths": [',
-    '        { "subject": "Vance", "fact": "agreed to fly the crate to the docks", "from": "result" },',
+    '        { "subject": "Vance", "fact": "holds the crate the PC handed him", "from": "line" },',
     '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
     '      ],',
     '      "stateChanges": [',
@@ -138,13 +138,16 @@ export function appendSidecarInstruction(options = {}) {
     // narration wrote bound later narration and was filed as canon at its
     // scene's end. A fact says where it comes from; code checks the claim
     // against the beat's own words (factContinuity/provenance.js factBasis).
+    // Issue #402, D1: "result" is no tag — what the dice decided (the stakes
+    // line a rolled move's outcome delivered, an oracle's answer) the table
+    // files itself (narrator.js moveDiceFacts, ledgers.js fileDiceFact).
     '- A "newTruth" records a fact your prose establishes. Say where it comes',
     '  from: "from": "line" when the player\'s line says it — what their',
-    '  character does, says, gives, carries, where they go; "from": "result"',
-    '  when the move\'s outcome or the oracle\'s answer decides it. Leave "from"',
-    '  out when it is your own description. Only "line" and "result" facts bind',
-    '  later narration; your own descriptions are kept for this scene as',
-    '  colour and then let go.',
+    '  character does, says, gives, carries, where they go. Leave "from" out',
+    '  when it is your own description, or the outcome of the move or the',
+    '  oracle\'s answer told in your words: what the dice decided, the table',
+    '  records itself. Only "line" facts bind later narration; the rest are',
+    '  kept for this scene as colour and then let go.',
     '- A "stateChange" is what is true right now. Use it for posture, mood,',
     '  visible state, door positions, lighting, weather. These supersede',
     '  prior state for the same subject + attribute. Say where it comes from',
