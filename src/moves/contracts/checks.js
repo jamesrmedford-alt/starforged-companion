@@ -645,7 +645,19 @@ export const FLOOR_CHECKS = Object.freeze({
     const ending = lastSentences(body, 2);
     return !takenUp && touchesLetGo(ending, line, [o.letGo]) ? [{ tag: "letgo", quote: ending.slice(0, 200) }] : [];
   } }),
+  // What a vow's plan owed the beat (issue #402, change 4): a telling word of
+  // the clue or the step, the culprit's name. Logged, not re-asked, until
+  // live verdicts measure them (D5's bar).
+  clue: Object.freeze({ action: "logged", check: (body, o) => (o.clue && !sharesStem(o.clue, body) ? [{ tag: "clue", quote: "" }] : []) }),
+  culprit: Object.freeze({ action: "logged", check: (body, o) => (o.culprit && !personSaidIn(body, o.culprit) ? [{ tag: "culprit", quote: "" }] : []) }),
+  escalation: Object.freeze({ action: "logged", check: (body, o) => (o.step && !sharesStem(o.step, body) ? [{ tag: "escalation", quote: "" }] : []) }),
 });
+
+/** Whether `body` holds a telling word of `text`, by its stem (tellingWords.js tellingStems). */
+function sharesStem(text, body) {
+  const said = tellingStems(body);
+  return [...tellingStems(text)].some(st => said.has(st));
+}
 
 /**
  * The floor checks (FLOOR_CHECKS): every floor-class line, on the prose's

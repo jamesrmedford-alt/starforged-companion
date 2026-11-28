@@ -3222,8 +3222,9 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
     );
     const rerollOf = (x) => (typeof x?.reroll === 'string' && x.reroll ? ` Re-roll: ${x.reroll}.` : '');
     // A vow that asks who is won by a name (VOW-FULFILLED-UNANSWERED): its
-    // truth names the one behind it — and one that names no one is given a
-    // name from the name oracle when it is filed (secrets.js namedIfAWhoVow).
+    // truth names the one behind it — and an oath whose plan names no one is
+    // asked for it once more (narrator.js whoPlanNamingAsk; issue #402,
+    // change 4, which deleted the name drawn from the name oracle).
     // The one behind it is one of the story's people where one fits (the
     // maintainer's call after round 8, VOW-WON-BY-A-STRANGER), and a new one is
     // shown in play before the truth comes out.

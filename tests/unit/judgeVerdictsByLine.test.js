@@ -379,7 +379,8 @@ describe('D4 — the class a row declares is the class the code holds it to', ()
     const floor = Object.entries(OBLIGATION_KINDS).filter(([, r]) => r.check === 'floor').map(([k]) => k).sort();
     expect(certain).toEqual(['apparatus', 'arrival', 'here', 'match', 'material', 'person', 'quote', 'sheet']);
     expect(Object.keys(CERTAIN_CHECKS).sort()).toEqual(certain);
-    expect(floor).toEqual(['chosen', 'chosen-since', 'letgo', 'vow']);
+    // [clue], [culprit] and [escalation]: a vow's plan played toward (issue #402, change 4) — logged floors.
+    expect(floor).toEqual(['chosen', 'chosen-since', 'clue', 'culprit', 'escalation', 'letgo', 'vow']);
     // [chosen-since] (round play's cost chosen since the last narration) logs when no word of its meter is told.
     const pick = { who: 'Mira', labels: ['Endure Harm (-1 health)'] };
     const since = obligationsFor({ mode: 'paced', line: 'I wait', chosenSince: [pick] }).filter(o => o.kind === 'chosen-since');

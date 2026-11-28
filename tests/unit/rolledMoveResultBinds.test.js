@@ -21,7 +21,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { factBasis, groundOf, normaliseGround, decidedOfMove, rolledMove } from '../../src/factContinuity/provenance.js';
 import { normaliseSidecar } from '../../src/factContinuity/sidecarParser.js';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
-import { resetSkeletonTable, gmOf, onGm, moveResolution, narrateMoveOn, MODULE_ID } from '../helpers/skeletonTable.js';
+import { resetSkeletonTable, gmOf, onGm, moveResolution, narrateMoveOn, MODULE_ID, NARRATION_MODEL } from '../helpers/skeletonTable.js';
+import { claudeFault } from '../helpers/faults.js';
 
 const PCS = ['Mira Kestrel', 'Kobayashi IV'];
 const about = (subject) => [subject, ...PCS];
@@ -147,6 +148,12 @@ describe('on the table: a narration files what its dice decided (narrator.js mov
     table.replies = () => ({ prose: 'Another crew says the same.', sidecar: { newTruths: [], stateChanges: [] } });
     await narrateMoveOn(table, gather());
     expect(diceFacts()).toHaveLength(1);
+  });
+
+  it('a narration retried after a rate limit files it too', async () => {
+    table.script.when(c => c.model === NARRATION_MODEL, claudeFault.rateLimited(), { times: 1 });
+    await narrateMoveOn(table, gather());
+    expect(diceFacts().map(t => [t.fact, t.moveId])).toEqual([['You learn who saw the raiders last', 'gather_information']]);
   });
 
   it('a Batch Mode round files each entry\'s, with the entry\'s move', async () => {

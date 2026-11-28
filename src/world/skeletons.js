@@ -501,6 +501,47 @@ export function applyRevealToSkeleton(record, reveal, { narrationId = null } = {
 
 
 /**
+ * What a vow's plan owes the beat that narrates a move on its vow (issue
+ * #402, change 4 — plans are played toward; D4). Six plans were made in
+ * round 10 and one was revealed, by the fulfilment: nothing moved play toward
+ * a plan decided at the oath. Now:
+ *   - a Reach a Milestone — headway the scene showed, offered on a hit —
+ *     shows the plan's next clue not yet shown, a line the narration must
+ *     tell; and a who-vow's culprit the story has not met (`stranger`) enters
+ *     the story by name, on the first milestone that finds them a stranger;
+ *   - a Fulfill Your Vow that misses plays the plan's next escalation step.
+ * What the beat is made to play is marked as it plays (`reveals` — forced:
+ * narrator.js applyNarratorSidecar's ctx.reveals), stamped with the
+ * narration, so the X-Card on it takes it back. An active, decided vow plan
+ * only, and none whose truth the X-Card withheld. Pure.
+ *
+ * @param {Object|null} plan — normaliseSkeleton's
+ * @param {{ moveId?: string|null, outcome?: string|null, stranger?: string|null }} [beat]
+ * @returns {{ lines: Array<{ kind: "clue"|"culprit"|"escalation", text: string }>,
+ *   reveals: Array<{ id: string, revealed?: string[], advanced?: string }> }}
+ */
+export function vowPlanOwed(plan, { moveId = null, outcome = null, stranger = null } = {}) {
+  const none = { lines: [], reveals: [] };
+  if (plan?.kind !== "vow" || plan.status !== "active" || !String(plan.truth ?? "").trim() || plan.truthWithheldBy) return none;
+  if (moveId === "reach_a_milestone") {
+    const out = { lines: [], reveals: [] };
+    const clue = (plan.clues ?? []).find(c => !c.revealed && c.text);
+    if (clue) {
+      out.lines.push({ kind: "clue", text: clue.text });
+      out.reveals.push({ id: plan.id, revealed: [clue.id] });
+    }
+    const name = typeof stranger === "string" && !plan.truthRevealed ? stranger.trim() : "";
+    if (name) out.lines.push({ kind: "culprit", text: name });
+    return out;
+  }
+  if (moveId === "fulfill_your_vow" && outcome === "miss") {
+    const step = (plan.escalation ?? []).find(e => !e.done && e.text);
+    return step ? { lines: [{ kind: "escalation", text: step.text }], reveals: [{ id: plan.id, advanced: step.id }] } : none;
+  }
+  return none;
+}
+
+/**
  * A plan the narrator decided, laid onto its record: each field it gave
  * replaces the record's; a list it gave replaces the list, keeping what was
  * already revealed or played of an item it repeated word for word. The
@@ -683,22 +724,6 @@ export function strangerNamedIn(truth, { people = [], exact = [], notNames = [] 
   if (!text.trim()) return null;
   if (personMetIn(text, people, exact)) return null;
   return nameWrittenIn(text, notNames);
-}
-
-/**
- * A plan's truth with the one behind it named (VOW-FULFILLED-UNANSWERED): the
- * truth as it stands, then "The one behind it is <name>." Pure — the name is
- * drawn by the caller (secrets.js, from the name oracle).
- *
- * @param {string} truth
- * @param {string} name
- * @returns {string}
- */
-export function truthWithWho(truth, name) {
-  const t = String(truth ?? "").trim();
-  const who = String(name ?? "").replace(/\s+/g, " ").trim();
-  if (!who) return t;
-  return `${t}${t && !/[.!?…]$/.test(t) ? "." : ""}${t ? " " : ""}The one behind it is ${who}.`;
 }
 
 // The telling words a reveal is read by — the common ones left out, each

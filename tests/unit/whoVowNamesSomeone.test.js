@@ -11,14 +11,18 @@
  * truth ("Where the Truth line gives no name, there is no name").
  *
  * A vow that asks who is won by a name: its plan's decision is told so
- * (DECIDE NOW), and a decided plan whose truth names no one is given the one
- * behind it from the name oracle when it is filed (secrets.js namedIfAWhoVow).
+ * (DECIDE NOW). A decided plan whose truth names no one was given the one
+ * behind it from the name oracle when it was filed (namedIfAWhoVow) — round
+ * 10's vow was won by such a name, "Talia Tolari", whom the table never saw.
+ * Since issue #402's change 4 the oath is asked for a name once more instead
+ * (narrator.js whoPlanNamingAsk; plansPlayedToward.test.js), and the plan is
+ * filed as decided: nothing draws a name.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { resetSkeletonTable, gmOf, plansOf, onGm } from '../helpers/skeletonTable.js';
-import { truthNamesSomeone, truthWithWho } from '../../src/world/skeletons.js';
+import { truthNamesSomeone } from '../../src/world/skeletons.js';
 import { vowAsksWho } from '../../src/world/tellingWords.js';
 import { formatUnrevealedBlock } from '../../src/narration/narratorPrompt.js';
 
@@ -44,10 +48,6 @@ describe('a vow that asks who, and a truth that names someone', () => {
     expect(truthNamesSomeone('Ilse Marrow, a clerk at the water exchange, sells the convoy schedules.', { notNames: [VOW] })).toBe(true);
     expect(truthNamesSomeone('Tamsin sells the schedules.', { people: ['Tamsin Okoro'] })).toBe(true);
   });
-  it('the one behind it, added to the truth', () => {
-    expect(truthWithWho(ROUND_7_TRUTH, 'Ilse Marrow')).toBe(`${ROUND_7_TRUTH} The one behind it is Ilse Marrow.`);
-    expect(truthWithWho('A faction runs it', 'Ilse Marrow')).toBe('A faction runs it. The one behind it is Ilse Marrow.');
-  });
 });
 
 describe('DECIDE NOW tells a who-vow\'s plan to name the one behind it', () => {
@@ -61,7 +61,7 @@ describe('DECIDE NOW tells a who-vow\'s plan to name the one behind it', () => {
   });
 });
 
-describe('filed: a who-vow\'s plan that names no one is given the one behind it', () => {
+describe('filed: a who-vow\'s plan is filed as decided — no name is drawn (issue #402, change 4)', () => {
   let table;
   let restore;
   beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1] }); }, 30_000);
@@ -79,12 +79,11 @@ describe('filed: a who-vow\'s plan that names no one is given the one behind it'
     }));
   };
 
-  it('round 7\'s truth, filed: it now names the one behind it, drawn from the name oracle', async () => {
+  it('round 7\'s truth, filed: as it was decided, with no name drawn for it', async () => {
     await file(VOW, ROUND_7_TRUTH);
     const [plan] = plansOf(table);
     expect(plan).toMatchObject({ kind: 'vow', subject: { id: 'vow-raid-1' } });
-    expect(plan.truth.startsWith(ROUND_7_TRUTH)).toBe(true);
-    expect(plan.truth).toMatch(/ The one behind it is \S+(?: \S+)+\.$/);
+    expect(plan.truth).toBe(ROUND_7_TRUTH);
   }, 60_000);
 
   it('a truth that names someone is filed as it is; so is a vow that asks no who', async () => {

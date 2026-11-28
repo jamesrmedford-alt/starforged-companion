@@ -33,7 +33,7 @@ import { obligationsFor } from '../../src/moves/contracts/obligations.js';
 import { mapConsequences } from '../../src/moves/resolver.js';
 import { MOVES } from '../../src/schemas.js';
 import { moveDisplayName } from '../../src/system/i18n.js';
-import { truthNamesSomeone, strangerNamedIn, peopleNamedIn, truthWithWho } from '../../src/world/skeletons.js';
+import { truthNamesSomeone, strangerNamedIn, peopleNamedIn } from '../../src/world/skeletons.js';
 import { storyPeople } from '../../src/world/storyPeople.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -159,7 +159,8 @@ describe('R3: a who-vow\'s plan handed over for its reveal names one culprit the
   const named = (truth) => peopleNamedIn(truth, { people: STORY.people, exact: STORY.drafts, notNames: STORY.notNames });
 
   it('round 10\'s a75 is flagged: its plan named the foreman, and the name the code appended — whom the story never met', () => {
-    const fault = revealFault(named(truthWithWho(ROUND_10, 'Talia Tolari')));
+    // As round 10 filed it: the name the code drew, appended (issue #402, change 4 deleted the drawing).
+    const fault = revealFault(named(`${ROUND_10} The one behind it is Talia Tolari.`));
     expect(fault).toMatchObject({ rule: 'R3', why: 'it names 2 people as the one behind it' });
     expect(fault.named).toEqual([{ name: 'Foreman', met: true }, { name: 'Talia Tolari', met: false }]);
   });

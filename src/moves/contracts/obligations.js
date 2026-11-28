@@ -32,6 +32,12 @@
  *                formatVowFulfilledBlock — VOW-FULFILLED-WITH-NOBODY-NAMED)
  *   [recommit]   a progress miss's recommit is the player's (new)
  *   [milestone]  Reach a Milestone's headway, as the scene showed it (new)
+ *   [clue]       the vow's plan's next clue, shown by its milestone (issue
+ *                #402, change 4 — skeletons.js vowPlanOwed)
+ *   [culprit]    a who-vow's culprit the story has not met, entering it by
+ *                name on a milestone (change 4)
+ *   [escalation] the vow's plan's next escalation step, played by a missed
+ *                fulfilment (change 4, D4)
  *   [oracle]     a yes/no answer binds the narration (formatOracleAnswerRule —
  *                ORACLE-NO-NARRATED-AS-YES)
  *   [match]      a match's twist, never the word (MATCH_TOLD_AS_TWIST)
@@ -232,6 +238,12 @@ function stateBreach(fact) {
 // ─────────────────────────────────────────────────────────────────────────────
 // The kinds
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** A plan's words as one sentence for a quoted line: trimmed, ended once. */
+function asSentence(text) {
+  const said = String(text ?? "").replace(/\s+/g, " ").trim();
+  return /[.!?…]["”’)]?$/.test(said) ? said : `${said}.`;
+}
 
 /**
  * One row a kind: its list (a function where the kind's list depends on what
@@ -480,6 +492,28 @@ export const OBLIGATION_KINDS = Object.freeze({
   milestone: Object.freeze({
     list: "TELL", check: "logged",
     text: ({ resolution }) => `Tell the headway as the scene has shown it${resolution?.moveTarget ? `: ${String(resolution.moveTarget).trim()}` : ""}.`,
+  }),
+  // A vow's plan played toward (issue #402, change 4; D4): what the vow's
+  // hidden plan owes the beat — its next clue on a milestone, a stranger
+  // culprit's first showing, its next escalation on a missed fulfilment
+  // (skeletons.js vowPlanOwed). Floors, logged until measured.
+  clue: Object.freeze({
+    list: "TELL", check: "floor",
+    carry: ({ clue }) => ({ clue: String(clue ?? "") }),
+    text: ({ clue }) => "THE HEADWAY TURNS SOMETHING UP. Show this in the beat — seen, found, heard or let slip — in the fiction, "
+      + `never explained: "${asSentence(clue)}"`,
+  }),
+  culprit: Object.freeze({
+    list: "TELL", check: "floor",
+    carry: ({ culprit }) => ({ culprit: String(culprit ?? "") }),
+    text: ({ culprit }) => `${String(culprit ?? "").trim()} enters the story in this beat, by name — seen, heard or spoken of — `
+      + "with nothing said yet of what they have done.",
+  }),
+  escalation: Object.freeze({
+    list: "TELL", check: "floor",
+    carry: ({ step }) => ({ step: String(step ?? "") }),
+    text: ({ step }) => "WHAT THE VOW IS UP AGAINST MOVES. This miss plays it, as something that happens in the scene, never "
+      + `explained: "${asSentence(step)}"`,
   }),
   oracle: Object.freeze({
     list: ({ part }) => (part === "not" ? "NOT SO" : "TELL"), check: "judge",
@@ -968,6 +1002,15 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
     out.push({ ...line("foe", { fight: r.fightStanding }), fight: r.fightStanding });
   }
   if (obliges.has("recommit") && r.outcome === "miss") out.push(line("recommit", { resolution: r }));
+  // What the vow's plan owes this beat (issue #402, change 4): read off the
+  // plan by the narration's caller (narrator.js vowPlanOwedFor).
+  for (const o of Array.isArray(r.planOwed) ? r.planOwed : []) {
+    const said = typeof o?.text === "string" ? o.text.trim() : "";
+    if (!said) continue;
+    if (o.kind === "clue") out.push(line("clue", { clue: said }));
+    else if (o.kind === "culprit") out.push(line("culprit", { culprit: said }));
+    else if (o.kind === "escalation") out.push(line("escalation", { step: said }));
+  }
   if (r.gateNote) out.push(line("overridden", { note: r.gateNote }));
   return mendResultLines(out, r);
 }

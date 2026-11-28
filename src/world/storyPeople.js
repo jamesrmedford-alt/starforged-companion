@@ -12,7 +12,10 @@
  *   - narrator.js strangersOfWhoPlans (the recorded people, and the drafts by
  *     their whole names) found the draft "Foreman" met, so no prompt told the
  *     narrator to show Talia Tolari before she was revealed.
- * Each asks here now, and the other two readers are gone.
+ * Each asks here now, and the other two readers are gone — and since issue
+ * #402's change 4 namedIfAWhoVow too: an oath whose who-vow plan names no one
+ * is asked for a name once more (narrator.js whoPlanNamingAsk), and nothing
+ * draws one.
  *
  * The story's people are its recorded connections (people recorded by
  * Confirm or Make a Connection) and the people a narration drafted that the

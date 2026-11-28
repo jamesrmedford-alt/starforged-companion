@@ -92,7 +92,8 @@ import { sessionCardTarget, sessionCardOf, sessionCardMessage } from '../record/
 import { writeRecordView } from '../record/store.js';
 import { recordSettled } from '../record/record.js';
 import { renderSessionLog } from '../record/sessionLogView.js';
-import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
+import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor, readVows } from '../character/actorBridge.js';
+import { selectMilestoneVow, selectFulfilVow } from '../moves/milestone.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
@@ -100,7 +101,7 @@ import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRoll
 import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { withoutUntoldTruths } from '../world/secrets.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, peopleNamedIn, quietestPlan } from '../world/skeletons.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, peopleNamedIn, quietestPlan, vowPlanOwed, truthNamesSomeone, sameSubjectName } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { readRecord } from '../record/read.js';
 import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf, pendingPeopleOf, placeAtTime } from '../factContinuity/whereabouts.js';
@@ -1590,6 +1591,11 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // The tracks and vows this move ends: their plans are in play to reveal
   // their end, resolved or not (issue #362 D4).
   const endingTrackIds = Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : [];
+  // What the vow's hidden plan owes this beat (issue #402, change 4): a
+  // milestone's next clue and a stranger culprit's first showing, a missed
+  // fulfilment's next escalation — lines the narration must tell, the plan in
+  // play, and what they play marked with this narration.
+  const planOwed = vowPlanOwedFor(resolution, { actorId: character?.actorId ?? null, moveTarget: options?.moveTarget ?? null, campaignState });
   const extras = await buildNarratorExtras('move_resolution', campaignState, {
     playerNarration: resolution.playerNarration ?? '',
     character,
@@ -1597,7 +1603,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
     oracleSeeds:     resolution.oracleSeeds ?? null,
     planRequests,
     // The plans already filed for this move, put to its narration by id.
-    planIds:         owed.planIds,
+    // The vow's plan is in play for the beat it owes a line to — only then.
+    planIds:         planOwed.lines.length ? [...(owed.planIds ?? []), planOwed.plan.id] : owed.planIds,
     endingTrackIds,
     beatClaim,
     // A hit on Set a Course or Finish an Expedition: the characters have arrived ([arrival]).
@@ -1619,7 +1626,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
   const madeLine = resolution.inputMethod === 'button';
   // A blow in the open fight is held to it: only Take Decisive Action ends a fight ([foe]).
   const fightStanding = await fightStandingOf(resolution, character?.actorId ?? null);
-  const moveObligations = [...obligationsFor({ mode: 'move', resolution: fightStanding ? { ...resolution, fightStanding } : resolution, situation: touched.situation,
+  // …and what the vow's plan owes it (change 4), on its lines.
+  const told = { ...resolution, ...(fightStanding ? { fightStanding } : {}), ...(planOwed.lines.length ? { planOwed: planOwed.lines } : {}) };
+  const moveObligations = [...obligationsFor({ mode: 'move', resolution: told, situation: touched.situation,
     line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince, madeLine,
     dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? '', { own: meterOwnersOf(campaignState), sceneId: campaignState?.currentSceneId ?? null }),
     whereabouts: extras.elsewhere ?? null,
@@ -1696,6 +1705,7 @@ export async function narrateResolution(resolution, campaignState, options = {},
       mode:             'move_resolution',
       ground,
       decidedFacts,
+      reveals:          planOwed.reveals,
     });
 
     if (!narration?.trim()) {
@@ -1747,6 +1757,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
           endingTrackIds,
           mode:             'move_resolution',
           ground,
+          decidedFacts,
+          reveals:          planOwed.reveals,
         });
         if (narration?.trim()) {
           sideDataApplied = true;
@@ -5481,8 +5493,21 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
   }));
 
   const call = async () => {
-    const raw  = (await narrateKeepingObligations(ask, obligations, checking)).raw;
+    let raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
     if (xCard.interrupted('narrateVowSwearing')) return null;
+    // A who-vow's plan that names no one is asked for once more, here at the
+    // oath (issue #402, change 4): a code check on the reply, by the one
+    // reader of who the story has met. Still no one, the first reply stands —
+    // no name is drawn for it; the vow ends on what was done and what is not
+    // known.
+    const naming = whoPlanNamingAsk(raw, vow, extras.planRequests, campaignState);
+    if (naming) {
+      const again = (await narrateKeepingObligations((addendum) => ask([naming, addendum].filter(Boolean).join('\n\n')), obligations, checking)).raw;
+      if (xCard.interrupted('narrateVowSwearing')) return null;
+      const narrated = typeof again === 'string' && String(extractSidecar(again).prose ?? '').trim() !== '';
+      if (narrated && !whoPlanNamingAsk(again, vow, extras.planRequests, campaignState)) raw = again;
+      else console.info(`${MODULE_ID} | the vow "${vow?.name ?? ''}" asks who, and its plan names no one after a second asking — it stands as decided.`);
+    }
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, mode: 'vow_swearing', ground: groundOf({ line: vow?.name ?? '' }) });
     return (text && text.trim()) ? text : null;
   };
@@ -5496,6 +5521,42 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
     }
     console.error(`${MODULE_ID} | narrateVowSwearing failed:`, err);
     return null;
+  }
+}
+
+/**
+ * The re-ask an oath's reply gets when its vow asks who and the plan it
+ * decided for the vow names no one (issue #402, change 4), or '' — the vow
+ * asks no who, the oath was asked to decide no plan for it, or the reply's
+ * plan names someone: a person by name, a titled one, or someone the story
+ * has met (skeletons.js truthNamesSomeone over world/storyPeople.js, the one
+ * reader). A reply that gives the plan no truth names no one either. It
+ * replaces namedIfAWhoVow's name drawn from the name oracle, which won round
+ * 10's vow with "Talia Tolari" — a name the table never saw. Never throws.
+ *
+ * @param {string|null} raw — the oath's reply
+ * @param {{ name?: string }|null} vow
+ * @param {Array<Object>} planRequests — the oath's (vowPlanRequest's)
+ * @param {Object|null} campaignState
+ * @returns {string}
+ */
+function whoPlanNamingAsk(raw, vow, planRequests, campaignState) {
+  try {
+    const name = String(vow?.name ?? '').trim();
+    if (!name || !vowAsksWho(name)) return '';
+    const request = (Array.isArray(planRequests) ? planRequests : []).find(q => q?.kind === 'vow' && q.ref) ?? null;
+    if (!request) return '';
+    const plan = (extractSidecar(String(raw ?? '')).sidecar?.plans ?? []).find(p => p?.id === request.ref) ?? null;
+    const story = storyPeople(campaignState);
+    const truth = String(plan?.truth ?? '').trim();
+    if (truth && truthNamesSomeone(truth, { people: story.people, exact: story.drafts, notNames: [...story.notNames, name] })) return '';
+    const met = [...story.people, ...story.drafts].slice(0, STORY_PEOPLE_LISTED);
+    return `THE VOW ASKS WHO, AND THE PLAN YOU DECIDED FOR IT (id ${request.ref}) NAMES NO ONE. Write this narration again, with `
+      + 'its fact block, and give that plan a truth that names the one behind it — a person, by name: '
+      + (met.length ? `one of the people the story has met if one fits (${met.join(', ')}), else a new name.` : 'someone the story has met, or a new name.');
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | an oath's plan was not read for a name:`, err?.message ?? err);
+    return '';
   }
 }
 
@@ -7288,7 +7349,6 @@ function applyOwedPlanSideData(rawText, campaignState, ctx = {}) {
         moveId:           ctx.moveId ?? null,
         planRequests,
         endingSubjectIds: Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [],
-        story:            storyPeople(campaignState),
       });
     } else {
       relayNarratorSidecar(sidecar, campaignState, ctx);
@@ -7525,7 +7585,7 @@ function fileUnansweredPlanRequests(planRequests, campaignState, { moveId = null
   if (!Array.isArray(planRequests) || !planRequests.length || !campaignState) return;
   try {
     const sidecar = normaliseSidecar({});
-    if (isCanonicalGM()) void applyPlanSideData(sidecar, { campaignState, narrationId: null, moveId, planRequests, story: storyPeople(campaignState) });
+    if (isCanonicalGM()) void applyPlanSideData(sidecar, { campaignState, narrationId: null, moveId, planRequests });
     else relayNarratorSidecar(sidecar, campaignState, { moveId, planRequests });
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the plans this narration was asked to decide were not filed:`, err?.message ?? err);
@@ -7600,7 +7660,7 @@ export async function applyRelayedNarratorSidecar(payload = {}, relay = {}) {
   if (!factContinuityEnabled()) {
     const reveals = await standingForcedReveals(payload.forced, campaignState);
     await applyPlanSideData({ ...normaliseSidecar({}), reveals }, {
-      campaignState, narrationId, moveId: payload.moveId ?? null, planRequests, story: storyPeople(campaignState),
+      campaignState, narrationId, moveId: payload.moveId ?? null, planRequests,
     });
     return;
   }
@@ -7640,6 +7700,48 @@ function moveDiceFacts(resolution, { moveTarget = null } = {}) {
   const about = String(moveTarget ?? resolution?.moveTarget ?? '').replace(/\s+/g, ' ').trim() || null;
   const moveId = typeof resolution?.moveId === 'string' && resolution.moveId ? resolution.moveId : null;
   return facts.map(fact => ({ about, fact, moveId }));
+}
+
+/**
+ * What the vow a move marks or misses owes its narration from its hidden plan
+ * (issue #402, change 4 — skeletons.js vowPlanOwed): the plan, the lines the
+ * narration must tell and the reveals they force. The vow is found as the
+ * move's own handler finds it — a milestone's by milestone.js
+ * selectMilestoneVow over the roller's vows, a fulfilment's by
+ * selectFulfilVow over every PC's — and its plan by the vow's stable id (the
+ * plan's subject) or its name. A who-vow's culprit is a stranger by the one
+ * reader of who the story has met (strangersOfWhoPlans). The canonical GM's:
+ * a player's client reads no plan. Never throws: nothing is owed then.
+ *
+ * @param {Object|null} resolution
+ * @param {{ actorId?: string|null, moveTarget?: string|null, campaignState?: Object|null }} [opts]
+ * @returns {{ plan: Object|null, lines: Array<{ kind: string, text: string }>, reveals: Array<Object> }}
+ */
+function vowPlanOwedFor(resolution, { actorId = null, moveTarget = null, campaignState = null } = {}) {
+  const none = { plan: null, lines: [], reveals: [] };
+  try {
+    const moveId = resolution?.moveId ?? null;
+    const missed = moveId === 'fulfill_your_vow' && resolution?.outcome === 'miss';
+    if ((moveId !== 'reach_a_milestone' && !missed) || !skeletonsEnabled() || !isCanonicalGM()) return none;
+    const target = moveTarget ?? resolution?.moveTarget ?? null;
+    let vow = null;
+    if (moveId === 'reach_a_milestone') {
+      const actor = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+      vow = actor ? selectMilestoneVow(readVows(actor), target) : null;
+    } else {
+      const vows = (getPlayerActors() ?? []).flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
+      vow = selectFulfilVow(vows, target, { rollerActorId: actorId }).vow ?? null;
+    }
+    if (!vow) return none;
+    const plan = listSkeletons().find(r => r?.kind === 'vow' && r.status === 'active'
+      && ((vow.vowId && r.subject?.id === vow.vowId) || sameSubjectName(r.subject?.name, vow.name))) ?? null;
+    if (!plan) return none;
+    const stranger = strangersOfWhoPlans([plan], storyPeople(campaignState))[plan.id] ?? null;
+    return { plan, ...vowPlanOwed(plan, { moveId, outcome: resolution?.outcome ?? null, stranger }) };
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: what the vow's plan owes this beat was not read:`, err?.message ?? err);
+    return none;
+  }
 }
 
 /**
@@ -8072,7 +8174,6 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       endingSubjectIds: Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [],
       // A relayed block names no plan by id (applyRelayedNarratorSidecar).
       relayed:      ctx.relayed === true,
-      story:        storyPeople(campaignState),
     });
   }
   return persisted;
