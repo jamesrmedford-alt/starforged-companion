@@ -6,6 +6,30 @@ rejected.
 
 ---
 
+## Issue #402: fix what the narrator is given and what the record keeps (2026-11-28)
+
+**Decision** (the maintainer: "Please execute issue 402"). The scope's six changes are built in its order, each with its recommended decision:
+- D1: whether a `result` tag stops binding on a rolled move is decided from the read of the kept tags;
+- D2: an unnamed person is carried through the next session's first scene at that place;
+- D3: the instruction check mends what is certain (R1, R2) and reports R3 to the GM;
+- D4: a milestone's clue must be told on a hit, and the plan's next escalation on a miss;
+- D5: the judge only logs, and a kind earns authority back from live verdicts;
+- D6: Part 7's refrain test is bought, steps 1 and 2 first.
+
+**Why.** In round 10 the narrator mostly did what it was told. The failings came from what it was given and from what the record kept, and every check the module has reads the narrator's output. Over ten rounds the fixes that held were in code or took away an ambiguity; the ones that did not were rules for the narrator to remember, and judge verdicts.
+
+### Change 5 — the judge only logs (D5; amends #399's D7 and D10)
+
+- **No verdict acts.** `checks.js` splits what a pass is asked about (`JUDGE_KINDS_ASKED`, `judgeIsAsked`: the measure's passing kinds, as before) from what may act (`JUDGE_KINDS_THAT_ACT`, `judgeMayAct`: empty for both passes). A judge verdict is logged and asks for nothing again; an obligation finding of the audit is logged (`action: "held"`) and posts no card. Over rounds 9 and 10 the two passes acted on 13 findings and none was right: round 10's one re-ask took Okoro's line for the character's ([unsaid], a77), and its one card held an `@scene` answer that looked back to where the characters are (a49).
+- **Earning it back.** A kind is put back in `JUDGE_KINDS_THAT_ACT` on #399 D7's bar counted on live verdicts read in a review — at least ten flags, nine in ten of them right — not on the labelled set's. The measure (`judges.mjs`, `judgeMeasure.test.js`) stays, as a regression test of the judge sentences.
+- **The audit's older kinds** (a truth or a state contradicted, an identity, a retraction) keep their card. Its place check is not asked of a scene question's answer (`narrationKind: 'scene-answer'`, from `narrator.js sceneAnswerText`), as it is not asked of a cutaway: `judgedView` returns `heldToPlace` (its `cutaway` flag is gone). A place finding where no place was given is dropped (`why: "no place was given"`).
+- **The code's checks keep their re-ask**; round 10's a2 [person] re-ask worked. The re-ask block ends "Reply with the narration alone — no note about the draft or what changed", and [apparatus] reads a narration for talk of its drafting (`DRAFT_TALK`). Of the kept runs' 823 narrations it flags round 10's a77 redraft and round 8's a17 opening, and no other; under #399's N9 a redraft that adds it is not posted.
+- **Rejected:** keeping the judge's authority for the kinds the set passed. [unsaid] passed #399's measure on four flags, three of them seeded, and its first live act was wrong. A judge given the same lines as the narrator cannot see a fault in those lines.
+
+Pinned by `tests/unit/judgeOnlyLogs.test.js` (round 10's a77 and a49, round 8's a17, every kept narration).
+
+---
+
 ## Issue #399: the judge, reworked (2026-11-27)
 
 **Decision** (the maintainer: "Please address issue 399"). The scope's recommended decisions D1–D10 are taken. Round 9 was the judge's first live run: its two passes acted on eleven findings and none was right, and they missed every real fault in the run. The entries below are built; the rest of the scope's decisions are recorded here as each slice builds them.

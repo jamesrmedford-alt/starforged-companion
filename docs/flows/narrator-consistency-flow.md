@@ -89,7 +89,7 @@ the narration's obligation lines, handed in by the narrator through
 round's, the oracle follow-up's; they ride an audit the ledger calls for and
 make no call of their own). Since issue #399 (D10) the audit is sent only the
 lines of the kinds its measure passed — [cost], [fight], [offer], [premise],
-[price], [state] (`checks.js JUDGE_KINDS_THAT_ACT.audit`,
+[price], [state] (`checks.js JUDGE_KINDS_ASKED.audit`, `judgeIsAsked`,
 `auditObligationLines`; the bar on the counts pooled over the runs made with
 the current judge sentences, `judges/pool.json`) — and no other: it was
 sent every line but a certain-class one, and round 9's audit raised 44
@@ -151,11 +151,16 @@ GM, with this audit's setting on (`narrator.js obligationJudgeOn`); a
 narration on a player's key gets neither pass. **The judge-class kinds are
 the ones that passed its measure** (issue #399 D7, D10): [cost], [fight],
 [foe], [oracle], [premise], [price], [unsaid], [whereabouts]
-(`JUDGE_KINDS_THAT_ACT.judge`, on the pooled bar), and a verdict on one asks
-again. [dice], [offer], [place] and [state] failed it and are "logged": no
-trip, no call.
-A verdict on a judge-class kind outside the set would be logged — `action:
-"logged"` — and the first draft posted; the tables are kept equal by test.
+(`JUDGE_KINDS_ASKED.judge`, on the pooled bar). [dice], [offer], [place] and
+[state] failed it and are "logged": no trip, no call. **No verdict asks
+again** (issue #402, change 5; decisions.md → "Issue #402"): every verdict is
+logged — `action: "logged"` — and the draft posts. `JUDGE_KINDS_THAT_ACT` is
+empty for both passes (`judgeMayAct`); a kind is put back there on live
+verdicts read in a review (ten flags or more, nine in ten right), not the
+set's. Over rounds 9 and 10 the passes acted on 13 findings and none was
+right; round 10's one re-ask (a77, [unsaid] on Okoro's own line) posted a
+redraft with a note about its draft. The code's checks keep their re-ask, and
+[apparatus] reads a narration for talk of its drafting (`DRAFT_TALK`).
 Round 9's four re-asks were all on kinds that had not been measured. Since slice 3 (D3) its
 lines are numbered, and it answers by number with the narration's own words:
 a verdict that names no line, or quotes words the judged view does not hold
@@ -204,11 +209,16 @@ The full class list is in `narrator-context-flow.md` (the obligations block).
   runner counted each card as its line narrated twice. The correction hook
   (`index.js`) reads `factContinuityReview`; the ring's defensive exclude
   (`worldJournalContradiction`) stays.
-  **An obligation finding posts a card only for a kind that passed the
-  audit's measure** (issue #399 D7, `judgeMayAct(kind, "audit")`), and the
-  audit is sent no other kind's lines; a finding that names none of them is
-  returned and logged with `action: "held"`, as every finding is logged.
+  **An obligation finding posts no card** (issue #402, change 5:
+  `judgeMayAct(kind, "audit")` is false for every kind): it is returned and
+  logged with `action: "held"`, as every finding is logged, and the audit is
+  sent the lines of the kinds it is asked about alone (`judgeIsAsked`).
   Round 9's six obligation cards, on kinds never measured, were all wrong.
+  A truth, state, identity or retraction finding still cards. Its place
+  check is not asked of a cutaway or of an `@scene` answer
+  (`judgedView`'s `heldToPlace`; narrator.js `sceneAnswerText` passes
+  `narrationKind: 'scene-answer'` — round 10's a49 carded "Back at Hollow
+  Spire…"), and a place finding with no place given is dropped.
   The card carries the narration it is about (`reviewOf`): the X-Card's
   finish withdraws it (`worldJournal.js withdrawReviewCards`, from
   `safety.js finishXCardRemoval`), and one posted while the X-Card was

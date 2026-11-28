@@ -78,7 +78,7 @@ describe('the audit reads a narration\'s obligations', () => {
     expect(applyStateTransition).not.toHaveBeenCalled();
   });
 
-  it('a line of a kind the audit\'s measure passed is sent in its judge sentence, and a high-confidence breach of it posts the card', async () => {
+  it('a line of a kind the audit\'s measure passed is sent in its judge sentence, and a high-confidence breach of it is logged and posts no card (issue #402, change 5)', async () => {
     const lines = obligationsFor({ mode: 'move', resolution: { moveId: 'face_danger', outcome: 'weak_hit', openChoice: { kind: 'any', count: 1, amount: 1 } } });
     const cost = lines.find(o => o.kind === 'cost');
     expect(cost).toBeTruthy();
@@ -90,8 +90,9 @@ describe('the audit reads a narration\'s obligations', () => {
     const system = apiPost.mock.calls[0][2].system;
     expect(system).toContain(`1. BREACH [cost] ${cost.judge}`);
     expect(system).not.toContain(cost.text);
-    expect(out.dispatched).toBe(true);
-    expect(applyStateTransition).toHaveBeenCalledWith(expect.objectContaining({ kind: 'obligation', change: 'contradicted' }), expect.anything());
+    expect(out.dispatched).toBe(false);
+    expect(out.contradictions).toEqual([expect.objectContaining({ kind: 'obligation', obligationKind: 'cost', action: 'held' })]);
+    expect(applyStateTransition).not.toHaveBeenCalled();
   });
 
   it('control: a high-confidence breach of what binds still posts the review card', async () => {

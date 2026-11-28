@@ -4459,6 +4459,9 @@ function sceneAnswerText(raw, campaignState, { matchedEntityIds = [], narrationI
       matchedEntityIds:  Array.isArray(matchedEntityIds) ? matchedEntityIds : [],
       currentLocationId: campaignState.currentLocationId ?? null,
       narrationId:       typeof narrationId === 'string' ? narrationId : null,
+      // An answer may look back at where the story began: not held to where
+      // the characters are now (issue #402, change 5 — round 10's a49).
+      narrationKind:     'scene-answer',
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );

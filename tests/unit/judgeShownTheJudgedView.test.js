@@ -23,8 +23,9 @@
  *     reads it;
  *   - D5: the review card is no narration — no `narratorCard` — and its
  *     Retract button is still wired;
- *   - D7: a verdict acts only for a kind that passed that pass's measure, and
- *     a pass is asked only about those (D10; narrationChecks,
+ *   - D7: a verdict acts only for a kind that passed that pass's measure —
+ *     since issue #402, change 5, none acts: each is logged — and a pass is
+ *     asked only about those (D10; narrationChecks,
  *     sceneObligationChecks, lineCannotOverruleTheDice,
  *     roundAndOracleNarrationsChecked and auditObligationKind pin those).
  */
@@ -53,7 +54,7 @@ vi.mock('../../src/factContinuity/correctionDialog.js', async (importOriginal) =
 }));
 
 import { apiPost } from '../../src/api-proxy.js';
-import { judgedView, judgeNarration, trippedLines, checkClassOf, judgeMayAct, offerMayBeGiven } from '../../src/moves/contracts/checks.js';
+import { judgedView, judgeNarration, trippedLines, checkClassOf, judgeMayAct, judgeIsAsked, offerMayBeGiven } from '../../src/moves/contracts/checks.js';
 import { obligationsFor, OBLIGATION_KINDS } from '../../src/moves/contracts/obligations.js';
 import { runConsistencyCheck } from '../../src/factContinuity/consistencyCheck.js';
 import { openCorrectionDialog } from '../../src/factContinuity/correctionDialog.js';
@@ -133,11 +134,13 @@ beforeEach(() => {
 });
 
 describe('D1 — the one judged view', () => {
-  it('is the narration without its fact block and its closing offer line, and nothing else; and says whether it is a cutaway', () => {
+  it('is the narration without its fact block and its closing offer line, and nothing else; and says whether it is held to the place', () => {
     const raw = 'The clerk has backed against a berth lamp.\n\n*Meeting her fire in the berth would be an Enter the Fray.*\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
-    expect(judgedView(raw, { offer: true })).toEqual({ text: 'The clerk has backed against a berth lamp.', cutaway: false });
-    expect(judgedView('The lounge is empty.', { kind: 'cutaway' })).toEqual({ text: 'The lounge is empty.', cutaway: true });
-    expect(judgedView('She *does* answer.', { kind: 'session_vignette' })).toMatchObject({ text: 'She *does* answer.', cutaway: false });
+    expect(judgedView(raw, { offer: true })).toEqual({ text: 'The clerk has backed against a berth lamp.', heldToPlace: true });
+    expect(judgedView('The lounge is empty.', { kind: 'cutaway' })).toEqual({ text: 'The lounge is empty.', heldToPlace: false });
+    // A scene question's answer may look back (issue #402, change 5: round 10's a49).
+    expect(judgedView('Back at Hollow Spire, Tamsin keeps your manifest.', { kind: 'scene-answer' })).toEqual({ text: 'Back at Hollow Spire, Tamsin keeps your manifest.', heldToPlace: false });
+    expect(judgedView('She *does* answer.', { kind: 'session_vignette' })).toMatchObject({ text: 'She *does* answer.', heldToPlace: true });
     expect(judgedView(null).text).toBe('');
   });
 
@@ -225,7 +228,7 @@ describe('D2, then D10 — the [dice] sentence, written for the judge, and retir
 });
 
 describe('the audit is sent the judged view, and no line the code already held the narration to (D1, D2)', () => {
-  it('built for each narration round 9 gave lines: no closing offer line, no certain-class line, no line of a kind the audit may not act on (D10)', async () => {
+  it('built for each narration round 9 gave lines: no closing offer line, no certain-class line, no line of a kind the audit is not asked about (D10)', async () => {
     const given = NARRATIONS.filter(x => linesOf(x.user).length);
     expect(given.length).toBe(58);
     // Round 9's eleven audit findings on code-checked lines were on these.
@@ -242,7 +245,7 @@ describe('the audit is sent the judged view, and no line the code already held t
       if (offer) expect(system, x.step).not.toContain(offer);
       for (const kind of CERTAIN) expect(system, `${x.step} [${kind}]`).not.toContain(`[${kind}]`);
       for (const o of lines.filter(l => !CERTAIN.includes(l.kind))) {
-        if (judgeMayAct(o.kind, 'audit')) expect(system, `${x.step} [${o.kind}]`).toContain(`${o.list} [${o.kind}] ${o.text.trim()}`);
+        if (judgeIsAsked(o.kind, 'audit')) expect(system, `${x.step} [${o.kind}]`).toContain(`${o.list} [${o.kind}] ${o.text.trim()}`);
         else expect(system, `${x.step} [${o.kind}]`).not.toContain(`[${o.kind}]`);
       }
     }

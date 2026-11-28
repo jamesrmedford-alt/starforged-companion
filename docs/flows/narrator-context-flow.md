@@ -1347,9 +1347,12 @@ each held to their own). The judge's lines are numbered and its verdicts name
 their line (D3). A certain or floor failure is asked once more — the same prompt plus
 YOUR DRAFT — NOT POSTED and the line it broke (labels
 `narrateResolution:reask`, `narratePacedInput:reask`, `narrateRound:reask`,
-`narrateOracleFollowup:reask`); **a judge verdict is asked again** — the
-judge-class kinds are exactly those that passed its measure (`judgeMayAct`,
-`JUDGE_KINDS_THAT_ACT.judge`, issue #399 D7, D10). The second reply is
+`narrateOracleFollowup:reask`), and since issue #402 (change 5) the block
+ends "Reply with the narration alone — no note about the draft or what
+changed"; **a judge verdict is logged and asks for nothing again** — the
+judge-class kinds are exactly those that passed its measure
+(`JUDGE_KINDS_ASKED.judge`, issue #399 D7, D10), and no kind may act
+(`judgeMayAct`, `JUDGE_KINDS_THAT_ACT` empty). The second reply is
 held to the certain and floor checks; it is posted unless it adds a certain
 breach the first draft did not have, when the first is (issue #399's audit
 N9; a reply with no prose keeps the first draft too). What the posted draft
@@ -1382,10 +1385,10 @@ second person, and [quote] — in its message (`buildRoundUserMessage`'s
 `roundLines`) and its check alike (`narrator.js roundLinesOf`,
 `roundObligationsFor`). The lines of the kinds that passed the audit's
 measure — [cost], [fight], [offer], [premise], [price], [state]
-(`JUDGE_KINDS_THAT_ACT.audit`) — go to the post-narration audit
+(`JUDGE_KINDS_ASKED.audit`) — go to the post-narration audit
 with it (`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`,
 kind `obligation`), each in its judge sentence, and no other line (issue
-#399 D10); a high-confidence finding on one posts its review card (D7).
+#399 D10); a finding on one is logged and posts no card (issue #402, change 5).
 **After round 8** (issue #396; decisions.md → "After the eighth live round"):
 - **certain [quote]:** a quoted sentence of six words or more that an earlier
   narration of the session gave. `proseVariety.js linesAlreadySaid` reads every

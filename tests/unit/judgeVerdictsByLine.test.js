@@ -51,7 +51,7 @@ import { logConsistencyDecision } from '../../src/pacing/telemetry.js';
 import { applyStateTransition } from '../../src/entities/entityExtractor.js';
 import {
   judgeNarration, narrateKeepingObligations, redraftBlock, certainViolations, floorViolations, trippedLines, checkClassOf,
-  judgeMayAct, TRIPWIRES, CERTAIN_CHECKS,
+  judgeMayAct, judgeIsAsked, TRIPWIRES, CERTAIN_CHECKS,
 } from '../../src/moves/contracts/checks.js';
 import { OBLIGATION_KINDS, obligationsFor } from '../../src/moves/contracts/obligations.js';
 import { sceneObligations } from '../../src/factContinuity/sceneTurns.js';
@@ -164,13 +164,17 @@ describe('the rows a narration\'s check writes', () => {
 
   it('one row a verdict, each with the draft it describes; the judge\'s summary row holds no copy of its verdicts', async () => {
     replies.push('{"violations":[{"line":1,"quote":"Blood beads on the dressing"}]}');
-    const kept = await narrateKeepingObligations(async () => DRAFT, TWO_PREMISES, { apiKey: 'sk-test', ctx });
+    const call = vi.fn(async () => DRAFT);
+    const kept = await narrateKeepingObligations(call, TWO_PREMISES, { apiKey: 'sk-test', ctx });
     const judgeRows = kept.verdicts.filter(v => v.class === 'judge');
-    // [premise] passed the measure (D7): its verdict asks again.
+    // [premise] passed the measure, so it is asked about (D10); its verdict
+    // is logged and asks for nothing again (issue #402, change 5).
     expect(judgeRows).toEqual([
       { class: 'judge', draft: 1, tripped: ['premise', 'premise'], judged: true, error: null },
-      { class: 'judge', draft: 1, tag: 'premise', line: 1, quote: 'Blood beads on the dressing', action: 'reask' },
+      { class: 'judge', draft: 1, tag: 'premise', line: 1, quote: 'Blood beads on the dressing', action: 'logged' },
     ]);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(kept).toMatchObject({ raw: DRAFT, reasked: false, stillBroken: [] });
   });
 
   it('a dropped verdict is a row of its own, with why', async () => {
@@ -231,7 +235,7 @@ describe('the audit\'s N9 and N10: which draft posts, and the one judge call on 
     expect(kept.verdicts.some(v => v.action === 'redraft not posted')).toBe(false);
   });
 
-  it('N10: a narration the code re-asked has the draft that posts judged — once, its verdict reported, with no second re-ask', async () => {
+  it('N10: a narration the code re-asked has the draft that posts judged — once, its verdict logged, with no second re-ask', async () => {
     const lines = obligationsFor({ mode: 'paced', refusal: HEAL_REFUSAL });
     const FIRST = `It is a strong hit: the medkit opens.${SIDECAR}`;
     const SECOND = `She thumbs the medkit open and lays the binding out on the bench.${SIDECAR}`;
@@ -242,16 +246,18 @@ describe('the audit\'s N9 and N10: which draft posts, and the one judge call on 
     expect(apiPost).toHaveBeenCalledTimes(1);
     expect(kept.raw).toBe(SECOND);
     expect(kept.verdicts).toContainEqual({ class: 'judge', draft: 2, tripped: ['premise'], judged: true, error: null });
-    expect(kept.stillBroken).toContainEqual(expect.objectContaining({ tag: 'premise', class: 'judge', draft: 2 }));
+    // A judge verdict acts on nothing (issue #402, change 5): it is logged, and tells the GM of nothing still broken.
+    expect(kept.verdicts).toContainEqual(expect.objectContaining({ class: 'judge', draft: 2, tag: 'premise', action: 'logged' }));
+    expect(kept.stillBroken.filter(v => v.class === 'judge')).toEqual([]);
   });
 
-  it('N10: a narration judged before its re-ask is not judged again (D9: one judge call a narration)', async () => {
+  it('D9: one judge call a narration — a draft the code passed is judged once, and its verdict re-asks nothing', async () => {
     const lines = obligationsFor({ mode: 'paced', refusal: HEAL_REFUSAL });
     const JUDGED = `She thumbs the medkit open and lays the binding out on the bench.${SIDECAR}`;
     replies.push('{"violations":[{"line":1,"quote":"lays the binding out on the bench"}]}');
     const kept = await narrateKeepingObligations(async () => JUDGED, lines, { apiKey: 'sk-test', ctx: { refusalCode: 'recoverable-health' } });
     expect(apiPost).toHaveBeenCalledTimes(1);
-    expect(kept.reasked).toBe(true);
+    expect(kept).toMatchObject({ raw: JUDGED, reasked: false });
   });
 });
 
@@ -352,16 +358,18 @@ describe('D4 — the class a row declares is the class the code holds it to', ()
     ], CTX)).toEqual([]);
   });
 
-  it('D10: a pass is asked about a kind only where its verdict may act — and every such kind has a judge sentence', () => {
+  it('D10: a pass is asked about a kind only where the measure passed it — and every such kind has a judge sentence; none acts', () => {
     for (const [kind, row] of Object.entries(OBLIGATION_KINDS)) {
-      // The judge-class kinds are exactly the kinds whose pre-post verdict may re-ask.
-      expect(row.check === 'judge', kind).toBe(judgeMayAct(kind, 'judge'));
+      // The judge-class kinds are exactly the kinds the pre-post judge is asked about.
+      expect(row.check === 'judge', kind).toBe(judgeIsAsked(kind, 'judge'));
       // A kind either pass may be asked about says its breach to the judge.
-      if (judgeMayAct(kind, 'judge') || judgeMayAct(kind, 'audit')) expect(typeof row.judge, kind).toBe('function');
+      if (judgeIsAsked(kind, 'judge') || judgeIsAsked(kind, 'audit')) expect(typeof row.judge, kind).toBe('function');
+      // Issue #402, change 5: no verdict re-asks, and no obligation finding posts a card.
+      expect(judgeMayAct(kind, 'judge') || judgeMayAct(kind, 'audit'), `${kind} acts`).toBe(false);
     }
     // [dice] and [place] passed neither: no judge reads them, so they have no judge sentence.
     for (const kind of ['dice', 'place']) {
-      expect(judgeMayAct(kind, 'judge') || judgeMayAct(kind, 'audit'), kind).toBe(false);
+      expect(judgeIsAsked(kind, 'judge') || judgeIsAsked(kind, 'audit'), kind).toBe(false);
       expect(OBLIGATION_KINDS[kind].judge, kind).toBeUndefined();
     }
   });
