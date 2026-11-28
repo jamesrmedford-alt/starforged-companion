@@ -4,7 +4,69 @@ Run `long-haul-live-20261128-052235` · live · class **suspected-quality-issue*
 
 ## The cold read
 
-_To write before anything below — `transcript.md` read straight through by a reader who has seen neither the charter, this run's questions nor the fixes it was to verify (in a Claude Code session, a sub-agent handed that one file), asked what the session was like to play: what a player would complain of, what repeats, what makes no sense, what the player was made to do. Its findings, each then checked against the evidence — and, first, what the charter itself made the player do that a person at the table would not._
+The cold read (`cold-read.md`): `transcript.md` read straight through by a reader who had seen neither the charter, this run's questions nor the fixes it was to verify. Its findings, worst first, each checked against the evidence. Findings by number are `review-notes.md`'s.
+
+**First, what the charter made the player do that a person at the table would not:**
+- swear the vow in the Begin dialog and leave its reward card unanswered (a2; a79 grants nothing for it);
+- plant four facts in four lines (a10–a13);
+- make the world's events itself: the distress call (a22) and the cutter, named by command before it appears (a28);
+- rename the cutter with `!truth` (a43–a45) and the connection mid-session (x19);
+- open End a Session and close it unanswered (x15);
+- raise the X-Card on a narration chosen by beat (x16), then ask the oracle at once about the survivors that narration introduced (a46);
+- ask its memory questions in runs (a18–a21, a51–a57, a82–a90), four of them as lines of play;
+- make six Develop lines over one comm call to fill a track (a61–a72, beat 23, forced);
+- fulfil the vow at 4 of 10 boxes (beat 25, forced).
+
+The dice the cold read took for fixed (its §1.2) are the charter's: every progress roll, and a6's connection, has challenge dice 1 and 2.
+
+1. **"The main vow ended hollow and contradicts itself" (a75–a79): confirmed, apart from what the charter forced** (the 4/10 boxes, the dice, the unanswered reward card):
+   - The culprit is a job title — findings 1 and 2. The oath's plan chose "Foreman", the a2 flashback's foreman, because the detection had drafted him under that word.
+   - The reveal's own facts reached no later call, so the recaps cannot say who it was ("you found a name or trail", a81).
+   - Quint, the one name a75's clue gave, is the reply format's example name, the only Quint in its request — finding 3.
+   - The "behind the scenes" card is the plan's rolls, shown once it is out, by design.
+2. **"Every progress roll comes up 1 and 2": the charter's** scripted dice, as in every round since the first.
+3. **"The gunfight ignores what the player did, and puts Tamsin on the wrong station" (a29–a32): confirmed.**
+   - Finding 4: the player fires twice. The rule that a fight is not narrated before its move holds the shots back. "Nobody has fired yet" (a32) then contradicts the player's lines and the fact filed from them (a43's list).
+   - Finding 5: a32's fact block lists Tamsin as present at Bleakhold. No check held her to Hollow Spire, because the record has no place for her: a26's [arrival] line names the Dock Watcher and Foreman, not her.
+4. **"The bond came from clicking, and the narrator later played it down": the clicking is the charter's** beat 23. **The playing-down is confirmed** — finding 12. a83's request held "Bond: forged", yet the answer says no one is established as trusted and adds "a second ledger of her own".
+5. **"The GM's continuity notices raise false alarms and miss the real slip": confirmed** — findings 6 and 7.
+   - a39's card held the clerk's "his" to Mira's she/her.
+   - a46's card held the corrected name against the struck one.
+   - a94's clock vignette changed the clerk's pronoun with no notice. Its request carried no scene block with him.
+6. **"A promise with a deadline was broken, and nobody noticed": confirmed** — finding 13. The record keeps no time, and every answer tells the tide as still to come.
+7. **"The recap and the fact list misstate what happened": confirmed** — findings 8 and 9, and finding 1 for the culprit.
+   - A weak hit was filed with the strong hit's words: "without trouble" (a26 → a81).
+   - Take Decisive Action, which states no stakes, filed only "a fight decided".
+8. **Its smaller breakages:**
+   - The stray '"It does that,"' (a17): confirmed — finding 14.
+   - `!end-session` at x15: the charter's interruption.
+   - "a hour" (a6): confirmed.
+   - Vow buttons on the expedition and course cards: by design (any move may mark a vow), noted.
+   - The X-Card: the removal held. None of a41's facts stands, and every later prompt carries X-CARD — REDIRECT. But a46 brought back its image, a hand at a cracked port — finding 10. The charter's own question, about the survivors that narration introduced, invites it.
+
+**Its §2 (repeats): confirmed.** They are Part 7's standing cast: the clerk in 10 of session 2's 14 narrations and 16 of session 3's 24, the dockhand's hauling, the stylus and the comm light. The jokey opening voice has been in every round since the third. The closing hints are the offer lines (by design), four of them "Showing her…" in a row. The entity cards' names from job titles are finding 2's cause.
+
+**Its §3 (what makes no sense):**
+- **Confirmed:**
+  - the clerk's sex at a94 (7);
+  - Tamsin's "You told me that yourself" (a21) and "My own hand, not the clerk's" (a80);
+  - the clues that point at a ledger-keeper (the plan's own c2), which the reveal never squares (2);
+  - the hidden truth that a weak hit's "As stated before the roll" never showed the player (11);
+  - session 3's summary, which tells the Repair done on "the cutter's damaged plating", the wrong ship and not done (17).
+- **Confirmed and noted, not yet fixable:**
+  - the clerk's knowledge of the comm warning (a27);
+  - the slate's state (a63 face-down, a75 in hand, a84 face-down);
+  - the survivors and complications dropped (a23, a46, a27, a75).
+- **By design, worded badly:** "deepen that bond" at a8 and a39 before any bond.
+
+**Its §4 (what the player was made to do): the charter's**, except two things:
+- the reader's split of rolled and offered moves, 9 and 9 over the run;
+- the unexplained repair-point card (a60).
+
+**Its §5 (what went well): confirmed:**
+- every counted @scene answer was right, through both renames;
+- both baits were refused (a89, a90);
+- the plan's third clue paid off the flashback (a76).
 
 ## What this run was to answer
 
@@ -17,7 +79,44 @@ _To write before anything below — `transcript.md` read straight through by a r
 7. Change 5: does any judge verdict ask for a narration again or post a card (expected none), and does any posted narration talk about its own draft?
 8. Refrains: how many refrains does the scorecard count, against round 10's 30?
 
-_To write — the answer to each, with its evidence, or that the run did not answer it._
+1. **Change 1a — yes.**
+   - a46's YES is filed "established (the dice)": the consistency check's own line, and session 2's record [27].
+   - Session 3's opening carries it under What binds: "Is anyone left alive aboard the Cinder Wren? — the oracle answered YES (the dice)" (a50).
+   - a58 carries it as a [dice] line.
+   - The survivor itself is not shown again after a46 (the cold read).
+2. **Change 1b — the plan's text, yes; the told facts, no.**
+   - None of the plan's own words ("The raids are run by Foreman… feeding the pirates routes and schedules") reaches any call after a79 ✓.
+   - Nor does what the narration told: a79's reply gave two truths about Foreman, and neither is in any later prompt. Session 3's record holds the beat as TOLD AS alone. Both recaps (a81, a92) are without the culprit — finding 1.
+   - Lore pending could not be checked: the run keeps no Lore store.
+   - The detection drafted "Foreman sold lane timings to raiders" from the narration's words, unconfirmed at a79. a80's detection prompt lists it as confirmed lore, by nothing the recording shows.
+3. **D1 — yes, with two gaps.**
+   - Ten rolled moves filed their stakes line as the dice's (a3, a6, a9, a23, a26, a32, a36, a38, a41, a75), with the oracle's answer beside them. a60's Repair filed nothing ✓.
+   - The narrator's 24 tagged truths are all `from: line`, each on its own basis; no `result` tag is read.
+   - But a weak hit filed the hit's words: "without trouble" (a26, finding 8).
+   - Take Decisive Action, which has no stakes line, filed only "a fight decided" (a39, finding 9).
+4. **Change 2 — yes, but one call never had them.**
+   - The customs clerk is "(he/him)" in every fact block from a26 to a90. That holds across both breaks: a50's opening frame, and a94's.
+   - It holds in every narration but one: a94's clock vignette, "goes back to her slate". Its request carried no scene block with him (finding 7).
+   - The measure of the logged check over the kept run gives one flag, a90, and it is wrong: Tamsin's "she adds" (finding 16). It cannot see a94, where he is "berth clerk".
+   - The audit's identity card was given Mira's pronouns and held the clerk's "his" to them (a39, finding 6).
+5. **Change 3 — yes, for what was reached.**
+   - a60's Repair is a weak hit: "Whatever the hull will be when you finish, it is not yet that" — the work begun, its points unspent ✓ (R2).
+   - No weak hit whose outcome names no cost was asked for one (a32, a60, a75) ✓ (R1).
+   - The points were never spent, so "until they are spent" was not reached.
+   - a82's @scene answer keeps the work unfinished ✓. Session 3's summary tells it done, and on the cutter, the wrong ship (finding 17).
+6. **Changes 3b and 4 — the plan, yes; the milestones, one of two; the culprit line, not reached.**
+   - The plan named one person the story had met (a3): Foreman, a drafted job title (finding 2).
+   - a76's milestone request carried [clue] c3, and the narration told it ✓.
+   - a40's milestone, marked from the victory card, had no narration and told no clue (finding 15). The plan's c1 and c2 were shown anyway (by a26 and a57).
+   - The culprit was not new, so no [culprit] line was owed. The fulfilment hit, so its escalation was not reached.
+7. **Change 5 — yes.**
+   - Eight judge calls and one flag, a65's [whereabouts]. That flag is wrong: "Come to the Spire" is an invitation, not an arrival. It asked nothing again, and the judge posted no card ✓.
+   - No narration was asked again, so no redraft was posted. The drafting check flags none of round 11's narrations (`judgeOnlyLogs.test.js`) ✓.
+   - The audit's older kinds, which keep their card, posted two, both false (a39, a46; finding 6).
+8. **Refrains — 31, against round 10's 30: unchanged, as expected,** since no refrain fix shipped (Part 7's line waits on its step 5).
+   - That is 31 words and phrases, names apart, in a third or more of a session's narrations: 4/14/13 against 7/15/8.
+   - Endings on someone waiting, watching or still: 20 of 48, against 11 of 45.
+   - The standing cast is in plain sight: the clerk in 10 of session 2's 14 narrations and 16 of session 3's 24, and the dockhand's hauling in 11 of 16 (a59–a74).
 
 | Dimension | Result | Basis | Trust |
 | --- | --- | --- | --- |
@@ -1358,5 +1457,50 @@ Per action: $0.0336. Per line of play: $0.0671.
 
 ## The reading
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Issue #402 in play.** Each fix is listed in `review-notes.md` as held, broke or not reached. The changes held where the run reached them:
+- the oracle's answer bound;
+- the dice's lines were filed by code;
+- the clerk's pronoun crossed both breaks;
+- the Repair was told begun;
+- the plan named someone met, and a milestone told its clue;
+- no judge verdict acted.
+
+Two did harm at their seams:
+- **The reveal.** Change 1b stopped the plan's text reaching the record. Now nothing of the reveal reaches it either, so the vow's answer is lost from every recap (finding 1).
+- **The plan's "met".** It counts a detection draft named by a job title, so the culprit is "Foreman" (finding 2).
+
+Not reached:
+- a culprit new to the story;
+- a missed fulfilment;
+- a who-vow re-asked;
+- a redraft;
+- a Repair's points spent.
+
+**What is new, and readable from the run's own prompts** (change 6 kept them):
+- the reply format's example name told as a character (3);
+- a connection with no place, narrated on another station (5);
+- the clock vignette, given no scene block (7);
+- the weak hit and the fight's end, filed without their outcome (8, 9).
+
+The audit's two older kinds now have a record of 2 cards, 0 right (6).
+
+**Charter's or the run's:** the dice, the 4/10 fulfilment, the six Develop lines, the questions, the unanswered reward card.
+
+| Dimension | Reading |
+| --- | --- |
+| Goal and mechanics | 27 of 27 beats, 1,445 checks, none violated — high. |
+| Continuity, the narrator | Every counted @scene answer right. F4 lost, rightly: Tamsin's estimate of the tide was given as the promise. But the vow's answer is not in the record (1), and Tamsin was placed on the wrong station (5). |
+| Continuity, the helpers | The recaps omit the culprit (1). They say "without trouble" for a weak hit (8) and "decided" for a won fight (9). Session 3's summary has the Repair done, on the wrong ship (17). |
+| Agency | The player's shots were undone (4), and moves were rolled or offered nine and nine. |
+| Narrator quality | The refrains are unchanged (31). The openings keep their jokey voice. One clue paid off well (a76). Quint and Foreman came from the prompt's example and a job title. |
+| Speed and cost | p50 10.3 s a line; $3.16 — the module $2.20, the test's own models $0.96. |
+
+**What it cost and what it returned.** $3.16 bought 17 findings:
+- **Needed live play** (each turned on what the model wrote, and then read from its call): 1–7, 10, 12, 13 and 14.
+- **Were the record's:** 8, 9, 11, 15, 16, 17.
+- **Could have been had for nothing:**
+  - Finding 3: round 8's "Quint Row" was the same leak, and a search of the kept narrations for the format's example names finds both.
+  - Finding 1's cause is open to a free replay of a79's reply through the sidecar.
+
+**Where the next dollar goes:** the round-11 fixes, then this charter again. Part 7's step 5 and the scope's three scenario runs a fix wait on the maintainer's go-ahead. No dollar should go to a run before findings 1 and 2 are fixed: every vow's ending is told to the recap through them.
 

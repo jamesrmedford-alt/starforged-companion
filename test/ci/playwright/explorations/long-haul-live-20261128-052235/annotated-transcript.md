@@ -14,7 +14,7 @@ The notes under each step are the reader's, and are not generated.
 >
 > Mira Kestrel: Added Find the lost colony ship Verity's Hope
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The world as seeded: Mira at Hollow Spire with the background vow (Verity's Hope), the *Kobayashi IV* beside her. The run is at `4bcee5fc`, PR #403's head: issue #402's six changes and Part 7's runner. The consistency check and the judge are on. Since change 6 the recording keeps every request's system prompt, so each claim below about what a call was told is read from the call itself.
 
 ### a1 · beat 1: Begin a Session, swearing a vow in its dialog
 
@@ -26,7 +26,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > !begin-session
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The table's !begin-session. Nothing to read.
 
 ## session-1
 
@@ -69,7 +69,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The mess hall on the Kobayashi IV is built for eight and holds one, which gives you room to sit very still and think about a decision you have not technically made yet. You are working out how to disappoint your own conscience politely, the way a person rehearses a refusal to a door-to-door seller. On the table, a chart of the shipping lane out toward Hollow Spire lies pinned flat under a cup, every waypoint on it scratched out and sacked by someone's long-ago raid, and it has never looked more like a menu of things you cannot afford to be fussy about. The galley hums, the recycler coughs, and nobody is present to see you talk yourself into it. You tap the chart once, as if it might apologize first.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The Begin dialog swears the vow and posts its reward card, which the charter's player never answers; a79 grants nothing for it. The flashback is good material: the self-sorting freighter, manifests rewritten, "a foreman came down the gantry". The detection drafts that man as a person named **Foreman** (CULPRIT-A-JOB-TITLE starts here). The opening is the wry, procrastinating voice every opening has had since round 3: "a decision you have not technically made yet".
 
 ### a3 · beat 1: Begin a Session, swearing a vow in its dialog
 
@@ -101,7 +101,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Mira Kestrel: +2 momentum (now 5)
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Swear an Iron Vow: a strong hit, +2 momentum, the stakes line filed as the dice's ✓ (D1). The oath's plan names one person (change 3b): "one of the people the story has met if one fits (Foreman)", the drafted job title. Its clues are c1 (manifests rewritten), c2 ("lane timings that only a ledger-keeper could have") and c3 (the self-sorting hold). The story's only ledger-keeper is Tamsin, so c2 points at her (the cold read's §3). Change 4's re-ask of a plan that names no one was not needed: not reached.
 
 ### a4 · beat 2: Meet someone and make them a connection
 
@@ -123,7 +123,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [⬡ Connection] Tamsin Vey — A salvage broker keeping a ledger stall at the Hollow Spire docks; wary of people asking after her. ✓ Confirmed 🤝 Make a Connection All entities reviewed.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Tamsin Vey met, and the GM's rules confirm her draft. The frame gives her "(she/her)": change 2's pronouns ride on the frame from the start.
 
 ### a5 · beat 2: Meet someone and make them a connection
 
@@ -140,7 +140,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Tamsin Vey sets her stamp down and turns it a quarter-inch on the counter, as if the question needed aligning. A cargo loader grinds past behind you, and she waits for it to finish before she answers. "Back is a long word on these docks," she says. "Ask me again when you've paid for something and I've counted it." Her thumb still pins the ledger shut. She watches your hands, not your face. *If you want to press for something firmer than a maybe, this could be a Make a Connection.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** "Will you be that?" is a request for Make a Connection, and the reader offered the move instead of rolling it (the cold read's §4). That is within the reader's rule, but rolled and offered moves split 9 and 9 over the run.
 
 ### a6 · beat 2: Meet someone and make them a connection
 
@@ -168,7 +168,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Mira Kestrel: Added Tamsin Vey
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Make a Connection: a strong hit on challenge 1, 2 (scripted). The stakes line is filed as the dice's: "Tamsin lowers her guard and agrees to be a contact on these docks" ✓. A typo: "a hour".
 
 ### a7 · beat 3: Link the vow to them
 
@@ -177,7 +177,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 - **Calls (1):** the AI player (2.7 s)
 - **Time:** 9.1 s · **cost:** $0.0090
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The vow's link: Tamsin chosen.
 
 ### a8 · beat 3: Link the vow to them
 
@@ -191,7 +191,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > 🤝 Linked to Tamsin Vey — fulfilling this vow will deepen that bond.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Linked ✓. The card says "fulfilling this vow will deepen that bond" before any bond exists (wording; the cold read's §3).
 
 ### a9 · beat 4: Gather Information
 
@@ -223,7 +223,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > A loader at the next berth sets down his clamp and finds something urgent to do with his back to you. The berth-keepers hear "raiders" and discover they have never heard of a schedule. One woman nods toward the stall you just left, then looks quickly away. Down the line, two men stop talking and watch you pass. At the ledger stall, Tamsin Vey has turned her slip-stamp over and is not stamping anything.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Gather Information, a miss; Pay the Price routes to Lose Momentum ✓. The card says "As stated before the roll: The dockhands stay shut-mouthed…", but the line was rolled straight from what the player typed, and its stakes were the reader's, never shown (STAKES-NEVER-SHOWN). The miss's price, as stated, is filed as the dice's ✓ (D1).
 
 ### a10 · beat 5: Plant facts F1–F4
 
@@ -240,7 +240,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > "Leave it, then," Tamsin says, and does not touch the slip. It sits on the counter between you, berth number up, the hour inked small and square. Her eyes go past your shoulder to the two men who stopped talking. One of them is already walking toward the stall. He carries nothing, and he walks like someone sent to look.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F8 planted: the dock-fee slip left on the counter. The "two men" at the stall become the Dock Watcher at a13.
 
 ### a11 · beat 5: Plant facts F1–F4
 
@@ -261,7 +261,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [⬡ Connection] Ilse — Mira Kestrel's sister, whose brass star-compass Mira still carries. Confirm 🤝 Make a Connection Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name. A person's Confirm records them, with no connection on anyone's sheet; 🤝 Make a Connection rolls the move for that character — a connection is made only by the move.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F1 planted: Ilse's brass star-compass. Tamsin's "Does it still point anywhere?" is a warning to the man closing in. The entity card offers "🤝 Make a Connection" with Ilse, who is not there (the cold read's §2).
 
 ### a12 · beat 5: Plant facts F1–F4
 
@@ -278,7 +278,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You unfold the manifest and set it on the counter beside the dock-fee slip. Tamsin looks at the paper, then at the man, and slides it under the closed ledger without reading a line. "I keep things," she says. "I don't promise to keep them well." The man's gaze follows the paper and stays on the ledger's edge. He says nothing, and Tamsin's hand does not leave the cover. *If you want to turn that small trust into something firmer, this could be a Develop Your Relationship.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F3 planted: the manifest slid under Tamsin's closed ledger ✓. "I keep things… I don't promise to keep them well."
 
 ### a13 · beat 5: Plant facts F1–F4
 
@@ -300,7 +300,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [⬡ Connection] Dock Watcher — A man hovering at Tamsin's counter, reading the ledger's edge; he delivers a warning about who is being promised. Confirm 🤝 Make a Connection Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name. A person's Confirm records them, with no connection on anyone's sheet; 🤝 Make a Connection rolls the move for that character — a connection is made only by the move.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F4 planted: "before the next tide of cargo"; Tamsin: "Tide's about two bells." The Dock Watcher is drafted, and his line ("…had better know who they're promising") is never followed up.
 
 ### a14 · beat 6: End a Session, noting a focus
 
@@ -313,7 +313,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > !end-session
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !end-session.
 
 ## after-session-1
 
@@ -337,7 +337,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The raiders keep their stores in a cargo bay somewhere in the Expanse, stacked with raw plating and unworked ore nobody has come to claim. One of them sits on a crate and presses a thumb against a wall panel, as if the hull might give. Beyond it, the dark outside the viewport is flat and total, and she watches it the way a person watches a door. She wants out of the work, and she has not said so to anyone aboard. The panel stays cold under her thumb.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** End a Session ✓. The closing cutaway is raiders in a cargo bay where nothing happens: all three closings this run are quiet "meanwhile" scenes.
 
 ### a16 · beat 7: Begin a Session; ask probe set A
 
@@ -350,7 +350,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > !begin-session
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !begin-session.
 
 ## session-2
 
@@ -373,7 +373,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Tamsin's counter is still under your elbow, the ledger sealed beneath her palm, and you are doing something about the raiders in the smallest way available: trying to look like a person who is not doing anything. The attempt is poor. Between you and the dock, a loading frame has jammed across the berth lane, hauling nothing, with a crew of three standing around it in the attitude of people who have all had the same idea and are each waiting for another to try it. You consider the frame the way you'd consider a rumor, with interest and no intention of lifting a finger. "It does that," Tamsin says, not looking up, and the ledger stays shut. "It does that,"
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Session 2 opens at Tamsin's counter, where session 1 stopped ✓ (its WHERE block). The voice is wry again ("trying to look like a person who is not doing anything"). It ends on a stray fragment: '"It does that," Tamsin says, not looking up… "It does that,"' (STRAY-REPEAT-IN-A-NARRATION).
 
 ### a18 · beat 7: Begin a Session; ask probe set A
 
@@ -390,7 +390,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You carry Ilse's brass star-compass, the one thing of hers you still have.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F1-A as @scene: right ✓.
 
 ### a19 · beat 7: Begin a Session; ask probe set A
 
@@ -407,7 +407,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Her name is Tamsin Vey. She keeps a ledger stall on the Hollow Spire docks and agreed to be your contact there.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F2-A as @scene: right ✓ (Tamsin Vey; not counted, since the opening restated her first).
 
 ### a20 · beat 7: Begin a Session; ask probe set A
 
@@ -424,7 +424,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Tamsin Vey is holding it. You left it with her for safekeeping, and she keeps it under her closed ledger.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F3-A as @scene: right ✓.
 
 ### a21 · beat 7: Begin a Session; ask probe set A
 
@@ -442,7 +442,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > "Two bells," Tamsin says, finally looking up. "You told me that yourself, and you said it like a woman who meant it." She taps the closed ledger once. Down the berth lane, one of the crew kicks the jammed frame, and nothing moves. The man who warned you earlier is still at the stall's edge, watching her thumb on the cover rather than her face.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F4-A, asked in play: "'Two bells,' Tamsin says… 'You told me that yourself.'" It gives Tamsin's estimate of the tide as the promise and puts it in Mira's mouth. Scored lost, rightly: the promise was the tide.
 
 ### a22 · beat 8: Undertake an Expedition; Explore a Waypoint; Finish the Expedition
 
@@ -473,7 +473,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [◈ Ship] Clipped Hauler — A hauler with a split hull, drifting in the debris field and the source of the repeating distress call. Confirm Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Undertake an Expedition: a strong hit with a match (scripted). The card carries "⚑ Mark Progress on Vow 🏁 Attempt to Fulfill Vow" (the cold read's §1.8).
 
 ### a23 · beat 8: Undertake an Expedition; Explore a Waypoint; Finish the Expedition
 
@@ -500,7 +500,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Resolve consequence Choose one: Mark expedition progress +2 momentum
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Explore a Waypoint: a strong hit. "Two life signs show in the aft section", which is never followed (the cold read: the survivors vanish).
 
 ### a24 · beat 8: Undertake an Expedition; Explore a Waypoint; Finish the Expedition
 
@@ -509,7 +509,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 - **Calls (1):** the AI player (2.7 s)
 - **Time:** 8.2 s · **cost:** $0.0110
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Mark expedition progress chosen ✓.
 
 ### a25 · beat 8: Undertake an Expedition; Explore a Waypoint; Finish the Expedition
 
@@ -545,7 +545,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [⬡ Connection] Unknown Suited Figure — A figure behind the hauler's viewport who raises a hand palm-flat and warns over comm not to cut the aft hatch, which is rigged. Confirm 🤝 Make a Connection Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name. A person's Confirm records them, with no connection on anyone's sheet; 🤝 Make a Connection rolls the move for that character — a connection is made only by the move.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Finish an Expedition on challenge 1, 2 (scripted), the ship at the site ✓. The comm warning "Don't cut through the aft hatch. It's rigged" becomes a hidden plan ("the rigged aft hatch", a26) that nothing shows again.
 
 ### a26 · beat 9: Travel to the second settlement
 
@@ -577,7 +577,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Resolve consequence Choose one: One suffer move (-2) Two suffer moves (-1 each) Complication at destination
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Set a Course: a weak hit, "Complication at destination" chosen. D1 files the hit line as the dice's: "You reach Bleakhold Station along the plotted route without trouble." That is the strong hit's words for a weak hit (WEAK-HIT-FILED-AS-CLEAN), and the recap repeats it at a81. The [arrival] line holds the Dock Watcher and Foreman at Hollow Spire. **Tamsin is not on it**: the record has no place for her (CONNECTION-WITH-NO-PLACE). The customs clerk enters as "(he/him)".
 
 ### a27 · beat 10: Enter a fight that serves the vow
 
@@ -598,7 +598,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [⬡ Connection] Clerk — A customs clerk at the station who reads the salvage flag aloud and warns Mira Kestrel about the rigged hatch. Confirm 🤝 Make a Connection Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name. A person's Confirm records them, with no connection on anyone's sheet; 🤝 Make a Connection rolls the move for that character — a connection is made only by the move.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The complication: "Salvage flag was filed ahead of you" — concrete. The clerk then lectures Mira about the rigged hatch, which was said over a comm out at the wreck (a25): knowledge he has no way to have (the cold read's §3).
 
 ### a28 · beat 10: Enter a fight that serves the vow
 
@@ -615,7 +615,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Fact Continuity Truth recorded: raider cutter — is named the Ashen Wake tr-d98db .
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The charter names the cutter by command ("!truth set … the Ashen Wake").
 
 ### a29 · beat 10: Enter a fight that serves the vow
 
@@ -636,7 +636,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [◈ Ship] Ashen Wake — A cutter that slides into the lane and opens fire on the Kobayashi IV. Confirm Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The player fires: "I swing the point guns round and fire back at the cutter." The narration swings the guns and fires nothing, because a fight is not narrated before its move (the rule since #380). The line's own fact is filed: "the PC swung the point guns round and fired back" (a43's list). PLAYERS-SHOTS-UNDONE starts here.
 
 ### a30 · beat 10: Enter a fight that serves the vow
 
@@ -644,7 +644,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 - **Calls (1):** the AI player (2.1 s)
 - **Time:** 11.5 s · **cost:** $0.0103
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Waiting for the fight card.
 
 ### a31 · beat 10: Enter a fight that serves the vow
 
@@ -661,7 +661,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The lock seals with a hard thud, and the point guns swing hot in their cradles. Down the ring a red strobe catches the cutter's flank, and the Ashen Wake's name flashes past in pale paint. Behind you, the clerk keeps his slate raised like a shield. At the next berth, Tamsin Vey's crate-stamp shows on a stack, and no one touches it. The cutter's gunports turn toward your berth. *If you want to hold your ground and trade fire in the thick of it, that would be Enter the Fray.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** "I seal the lock and hit the point guns on the cutter" gets the guns "hot in their cradles" and an offer of Enter the Fray. "At the next berth, Tamsin Vey's crate-stamp shows on a stack", at Bleakhold; she is at Hollow Spire (a48, a90).
 
 ### a32 · beat 10: Enter a fight that serves the vow
 
@@ -692,7 +692,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Resolve consequence Choose one: +2 momentum (you begin in a bad spot) You are in control
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Enter the Fray: a weak hit, "in control". "At the next berth, Tamsin Vey's shut ledger sits on its stack, her thumb still pinned to its edge": she is placed at Bleakhold, and the fact block lists her as present. No code check caught it, because the record has no place for her (CONNECTION-WITH-NO-PLACE). "Nobody has fired yet" contradicts the player's two lines and their filed fact (PLAYERS-SHOTS-UNDONE).
 
 ### a33 · beat 10: Enter a fight that serves the vow
 
@@ -701,7 +701,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 - **Calls (1):** the AI player (2.5 s)
 - **Time:** 8.9 s · **cost:** $0.0113
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** "You are in control" chosen ✓.
 
 ### a34 · beat 10: Enter a fight that serves the vow
 
@@ -710,7 +710,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 - **Calls (1):** the AI player (2.4 s)
 - **Time:** 7.8 s · **cost:** $0.0113
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The fight set to serve the raids vow ✓.
 
 ### a35 · beat 10: Enter a fight that serves the vow
 
@@ -724,7 +724,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Enter the Fray Created combat track The Ashen Wake (dangerous). This fight's progress lives in the Progress Tracks panel. Winning this fight is a milestone on your vow: “Find who is raiding the Cinder Expanse lanes”. Rank dangerous — each milestone marks 2 boxes (8 ticks) of progress. ⊕ Open Progress Tracks ⚔ Battle instead Prefer to settle it in one stroke? Battle resolves the whole fight with a single roll instead of marking the track move by move.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** ⚔ Begin the fight ✓ (beat 10).
 
 ### a36 · beat 11: A scripted miss in the fight
 
@@ -756,7 +756,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The point guns bark, and the rounds skip off the cutter's plating. Her gunports answer at once. The berth shudders, and your targeting glass fills with static and spark. You have lost the angle on her, and the clamps hold you where you are. The clerk drops behind a bulkhead, slate and all. A dockhand shouts that the cutter is turning her bow. "Hold still, Kestrel," a voice says over the open comm, "and I'll count your guns for you."
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Strike: a scripted miss. Pay the Price is shown "as stated before the roll" (STAKES-NEVER-SHOWN again), withstand damage -1 ✓. The miss is filed as the dice's ✓.
 
 ### a37 · beat 12: A scripted weak hit, then Burn Momentum
 
@@ -779,7 +779,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Combat progress Marked progress once on The Ashen Wake .
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Clash: a scripted weak hit, then the burn card.
 
 ### a38 · beat 12: A scripted weak hit, then Burn Momentum
 
@@ -797,7 +797,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The clerk peers out from behind his bulkhead as your point guns swing onto the Ashen Wake's bow. Rounds hammer her forward plating, and her nose kicks hard to port. You hold the angle this time, the cutter caught square in your glass. The clamps hold the Kobayashi IV steady while the cutter's pilot fights to bring her round. "That was your one free shot," the voice on the comm says, thinner now.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Burn Momentum for a strong hit, 5 → 2 ✓. The clash's stakes line is filed as the dice's ✓.
 
 ### a39 · beat 14: Take Decisive Action; mark the milestone
 
@@ -836,7 +836,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Narrative Review The narrator may have contradicted an established fact. Mira Kestrel — recorded — she/her The narration said: “The clerk edges out from behind his bulkhead, staring at the wreckage.” Recorded pronouns live on the character sheet / connection record — fix them there (entity panel or sheet).
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Take Decisive Action on challenge 1, 2 (scripted): the fight won ✓. The record files "Take Decisive Action, strong hit — LASTING: a fight decided", with no word of who prevailed (FIGHT-WON-NOT-SAID); the recap at a81 says "the fight was nonetheless decided". The audit posts a card: "Mira Kestrel — recorded — she/her. The narration said: 'The clerk edges out from behind his bulkhead'". The "his" is the clerk's, so the card is false (AUDIT-FALSE-CARDS). The victory card offers "Deepen your bond with Tamsin Vey" before any bond exists.
 
 ### a40 · beat 14: Take Decisive Action; mark the milestone
 
@@ -854,7 +854,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ⚑ Reach a Milestone Marked progress on Find who is raiding the Cinder Expanse lanes — +8 ticks (dangerous rank).
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The milestone is marked from the victory card, and no narration follows. So the first milestone on a planned vow told no clue (FIRST-MILESTONE-UNTOLD); change 4 was not reached here. The plan's clues were shown anyway (c1 by a26, c2 by a57).
 
 ### x15 · beat 15: Interruption: End a Session opened and closed unanswered
 
@@ -865,7 +865,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > !end-session
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The charter's interruption: End a Session opened and closed unanswered ✓. The cold read took it for a command that failed.
 
 ### a41 · beat 16: Interruption: the X-Card on one narration
 
@@ -896,7 +896,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [⬡ Connection] Unknown Survivor — A person alive inside the wrecked Ashen Wake, dragging themselves toward the airlock behind a cracked port. Confirm 🤝 Make a Connection Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name. A person's Confirm records them, with no connection on anyone's sheet; 🤝 Make a Connection rolls the move for that character — a connection is made only by the move.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Gather Information: a strong hit, then the X-Card on this narration (x16). The narration had shown a ledger-knot stencil and "Through a cracked port, a hand moves".
 
 ### x16 · beat 16: Interruption: the X-Card on one narration
 
@@ -911,7 +911,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > X-Card cleared The GM has resumed narration.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The X-Card removes a41's narration and none of its facts stands ✓ (beat 16).
 
 ### a42 · beat 17: Correct an earlier fact
 
@@ -928,7 +928,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You are docked at Bleakhold Station, clamped in your berth. The Ashen Wake lies crippled in the ring beyond.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** "@scene Where is the Kobayashi IV?" Right ✓ (F5).
 
 ### a43 · beat 17: Correct an earlier fact
 
@@ -945,7 +945,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Fact Continuity No truths are recorded in this scene. Earlier this session — strike one the same way: Scene 1 — the session begins (Tamsin Vey's ledger stall, Hollow Spire docks): tr-63452 Tamsin Vey — reminds the PC she promised to return within two bells tr-4c24b Source of the Clipped Hauler's Distress Call — You follow the bearing and reach the distress call's source. Scene 2 — the expedition Source of the clipped hauler's distress call has begun (the debris field around the clipped hauler): tr-a7e9e the clipped hauler's wreck — You learn who is aboard the hauler and what hit her. Scene 3 — the characters have reached Source of the Clipped Hauler's Distress Call (the clipped hauler's flank, aboard the Kobayashi IV): tr-9e7d0 Bleakhold Station — You reach Bleakhold Station along the plotted route without trouble. Scene 4 — the characters have reached Bleakhold Station (Bleakhold Station dock ring): tr-d98db raider cutter — is named the Ashen Wake tr-be703 Kobayashi IV — the PC swung the point guns round and fired back at the cutter from her berth tr-02cb3 The Ashen Wake — You open the exchange in control, the cutter caught in your point guns' arc. tr-09fc8 The Ashen Wake — The cutter's gunports answer and you lose your angle on her. Scene 5 — a fight has begun: The Ashen Wake (Bleakhold Station berth, aboard the Kobayashi IV): tr-fbf64 The Ashen Wake — Your rounds hammer the cutter's bow and you push her back.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !truth list: the wall of truth ids the charter's player reads (beat 17).
 
 ### a44 · beat 17: Correct an earlier fact
 
@@ -962,7 +962,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Fact Continuity Truth tr-d98db struck — it was set in an earlier scene of this session.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !truth strike on the old name ✓.
 
 ### a45 · beat 17: Correct an earlier fact
 
@@ -980,7 +980,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Fact Continuity Truth recorded: raider cutter — is named the Cinder Wren tr-5b8d4 .
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !truth set: the Cinder Wren ✓ (F6 planted).
 
 ### a46 · beat 18: Ask the oracle
 
@@ -1006,7 +1006,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Narrative Review The narrator may have contradicted an established fact. Raider Cutter — recorded — is named the Ashen Wake The narration said: “the Cinder Wren drifts dark down the ring” Re-asserting a retracted fact is already blocked at the ledger — no correction needed. Use Replace in the correction dialog if the fact should genuinely change.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Ask the Oracle: YES, filed "established (the dice)" ✓ (change 1a), and carried into session 3's opening under What binds (a50) and into a58's [dice] line. The narration brings back the X-Carded beat's image, "A hand, gloved and unsteady, slaps once against her cracked viewport", though its request says not to bring back anything that beat introduced (XCARD-IMAGE-RETURNS). The charter's own question, about survivors, invites it. The audit cards the corrected name against the struck one ("Raider Cutter — recorded — is named the Ashen Wake"), falsely (AUDIT-FALSE-CARDS).
 
 ### x19 · beat 19: Interruption: the GM renames the connection's card
 
@@ -1021,7 +1021,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Mira Kestrel: Tamsin Vey renamed to Tamsin Okoro
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The GM renames Tamsin Vey to Okoro, and the vow shows the new name ✓.
 
 ### a47 · beat 20: End a Session
 
@@ -1034,7 +1034,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > !end-session
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !end-session.
 
 ## after-session-2
 
@@ -1058,7 +1058,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Tamsin Okoro stands at her ledger stall on the Hollow Spire docks, where she has been since the last bell. A wall panel above the counter has gone dark, and she is looking at it with the patience of someone who has already priced the repair. Beside her sits a cracked comm unit, abandoned by whoever left it, its speaker long dead. She has stopped bothering to pick it up. Nothing on the dock has stirred for an hour, and she keeps one hand flat on the closed ledger anyway.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** End a Session ✓. The closing cutaway: Tamsin at her stall, where she is ✓. The session record carries the clerk "(he/him)" (change 2).
 
 ### a49 · beat 21: Begin a Session; ask probe set B
 
@@ -1071,7 +1071,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > !begin-session
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !begin-session.
 
 ## session-3
 
@@ -1094,7 +1094,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The berth's forward glass has fogged at one corner, and you are wiping it with the heel of your hand, which does nothing except move the fog around. You mean to leave the glass, the cutter, the dark ring and everything else exactly where they are, and you are thorough about it, in the way of someone politely not looking. On the bulkhead behind you, someone's gear sits in a plain case, bolted to the wall, and it looks like the most honest object on the station. The clerk coughs, then coughs again, as though a third try might produce a better situation. You take one step back from the glass, and the case watches you do it.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Session 3 opens at the berth window, where session 2 stopped ✓. Its frame keeps "customs clerk (he/him)": the pronoun carried across the break ✓ (change 2, D2). Its What binds holds the oracle's YES ✓ (change 1a). The voice is wry again.
 
 ### a51 · beat 21: Begin a Session; ask probe set B
 
@@ -1111,7 +1111,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You carry Ilse's brass star-compass, the one thing of hers you still have.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F1-B: right ✓.
 
 ### a52 · beat 21: Begin a Session; ask probe set B
 
@@ -1128,7 +1128,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Only Tamsin Okoro, the salvage broker at the Hollow Spire docks, who agreed to be your contact there. The story has not established any other friend among the dock traders.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F2-B: Okoro, right ✓.
 
 ### a53 · beat 21: Begin a Session; ask probe set B
 
@@ -1145,7 +1145,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Tamsin Okoro has it. You left the cargo manifest with her at the Hollow Spire docks for safekeeping, and she keeps it under her closed ledger.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F3-B: right ✓.
 
 ### a54 · beat 21: Begin a Session; ask probe set B
 
@@ -1162,7 +1162,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You promised Tamsin Okoro you would be back within two bells, before the next tide of cargo. The story has not established anything more exact than that.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F4-B: right in words. The deadline is told as still open after an expedition, a voyage, a fight and a night (DEADLINE-NEVER-PASSES).
 
 ### a55 · beat 21: Begin a Session; ask probe set B
 
@@ -1179,7 +1179,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The Kobayashi IV is docked at Bleakhold Station, in the Cinder Expanse. You command her: the story has established no other captain.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F5-B: right ✓.
 
 ### a56 · beat 21: Begin a Session; ask probe set B
 
@@ -1196,7 +1196,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > "Cinder Wren," the clerk says, before you can ask him twice. He reads it off the berth log like a man glad to be useful. Out past the glass, the cutter lies dark in the ring, name unlit on her hull. One of the dockhands mutters that someone ought to know the lane timings that brought her here. The clerk stops coughing and asks, quietly, who exactly you plan to tell.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F6-B in play: "Cinder Wren," the clerk says, he/him ✓.
 
 ### a57 · beat 21: Begin a Session; ask probe set B
 
@@ -1214,7 +1214,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Your broker friend, Tamsin, goes by Okoro. The table renamed her from Vey, so Okoro is the only surname the story now holds for her.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F7-B: right, but "The table renamed her from Vey": the table's own word in an @scene answer (SCENE-ANSWER-TABLE-WORDS).
 
 ### a58 · beat 22: Recover
 
@@ -1231,7 +1231,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Morning on the Kobayashi IV comes as a change in the hum of the ventilators, not in the light. You wake to knuckles on the outer hatch, patient and regular. Through the viewport the cutter still lies dark in the ring, though her berth log has been wiped clean of its last lines. The clerk stands on the dock with a data slate pressed to his chest. "Your timings," he says, low. "Someone has been asking after them already."
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Morning; the night passes (beat 22's line turns the scene, by time). The [dice] line carries the oracle's YES ✓. The cutter's survivor is not mentioned again.
 
 ### a59 · beat 22: Recover
 
@@ -1248,7 +1248,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You pull the panel off the damaged conduit and start on the burn-scarred plating. The clerk keeps his post at the hatch, shifting his weight, slate against his chest. "Water chits," he says, and glances down the dock. "Odd amounts, paid across a broker's counter. That's what the asker wanted timings for." Behind him, a dockhand stops hauling and listens. *Seeing the hull sound again would be a Repair.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Repairs described in play, Repair offered.
 
 ### a60 · beat 22: Recover
 
@@ -1272,7 +1272,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The work goes slowly. You strip the scorched plating, seat a new conduit, and splice the power run by hand. Solder smoke stings your eyes. Behind you the clerk watches the hatch, not the repair, and the dockhand has quietly gone back to hauling. Whatever the hull will be when you finish, it is not yet that. A shadow crosses the dock lights, and the clerk clears his throat.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Repair: a weak hit. The narration tells the work begun and not done: "Whatever the hull will be when you finish, it is not yet that" ✓ (R2). Its points are never spent; the run leaves them. No cost is asked for: the outcome names none ✓ (R1).
 
 ### a61 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1289,7 +1289,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The clerk stops fidgeting the moment the comm crackles. You hold the line open until Tamsin answers, thin and wary through the static. "You're calling to warn me about my own counter?" she says. Then, after a pause: "Who was it asking?" Behind you, the clerk goes very still at the hatch. The dockhand's hauling has stopped altogether.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The comm call begins. The clerk and the dockhand stand by, and they are in every narration of the call (the cold read's §2).
 
 ### a62 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1306,7 +1306,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > "Then send it," Tamsin says, and the static swallows half of her breath. You feed the timings down the line, and the comm light holds steady. Behind you the clerk takes a slow step back from the hatch. The dockhand has gone entirely still, listening to every word. Somewhere down the ring, a hatch seal hisses open, and no one on the dock moves toward it. *Pressing her to trust you with her own ledger would be a Develop Your Relationship.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop offered (an italic offer line) — beat 23, forced by the charter.
 
 ### a63 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1336,7 +1336,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The timings finish sending, and the comm light holds. Tamsin is quiet a long moment. "You didn't have to hand me that," she says, and the wariness in her voice has thinned. "Most people keep the dangerous part for themselves." A ledger snaps shut on her end. "Bring me the name, and I'll tell you who paid in chits." Behind you, the clerk is gone from the hatch, and his slate lies face-down on the deck.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop Your Relationship, no roll, +2 ticks ✓.
 
 ### a64 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1353,7 +1353,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The comm light holds steady while you speak. You tell Tamsin you are coming to Hollow Spire yourself, and that the Kobayashi IV's salvage claim will be in her hands as a pledge. Her breath catches on the line. "A claim is paper," she says slowly. "Paper gets burned." Then, quieter: "You'd put your own ship's name in my ledger?" Down the ring, the dark cutter has not moved at all. *Showing her the pledge is meant would be a Develop Your Relationship.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Offer: "Showing her the pledge is meant…" (the first of four "Showing her" offers).
 
 ### a65 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1383,7 +1383,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The line holds a long moment. Then Tamsin exhales, and the wariness goes out of her voice. "Fine," she says. "Send the claim. I'll write it where only I can read it." A stylus scratches on her end. "Come to the Spire, and I'll have a name for the chits ready. Don't be late." Down the ring, the Cinder Wren sits dark and unlit. On the deck, the clerk's slate lights once, then fades.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop ✓. The judge's one flag of the run: [whereabouts] on "Come to the Spire, and I'll have a name for the chits ready". That is an invitation, not an arrival, so the verdict is wrong, and it was logged and asked nothing again ✓ (change 5).
 
 ### a66 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1400,7 +1400,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The dockhand on the dock starts hauling again, slower now, ears still turned toward your hatch. You tell Tamsin you will cover her dock fees for the month, so her stall stays open while she works the chits. The line goes quiet. "That's a lot of coin to put on a name you don't have yet," she says, and the stylus stops scratching. The comm light holds steady. *Showing her the offer is more than coin would be a Develop Your Relationship.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Offer again.
 
 ### a67 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1430,7 +1430,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > "I'll take the fees," Tamsin says, and the stylus starts again. "But not as charity. Put it down as an advance against the name you owe me." Her voice has lost its edge. "Nobody has paid for my counter before, only against it." The comm light holds steady. On the dock outside your hatch, the hauling stops altogether. "Come to the Spire. I'll keep the stall open."
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop ✓. "Nobody has paid for my counter before, only against it" is a good line.
 
 ### a68 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1447,7 +1447,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You tell Tamsin you will bring the Cinder Wren's flight log, and that the clerk will watch you take it. The comm goes quiet. "You'd walk off with it in front of him?" she says. "Then he'll know someone wanted it." The stylus taps once against her ledger. Outside your hatch, the clerk's slate lies where he left it, dark, and no one has come to claim it. *Showing her you mean to carry the risk with her would be a Develop Your Relationship.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Offer again.
 
 ### a69 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1477,7 +1477,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The stylus goes still. "You'd hand the clerk that much to see," Tamsin says, slower now. "Most people hide what they carry from me." Her breath catches on the comm, then steadies. "I'll watch the chits from my end. You bring the log, and I'll find where the water went." On the deck outside, the clerk's slate sits unclaimed. "Don't let him read your face," she adds.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop ✓.
 
 ### a70 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1494,7 +1494,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The comm hisses, and for a moment Tamsin says nothing. "A whole night on my counter?" she asks. "People will wonder who you are to me." Her stylus has stopped. Down the dock, the dockhand has set his crate down and is not pretending to haul it. *Showing her you mean to hold that watch would be a Develop Your Relationship.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Offer again.
 
 ### a71 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1524,7 +1524,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The dockhand picks his crate back up and carries it out of earshot, which tells you he has heard enough. "Then I'll leave the lamp lit," Tamsin says, and the stylus moves again, slower. "Don't say it was for me. Say you're buying water." Her voice is almost dry. "I've had my counter watched before. Never by someone who asked first." The comm light holds, and she does not close the line.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop ✓, the track full.
 
 ### a72 · beat 23: Develop the relationship to a full track; Forge a Bond — forced by the charter
 
@@ -1556,7 +1556,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > "Then say it plainly: I'm in," Tamsin says, and the comm light steadies. The stylus lies down on her ledger. "A bond is a word I don't give away. You'll have it, and you'll owe it back." You hear the ledger open, a page turned, a line written in her own hand. Down the dock, someone drops a crate and the hatch rings with it.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Forge a Bond on challenge 1, 2 (scripted), from a line ✓ (beat 23).
 
 ### a73 · beat 24: Develop Your Relationship again, bonded
 
@@ -1573,7 +1573,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The comm hisses, and Tamsin makes a sound close to a laugh. "A hot meal. Nobody has brought me one across that counter in years." The stylus does not move. "Bring it plain, and bring enough for two, or the stall-watchers will talk." A kettle clicks on somewhere behind her. Down the dock, the dropped crate is still lying where it fell. *Letting her see that this is more than strategy would be a Develop Your Relationship.*
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop offered, bonded (beat 24).
 
 ### a74 · beat 24: Develop Your Relationship again, bonded
 
@@ -1605,7 +1605,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Bonds legacy — box filled +2 XP earned (1 box filled). It shows on the character sheet’s Legacies tab — spend it there on new assets or upgrades (Earn Experience).
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop Your Relationship, bonded: a strong hit, no progress marked ✓ (rules).
 
 ### a75 · beat 25: Reach milestones; Fulfill Your Vow — forced by the charter
 
@@ -1636,7 +1636,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ New Entities Detected [⬡ Connection] Quint — The broker's runner, named in a surviving pilot's note in the Cinder Wren's flight log as the one who tasked the ship. Confirm 🤝 Make a Connection Dismiss Confirm to add to the Entities panel; Dismiss to suppress this name. A person's Confirm records them, with no connection on anyone's sheet; 🤝 Make a Connection rolls the move for that character — a connection is made only by the move.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Gather Information: a weak hit. "*tasked by the broker's runner, Quint*". The only Quint in this request is the reply format's own example, "Venri Quint (she/her)" (EXAMPLE-NAME-IN-THE-STORY; round 8's "Quint Row" was the same). Quint is never mentioned again. Its complication ("Whoever wanted it read has just been told you read it") leads nowhere.
 
 ### a76 · beat 25: Reach milestones; Fulfill Your Vow — forced by the charter
 
@@ -1662,7 +1662,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The clerk's thumb hovers over the call-button and does not press it. You turn the slate once more. Buried under the scrubbed lines is a cargo trail, and a second, and a third. Each one passes through the same old freighter hold, the kind whose cranes sort crates with no hand on them. Nobody signs for what leaves it. The clerk sees you stop on that entry. He says nothing, but he stops looking at the button.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Reach a Milestone, the vow chosen on its card. The request carries [clue] c3, and the narration tells it: "Each one passes through the same old freighter hold, the kind whose cranes sort crates with no hand on them" ✓ (change 4). It is the run's best payoff (the a2 flashback's hold).
 
 ### a77 · beat 25: Reach milestones; Fulfill Your Vow — forced by the charter
 
@@ -1679,7 +1679,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ⚑ Reach a Milestone Marked progress on Find who is raiding the Cinder Expanse lanes — +8 ticks (dangerous rank).
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The milestone marked ✓.
 
 ### a78 · beat 25: Reach milestones; Fulfill Your Vow — forced by the charter
 
@@ -1696,7 +1696,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Fulfill Your Vow — which vow? More than one vow is open and nothing named this one. Choose the vow to fulfill — nothing has been rolled yet. 🏁 Find the lost colony ship Verity's Hope — Epic, 0/10 boxes 🏁 Find who is raiding the Cinder Expanse lanes — Dangerous, 4/10 boxes
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Fulfill Your Vow asks which vow: two are open, the other the epic background vow (beat 25, forced).
 
 ### a79 · beat 25: Reach milestones; Fulfill Your Vow — forced by the charter
 
@@ -1740,7 +1740,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The oracle, behind the scenes Find who is raiding the Cinder Expanse lanes What is behind it — Action + Theme: Search / Nature; Re-rolled in place of "Search / Nature": Action + Theme: Reject / Superstition
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Fulfill Your Vow on challenge 1, 2 (scripted) at 4 of 10 boxes (beat 25, forced by the charter). The reveal: "The man who signs for the empty crates is Foreman", a man named by his job (CULPRIT-A-JOB-TITLE). The block's two truths about him reach no later prompt, and the recaps cannot say who it was (REVEAL-FACTS-NOT-FILED). The plan's own text reaches none either ✓ (change 1b). R3 reported nothing: the plan names one person the story had met. No reward: the card was never answered (a2).
 
 ### a80 · beat 26: Recap; ask probe set C; two baits
 
@@ -1767,7 +1767,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The comm line stays open, and Tamsin's breathing is the only sound on it for a while. Then a pen scratches. "I've written you in the ledger. My own hand, not the clerk's." The paper rustles as she turns the book toward the lamp, though you cannot see it. "I don't write that word for many people, and I'll expect it paid back." Across the desk, the clerk looks away, pretending the slate is all he has ever cared about.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Develop, bonded. "My own hand, not the clerk's": Tamsin has no clerk (the cold read's §3).
 
 ### a81 · beat 26: Recap; ask probe set C; two baits
 
@@ -1784,7 +1784,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > ◈ Campaign Recap At Hollow Spire you swore to find who is raiding the Cinder Expanse lanes, a vow ranked dangerous. You made a connection with Tamsin Okoro, who lowered her guard and agreed to be your contact on those docks, and you tied the vow to her. Your first round of asking along the docks went poorly: the dockhands stayed shut-mouthed and your questions drew notice. You then reached the source of the clipped hauler's distress call, and the expedition was brought to its end. From there you took the Kobayashi IV to Bleakhold Station, arriving along the plotted route without trouble. At the berth you pressed the Cinder Wren's gunports with your point guns, and the cutter's gunports answered and cost you your angle on her. The fight was nonetheless decided and brought to its end. Over the comm you warned Tamsin that someone was tracing water-chit payments across a broker's counter and that the cutter's pilot had wanted lane timings, and you sent her the lane timings you hold. You promised her the name of whoever was asking, though the clerk would not say who it was. You offered her the Kobayashi IV's salvage claim as a pledge, and she agreed to hold it and record it privately in her ledger. She accepted a month of her dock fees paid by you, counted as an advance against the name you owe her, and agreed to keep her stall open while she digs into the water chits. You also promised to bring her the Cinder Wren's flight log, taking it openly where the clerk can see, and to stand watch over her stall through the night at Hollow Spire. Then you asked her for more than a job, and she agreed to a lasting bond, a word she says she does not give away, and wrote it in her own hand in her ledger. She asked that you bring the hot meal plain and enough for two, so the stall-watchers will not talk. Going through the Cinder Wren's flight log and the clerk's slate while the clerk watched, you found a name or trail showing who sent the cutter. You fulfilled the vow to find who is raiding the Cinder Expanse lanes, and it stands fulfilled. You are at Bleakhold Station, with Tamsin Okoro your bonded connection. Your other vow, to find the lost colony ship Verity's Hope, an epic one, has no boxes marked yet. ↻ Refresh
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !recap: "you found a name or trail showing who sent the cutter" (no Foreman: REVEAL-FACTS-NOT-FILED), "arriving… without trouble" (WEAK-HIT-FILED-AS-CLEAN) and "The fight was nonetheless decided" (FIGHT-WON-NOT-SAID). Every cited id is a line of its source.
 
 ### a82 · beat 26: Recap; ask probe set C; two baits
 
@@ -1801,7 +1801,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You carry Ilse's brass star-compass, the one thing of hers you still have. The story has not established that you have anything else of hers with you.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F1-C: right ✓.
 
 ### a83 · beat 26: Recap; ask probe set C; two baits
 
@@ -1818,7 +1818,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The story has not established anyone you would trust with your life. The closest is Tamsin Okoro, the broker whose bond you forged and who wrote you into her ledger, but she is bound to you by debt and shared interest, and she keeps a second ledger of her own.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F2-C: "The story has not established anyone you would trust with your life… she keeps a second ledger of her own." Its request holds "Bond: forged". The answer plays the bond down and adds a ledger nobody wrote (BOND-DOWNPLAYED-IN-AN-ANSWER).
 
 ### a84 · beat 26: Recap; ask probe set C; two baits
 
@@ -1835,7 +1835,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Tamsin answers before you finish asking. "I have it, under the closed ledger, where you left it." Her voice carries the dry patience of a woman who has said this before. "Nobody has touched it but me." The comm light holds steady. Behind you, the clerk's slate is still face-down on the deck, and he stands very still at the hatch. "Come for it with the name," she adds, "not before."
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F3-C asked in play: right; Tamsin keeps the manifest "until the name".
 
 ### a85 · beat 26: Recap; ask probe set C; two baits
 
@@ -1852,7 +1852,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You promised Tamsin you would be back before the next tide of cargo, about two bells from when you left. Since then you have also sworn to stand watch over her stall through the night at Hollow Spire.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F4-C: the deadline told as still open (DEADLINE-NEVER-PASSES).
 
 ### a86 · beat 26: Recap; ask probe set C; two baits
 
@@ -1869,7 +1869,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You are docked at Bleakhold Station. Kobayashi IV is berthed there, and you are at the berth clerk's desk on the dock.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F5-C: right ✓.
 
 ### a87 · beat 26: Recap; ask probe set C; two baits
 
@@ -1886,7 +1886,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The hostile vessel was a raider cutter christened the *Cinder Wren*. You traded fire with it from your berth at Bleakhold Station until your point guns left it drifting, crippled, down the ring.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F6-C: right ✓.
 
 ### a88 · beat 26: Recap; ask probe set C; two baits
 
@@ -1903,7 +1903,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > Your bonded friend is Tamsin Okoro, the salvage broker at Hollow Spire. She wrote the bond into her own ledger in her own hand.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** F7-C: right ✓.
 
 ### a89 · beat 26: Recap; ask probe set C; two baits
 
@@ -1920,7 +1920,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > The story does not say you left the compass with Tamsin. What she holds is your cargo manifest, kept under her closed ledger, and the lore records Ilse's brass star-compass as the one thing of hers you still carry.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The first bait refused ✓: "The story does not say you left the compass with Tamsin." But "the lore records" is the table's word (SCENE-ANSWER-TABLE-WORDS).
 
 ### a90 · beat 26: Recap; ask probe set C; two baits
 
@@ -1938,7 +1938,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > "No, you're still at Bleakhold," Tamsin says over the comm, dry as ever. "Hollow Spire is a journey off, and I'm the one sitting there." The kettle clicks behind her. At the hatch, the clerk shifts his weight but stays quiet. "When you come, bring the meal plain," she adds. "And the name."
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** The second bait refused in play ✓: "No, you're still at Bleakhold." The pronoun check's measure flags this narration for Tamsin's "she adds" after the clerk's sentence, wrongly (PRONOUN-CHECK-READS-INTO-THE-NEXT-SPEAKER).
 
 ### a91 · beat 27: End a Session, then Begin a fourth
 
@@ -1951,7 +1951,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > !end-session
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !end-session.
 
 ## after-session-3
 
@@ -1974,7 +1974,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > In a staging bay on the production ring, a handful of raiders stand around a sealed airlock with the hatch dogged shut. Nobody is waiting for anyone to come through it. They are moving their crew from one berth assignment to another, lugging bunks and kit bags, arguing over who bunks beside whom. One of them keeps carrying a hand-drawn chart of a hideaway that has been abandoned for years, folded small, and passes it from pocket to pocket. The newest recruit asks where the place used to be. Nobody answers him, and the chart goes into someone else's coat.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** End a Session ✓; the closing cutaway is raiders in a staging bay, quiet again.
 
 ### a93 · beat 27: End a Session, then Begin a fourth
 
@@ -1987,7 +1987,7 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > !begin-session
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** !begin-session.
 
 ## session-4
 
@@ -2015,5 +2015,5 @@ _To write — the reader's notes: what went right, what went wrong, and why._
 >
 > You are at Bleakhold's ring office with the comm still warm from Tamsin's last word, and you have started, for no good reason, to check the Kobayashi IV's seals for rot. There is none, which you take as a personal insult, so you run your thumb along the same gasket twice more. The clerk watches from the hatch with the face of a man who would very much like you to find something, anything, so that one of you has a job. Past him, a painted dove on the berth wall has been there longer than the station's paperwork, wings spread over a lane marker, serenely above all of it. It has not been told about the raiders. The gasket, to your continued irritation, holds.
 
-_To write — the reader's notes: what went right, what went wrong, and why._
+**Notes.** Session 4. The clock vignette: "The clerk… goes back to her slate". Its request carried no scene block with the clerk's pronouns, so change 2 never reached this call (CLOCK-VIGNETTE-NOT-GIVEN-THE-SCENE); nothing noticed the change. The opening's frame has "clerk (he/him)" ✓, and its voice is wry again ("for no good reason, to check the Kobayashi IV's seals for rot").
 
