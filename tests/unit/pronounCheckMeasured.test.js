@@ -117,7 +117,7 @@ function measure() {
 }
 
 describe('the pronoun-change check, measured on the kept runs (issue #402, change 2)', () => {
-  it('flags eleven narrations over the eleven kept long hauls, every one a real change', () => {
+  it('flags twelve times over the twelve kept long hauls: eleven real changes, and round 11\'s a90, which is not', () => {
     expect(measure()).toEqual([
       // Round 6: the customs officer, "she" at a41 and a48 — right.
       '20261125-232143 a60 customs officer: she/her → he',
@@ -132,6 +132,10 @@ describe('the pronoun-change check, measured on the kept runs (issue #402, chang
       '20261127-202557 a60 customs clerk: she/her → his',
       '20261127-202557 a64 customs clerk: she/her → his',
       '20261127-202557 a66 customs clerk: she/her → his',
+      // Round 11: wrong. "At the hatch, the clerk shifts his weight but stays quiet. 'When you come,
+      // bring the meal plain,' she adds" — the "she" is Tamsin's, on the comm; the check reads on into
+      // the next sentence (PRONOUN-CHECK-READS-INTO-THE-NEXT-SPEAKER). The clerk was he/him all run.
+      '20261128-052235 a90 Clerk: he/him → she',
     ]);
   });
 
