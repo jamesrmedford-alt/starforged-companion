@@ -21,6 +21,11 @@
  * (issue #300 F06). Each body reader on the returned Response now races the
  * same deadline (and stops the timer when it settles); a caller that reads
  * `res.body` itself is bounded too — the deadline aborts the request.
+ *
+ * A caller may cancel the request sooner with its own `init.signal` (issue
+ * #399's audit N7: the narration's judge gives up at 4 s, and its request ran
+ * on to this deadline, billed and in the API Log). A cancel rejects with an
+ * error named `AbortError` saying so, never as a timeout.
  */
 
 const MODULE_ID = "starforged-companion";
@@ -57,12 +62,26 @@ export async function fetchWithTimeout(
 
   const controller = new globalThis.AbortController();
   const seconds    = Math.round(timeoutMs / 1000);
+  // The caller's own cancel, if it gave one: it aborts the request too.
+  const external   = init?.signal ?? null;
+  const onCancel   = () => controller.abort();
+  if (!external?.aborted) external?.addEventListener?.("abort", onCancel, { once: true });
   const deadline   = {
     expired: false,
     reject:  null,
     timeoutError() {
       console.warn(`${MODULE_ID} | fetchWithTimeout: ${label} timed out after ${seconds}s (${url})`);
       return new Error(`${label} timed out after ${seconds}s`);
+    },
+    cancelled() { return external?.aborted === true && !this.expired; },
+    cancelError() {
+      const err = new Error(`${label} cancelled by its caller`);
+      err.name = "AbortError";
+      return err;
+    },
+    done() {
+      clearTimeout(this.timer);
+      external?.removeEventListener?.("abort", onCancel);
     },
   };
   // Rejects at the deadline; raced by the fetch and by every body reader.
@@ -74,11 +93,17 @@ export async function fetchWithTimeout(
     deadline.reject(new Error("deadline"));
   }, timeoutMs);
 
+  // Cancelled before it began: no request is sent.
+  if (external?.aborted) {
+    deadline.done();
+    throw deadline.cancelError();
+  }
   let res;
   try {
     res = await Promise.race([fetch(url, { ...init, signal: controller.signal }), deadline.promise]);
   } catch (err) {
-    clearTimeout(deadline.timer);
+    deadline.done();
+    if (deadline.cancelled()) throw deadline.cancelError();
     if (deadline.expired || err?.name === "AbortError") throw deadline.timeoutError();
     throw err;
   }
@@ -88,7 +113,7 @@ export async function fetchWithTimeout(
 /** Wrap the Response's body readers so each races the request deadline. */
 function bindBodyToDeadline(res, deadline) {
   if (!res || typeof res !== "object") {
-    clearTimeout(deadline.timer);
+    deadline.done();
     return res;
   }
   for (const method of ["json", "text", "arrayBuffer", "blob"]) {
@@ -98,10 +123,11 @@ function bindBodyToDeadline(res, deadline) {
       try {
         return await Promise.race([read.call(res), deadline.promise]);
       } catch (err) {
+        if (deadline.cancelled()) throw deadline.cancelError();
         if (deadline.expired || err?.name === "AbortError") throw deadline.timeoutError();
         throw err;
       } finally {
-        clearTimeout(deadline.timer);
+        deadline.done();
       }
     };
   }

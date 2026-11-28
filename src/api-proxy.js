@@ -36,14 +36,15 @@ const MODULE_ID = "starforged-companion";
  *   sets no `thinking` is sent with its model's thinking-off form
  *   (narration/thinking.js): every call here is a short reply or a narration
  *   sized by `max_tokens`, and Haiku 5.5 / Sonnet 5.5 think by default.
- * @param {{ label?: string|null }} [opts] — `label`: what made the call, for
+ * @param {{ label?: string|null, signal?: AbortSignal|null }} [opts] — `label`: what made the call, for
  *   the API Log ("pacingClassifier", "narrator:narrateResolution", …). The log
  *   named the model alone, so the ability scanner's call could not be told
- *   from the classifier's (issue #354 P2-24).
+ *   from the classifier's (issue #354 P2-24). `signal`: the caller's own
+ *   cancel; an aborted call rejects with an error named `AbortError`.
  * @returns {Promise<Object>}
  * @throws {Error} on network failure or non-2xx response
  */
-export async function apiPost(url, headers, body, { label = null } = {}) {
+export async function apiPost(url, headers, body, { label = null, signal = null } = {}) {
   if (!url.includes("api.anthropic.com")) {
     // Defensive: this helper is Anthropic-only by design. Image generation
     // has its own helper (src/art/openRouterImage.js). Catching unknown hosts
@@ -77,6 +78,8 @@ export async function apiPost(url, headers, body, { label = null } = {}) {
       ...normalisedHeaders,
     },
     body: JSON.stringify(body && body.thinking === undefined ? { ...body, ...thinkingOffFor(body.model) } : body),
+    // A caller's own cancel (the narration's judge, at its cutoff — issue #399's audit N7).
+    ...(signal ? { signal } : {}),
   }, { label: "Anthropic request" });
 
   if (!res.ok) {

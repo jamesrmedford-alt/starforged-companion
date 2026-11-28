@@ -201,6 +201,7 @@ const UNRECORDED = {
   'record.append':             'the record\'s own relay',
   'narrator.sidecar':          'truth.set at the ledger save',
   'narrator.summary':          'a summary relayed to the GM to store — no play',
+  'telemetry.consistency':     'a co-GM\'s Consistency Check telemetry row, written by the canonical GM — no play',
   'draft.confirm':             'entity.confirmed',
   'draft.dismiss':             'a dismissal is never recorded',
   'draft.newPerson':           'entity.confirmed',

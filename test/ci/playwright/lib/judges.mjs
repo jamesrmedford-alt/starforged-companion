@@ -1,0 +1,497 @@
+// The narration's judges, measured (issue #399, D6).
+//
+// Two passes judge a narration with a small model. The pre-post judge
+// (src/moves/contracts/checks.js judgeNarration) is asked about the lines its
+// trip words trip, before the narration posts. The post-narration audit
+// (src/factContinuity/consistencyCheck.js) is asked about every line but a
+// certain one, after. Neither had been scored: the long haul's ninth round
+// was their first evaluation, and every one of the eleven findings they acted
+// on there was wrong.
+//
+// This builds the labelled set they are scored on and scores them:
+//   - every narration the kept long hauls recorded with the lines it was
+//     given (rounds 5 to 9 sent them; the request's obligations block is read
+//     back), each line's judge words and trip words rebuilt as the module
+//     builds them now;
+//   - the reviews' labels on them (judges/set.json `labels`): a line a review
+//     found broken, or found kept; for a run that predates a line, the line
+//     is written by hand;
+//   - seeded breaches (set.json `seeded`): a real narration edited by hand to
+//     break one line, three a judge-class kind, marked as seeded.
+// An unlabelled line is counted kept. That is an assumption, and the report
+// says so.
+//
+// Each pass is scored by kind (decisions.md → "Issue #399"): its flags, the
+// flags that were right, the breaches, the breaches it caught, and the bar —
+// at least nine flags in ten right (all of them, with fewer than ten) and at
+// least two breaches in three caught. The checks written in code are scored
+// on the same set with no model call (`codeScore`).
+//
+// Pure but for its file reads; the model calls go through the module's own
+// apiPost, which judges.mjs runs live and tests/unit/judgeMeasure.test.js
+// replays from the kept verdicts.
+
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+
+import { judgedView, judgeNarration, trippedLines, checkClassOf, harmViolations, judgeMayAct } from "../../../../src/moves/contracts/checks.js";
+import { obligationLine, OBLIGATION_KINDS } from "../../../../src/moves/contracts/obligations.js";
+import { auditObligationSection, auditRequestBody, buildAuditPrompt, classifyAuditFindings, parseAuditResponse } from "../../../../src/factContinuity/consistencyCheck.js";
+import { elsewhereWords } from "../../../../src/factContinuity/whereabouts.js";
+import { MOVES } from "../../../../src/schemas.js";
+import { moveDisplayName } from "../../../../src/system/i18n.js";
+import { apiPost } from "../../../../src/api-proxy.js";
+
+export const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+
+/** The narrator calls a judge reads: a beat's, a round's, a set-piece's, an oracle's. */
+export const NARRATION_KINDS = /^callNarratorAPI>(narratePacedInput|narrateResolution|narrateSessionVignette|narrateOracleFollowup|narrateRound)$/;
+
+/**
+ * The kinds a judge may be asked about: each row with a judge sentence. A
+ * pass asks about one only where its verdict may act (checks.js
+ * JUDGE_KINDS_THAT_ACT); one it does not ask about is scored as retired there.
+ */
+export const JUDGE_KINDS = Object.freeze(Object.entries(OBLIGATION_KINDS).filter(([, r]) => typeof r.judge === "function").map(([k]) => k).sort());
+
+/** Whether `pass` asks about `kind` as the module ships: the judge, a judge-class line; the audit, a kind it may act on. */
+const askedIn = (pass, kind) => (pass === "judge" ? checkClassOf(kind) === "judge" : judgeMayAct(kind, "audit"));
+
+/** The bar (D7): of a kind's flags, at least 9 in 10 right — all, with fewer than 10 — and at least 2 breaches in 3 caught. */
+export const BAR = Object.freeze({ rightShare: 0.9, smallFlags: 10, caughtShare: 2 / 3 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reading the kept runs
+// ─────────────────────────────────────────────────────────────────────────────
+
+const replyText = (x) => (x?.response?.content ?? []).map(c => c?.text ?? "").join("");
+
+/**
+ * The lines a narrator request was given, read back from its obligations
+ * block (obligations.js formatObligationsBlock): `{ kind, list, text }`. A
+ * line's text runs on over indented rows (a cost's options); the block ends
+ * at the first row that is none of a list heading, a line, an indented row or
+ * a blank.
+ *
+ * @param {string} user — the request's user message
+ * @returns {Array<{ kind: string, list: string, text: string }>}
+ */
+export function recordedLines(user) {
+  const at = String(user ?? "").indexOf("WHAT THIS NARRATION MUST TELL, AND MUST NOT");
+  if (at < 0) return [];
+  const out = [];
+  let list = null;
+  for (const row of user.slice(at).split("\n").slice(1)) {
+    const head = /^(TELL|NOT YET|NOT SO) — /.exec(row);
+    if (head) { list = head[1]; continue; }
+    const line = /^- \[([a-z-]+)\] (.*)$/.exec(row);
+    if (line && list) { out.push({ kind: line[1], list, text: line[2] }); continue; }
+    if (/^\s+\S/.test(row) && out.length) { out.at(-1).text += `\n${row}`; continue; }
+    if (!row.trim()) continue;
+    break;
+  }
+  return out;
+}
+
+/**
+ * Every narration a kept run recorded: `{ id, run, step, kind, nth, raw, user }`.
+ * `nth` counts that kind's narrations at that step (a draft and its re-ask).
+ *
+ * @param {string} runDir — an explorations/<run>/ folder
+ * @returns {Array<Object>}
+ */
+export function narrationsOf(runDir) {
+  const run = path.basename(runDir);
+  const exchanges = JSON.parse(fs.readFileSync(path.join(runDir, "replay.json"), "utf8")).recording?.exchanges ?? [];
+  const seen = new Map();
+  const out = [];
+  for (const x of exchanges) {
+    if (!NARRATION_KINDS.test(x.kind)) continue;
+    const kind = x.kind.split(">")[1];
+    const key = `${x.step}|${kind}`;
+    const nth = seen.get(key) ?? 0;
+    seen.set(key, nth + 1);
+    out.push({ id: `${run}:${x.step}:${kind}:${nth}`, run, step: x.step, kind, nth, raw: replyText(x), user: x.user ?? "" });
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A line as the module builds it now
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MOVE_ID_BY_NAME = (() => {
+  const byName = new Map();
+  for (const id of Object.keys(MOVES)) {
+    try { byName.set(moveDisplayName(id).toLowerCase(), id); } catch { /* a move with no name */ }
+  }
+  return byName;
+})();
+
+const uncap = (s) => String(s ?? "").replace(/^\s*(\S)/, (m, c) => m.replace(c, c.toLowerCase()));
+
+/**
+ * Each kind's words the recorded text holds, for its row's builders (null
+ * when they cannot be read). `ctx` is the narration's (contextOf): an
+ * [oracle] NOT SO line holds no question, and its TELL sibling does.
+ */
+const INPUTS_OF = Object.freeze({
+  premise: (text) => {
+    const m = /^([\s\S]+?) is not so — ([\s\S]+?) The line sets about it: narrate the attempt meeting the facts, never the premise as real(?:: never ([\s\S]+?))?\.\s*$/.exec(text);
+    return m ? { refusal: { premise: { claim: uncap(m[1]), never: m[3] ?? null }, why: m[2] } } : null;
+  },
+  offer: (text) => {
+    const id = MOVE_ID_BY_NAME.get(/^(.+?) is only offered\./.exec(text)?.[1]?.toLowerCase() ?? "");
+    return id ? { offer: id } : null;
+  },
+  state: (text) => ({ fact: text }),
+  oracle: (text, ctx = {}) => {
+    const tell = /^The answer is (YES|NO)\b/.exec(text);
+    const not = /^Nothing in the prose may say, show or imply (yes|no), or leave it open\./.exec(text);
+    if (!tell && !not) return null;
+    const asked = (tell ? /to "([^"]+)", the oracle says/.exec(text)?.[1] : null) ?? (ctx.question || null);
+    return { oracle: { answer: tell ? tell[1] : (not[1] === "yes" ? "NO" : "YES"), asked }, part: tell ? "tell" : "not" };
+  },
+  fight: (text) => ({ resolution: { fightOffer: { status: /^THE FIGHT WAS NOT BEGUN\./.test(text) ? "declined" : "offered" } } }),
+  cost: (text) => {
+    if (/This result costs/.test(text)) return { resolution: { openChoice: { kind: "any" } } };
+    const options = [...text.matchAll(/^\s+- (.+)$/gm)].map(m => m[1].trim());
+    return options.length ? { resolution: { openChoice: { options } } } : null;
+  },
+  price: (text) => ({ resolution: { priceChoice: {
+    status: /^THE PRICE WAS NOT PAID\./.test(text) ? "declined" : "pending",
+    price: /The price it offers: ([\s\S]+?) (?=Show |Do not )/.exec(text)?.[1] ?? null,
+    stated: /the miss stated before the roll does not come to pass/.test(text),
+  } } }),
+  whereabouts: (text) => {
+    const places = [...text.matchAll(/(?:^|\. )([A-Z][^.:]*?) (?:is another place|are other places)/g)]
+      .flatMap(m => m[1].split(/, | and /).map(n => n.trim()).filter(Boolean)).map(name => ({ name }));
+    const people = [...text.matchAll(/([A-Z][\w'’ -]+?) is ([^.]+?), not here\./g)].map(m => ({ name: m[1].trim(), where: m[2].trim() }));
+    return { places, people };
+  },
+  foe: (text) => {
+    const m = /^THE FIGHT(?:'S TRACK IS FULL| IS NOT DECIDED) \(([^)]+)\)/.exec(text);
+    return { fight: { label: m?.[1] ?? null, full: /^THE FIGHT'S TRACK IS FULL/.test(text) } };
+  },
+  unsaid: () => ({}),
+});
+
+/**
+ * A recorded line as the module builds it now: its kind's judge sentence
+ * where the row has one, and the trip words a [whereabouts] line carries —
+ * rebuilt from the words the recorded text holds. Any other line is
+ * kept as recorded.
+ *
+ * @param {{ kind: string, list: string, text: string }} o
+ * @param {Object} [ctx] — the narration's context (contextOf), for an [oracle] NOT SO line's question
+ * @returns {Object}
+ */
+export function asBuiltNow(o, ctx = {}) {
+  const read = INPUTS_OF[o.kind]?.(o.text, ctx);
+  if (!read) return { ...o };
+  const built = obligationLine(o.kind, read);
+  const line = { ...o, ...(built.judge ? { judge: built.judge } : {}) };
+  if (o.kind === "whereabouts") line.words = elsewhereWords({ places: read.places, people: read.people });
+  return line;
+}
+
+/**
+ * The check's context a narration's lines imply (narrator.js gives it from
+ * the beat): the refusal's code, from its [premise] claim; the offered move,
+ * from its [offer]; the oracle's question, from its TELL [oracle].
+ *
+ * @param {Array<Object>} lines
+ * @returns {{ refusalCode: string|null, offer: string|null, question: string }}
+ */
+export function contextOf(lines) {
+  const premise = lines.find(o => o.kind === "premise")?.text ?? "";
+  const CLAIM_CODES = [
+    [/^A wound to treat/i, "recoverable-health"], [/^A strain to ease/i, "recoverable-spirit"], [/^Supplies to restock/i, "recoverable-supply"],
+    [/^Damage to repair/i, "something-damaged"], [/^A fight under way/i, "open-fight"], [/^A connection with/i, "their-connection"],
+  ];
+  const refusalCode = CLAIM_CODES.find(([re]) => re.test(premise))?.[1] ?? null;
+  const offerName = /^(.+?) is only offered\./.exec(lines.find(o => o.kind === "offer")?.text ?? "")?.[1]?.toLowerCase() ?? null;
+  const question = /to "([^"]+)", the oracle says/.exec(lines.find(o => o.kind === "oracle" && o.list === "TELL")?.text ?? "")?.[1] ?? "";
+  return { refusalCode, offer: offerName ? (MOVE_ID_BY_NAME.get(offerName) ?? null) : null, question };
+}
+
+/**
+ * Whether a narrator request offered a move — its SUGGESTED MOVE section
+ * (narratorPrompt.js buildPacedNarrativeUserMessage), which the module gives
+ * exactly where the narration's lines hold [offer] (checks.js
+ * offerMayBeGiven). An entry's lines are the labelled ones, often without
+ * [offer]: the request says it. Where it did, the narration's closing offer
+ * line is left out of what the judges read (issue #399's audit N32).
+ *
+ * @param {string} user — the recorded request's user message
+ * @returns {boolean}
+ */
+export function offeredIn(user) {
+  return /^## SUGGESTED MOVE$/m.test(String(user ?? ""));
+}
+
+/** The move a narrator request tells (its MOVE OUTCOME's "[MOVE: Clash +edge]"), by id, or null. */
+function moveIdOf(user) {
+  const name = /\[MOVE: ([^\]]+?)(?: \+\w+)?\]/.exec(String(user ?? ""))?.[1]?.toLowerCase() ?? "";
+  return MOVE_ID_BY_NAME.get(name) ?? null;
+}
+
+/**
+ * A line written by hand in set.json: `{ kind, input }` built by its row, or a
+ * literal `{ kind, list, text }` — a line as a run recorded it, rebuilt as one
+ * (asBuiltNow).
+ */
+function handLine(spec, ctx = {}) {
+  if (spec?.input !== undefined) {
+    const built = obligationLine(spec.kind, spec.input);
+    return { ...built, ...(spec.words ? { words: spec.words } : {}) };
+  }
+  return asBuiltNow({ ...spec }, ctx);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The set
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The labelled set: every narration the runs recorded with its lines, the
+ * reviews' labels, the hand-written lines of runs that predate them, and the
+ * seeded breaches. Each entry: `{ id, run, step, kind, nth, raw, lines, ctx,
+ * offer, labels: { [kind]: true|false }, seeded, source }` — `offer`: its
+ * request offered a move (offeredIn; a seed's, its narration's).
+ *
+ * @param {{ explorations: string, set: Object }} opts — the explorations folder, set.json's content
+ * @returns {{ entries: Array<Object>, missing: string[] }} — `missing`: labels and seeds whose narration the runs do not hold
+ */
+export function buildSet({ explorations, set }) {
+  const runs = Array.isArray(set.runs) ? set.runs : [];
+  const all = new Map();
+  for (const run of runs) for (const n of narrationsOf(path.join(explorations, run))) all.set(n.id, n);
+  const entries = new Map();
+  const missing = [];
+  const entryOf = (n) => {
+    if (!entries.has(n.id)) {
+      const recorded = recordedLines(n.user);
+      const ctx = { ...contextOf(recorded), moveId: moveIdOf(n.user) };
+      entries.set(n.id, { id: n.id, run: n.run, step: n.step, kind: n.kind, nth: n.nth, raw: n.raw, lines: recorded.map(o => asBuiltNow(o, ctx)),
+        ctx, offer: offeredIn(n.user), labels: {}, seeded: false, source: null });
+    }
+    return entries.get(n.id);
+  };
+  // Every recorded narration with lines.
+  for (const n of all.values()) if (recordedLines(n.user).length) entryOf(n);
+  // The reviews' labels — with a line written by hand where the run predates it.
+  for (const label of Array.isArray(set.labels) ? set.labels : []) {
+    const id = `${label.run}:${label.step}:${label.kind}:${label.nth ?? 0}`;
+    const n = all.get(id);
+    if (!n) { missing.push(id); continue; }
+    const e = entryOf(n);
+    for (const spec of label.add ?? []) if (!e.lines.some(o => o.kind === spec.kind)) e.lines.push(handLine(spec, e.ctx));
+    if (label.ctx) e.ctx = { ...e.ctx, ...label.ctx };
+    // `null`: a breach the reviews dispute — its line is not scored.
+    e.labels[label.line] = label.breach === null ? null : label.breach === true;
+    e.source = e.source ?? "review";
+  }
+  // The seeded breaches.
+  for (const seed of Array.isArray(set.seeded) ? set.seeded : []) {
+    const from = seed.from ?? {};
+    const n = all.get(`${from.run}:${from.step}:${from.kind}:${from.nth ?? 0}`);
+    if (!n) { missing.push(`seed ${seed.id}`); continue; }
+    const asRecorded = recordedLines(n.user);
+    const recorded = asRecorded.map(o => asBuiltNow(o, contextOf(asRecorded)));
+    const lines = seed.lines === "recorded" ? recorded.filter(o => o.kind === seed.line)
+      : (seed.lines ?? []).map(spec => handLine(spec, contextOf(seed.lines ?? [])));
+    const ctx = { ...contextOf(seed.lines === "recorded" ? recorded : lines), moveId: moveIdOf(n.user), ...(seed.ctx ?? {}) };
+    entries.set(`seed:${seed.id}`, { id: `seed:${seed.id}`, run: n.run, step: n.step, kind: n.kind, nth: n.nth, raw: seed.narration, offer: offeredIn(n.user),
+      // `also`: another line the edit breaks, by its own label ([premise]'s cut at full health is harm too).
+      lines, ctx, labels: { [seed.line]: true, ...(seed.also ?? {}) }, seeded: true, source: "seeded", edit: seed.edit ?? "" });
+  }
+  return { entries: [...entries.values()], missing };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The two passes
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A request's fingerprint, for the kept verdicts: the body as sent. */
+export const requestHash = (body) => crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 24);
+
+/**
+ * The pre-post judge on one entry, as the module runs it: the lines its trip
+ * words trip in the judged view, then one call. What it flags is the kinds of
+ * the lines its verdicts name.
+ *
+ * @returns {Promise<{ tripped: string[], judged: boolean, error: string|null, flagged: string[], violations: Array, dropped: Array }>}
+ */
+export async function judgePass(entry, { apiKey }) {
+  const judgeLines = entry.lines.filter(o => checkClassOf(o.kind) === "judge");
+  // Its closing offer line left out where it was offered a move, as the module does (the audit's N32).
+  const offer = entry.offer === true;
+  const tripped = trippedLines(judgedView(entry.raw, { offer }).text, judgeLines, entry.ctx);
+  if (!tripped.length) return { tripped: [], judged: false, error: null, flagged: [], violations: [], dropped: [] };
+  const verdict = await judgeNarration(entry.raw, tripped, { apiKey, offer });
+  return { tripped: tripped.map(o => o.kind), judged: verdict.judged, error: verdict.error ?? null,
+    flagged: [...new Set(verdict.violations.map(v => v.tag))], violations: verdict.violations, dropped: verdict.dropped ?? [] };
+}
+
+/**
+ * The audit on one entry's obligation lines, as the module asks it — its
+ * prompt with no ledger beside them (the measure scores the lines alone).
+ * What it flags is the kinds of the high-confidence findings that name a line
+ * and quote the narration.
+ *
+ * @returns {Promise<{ audited: boolean, error: string|null, flagged: string[], findings: Array }>}
+ */
+export async function auditPass(entry, { apiKey }) {
+  const section = auditObligationSection(entry.lines);
+  if (!section.lines.length) return { audited: false, error: null, flagged: [], findings: [] };
+  const view = judgedView(entry.raw, { offer: entry.offer === true });
+  const body = auditRequestBody(buildAuditPrompt("", "", view.text, { obligations: section.text }));
+  const headers = { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
+  try {
+    const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "consistencyCheck" });
+    const text = (data?.content ?? []).filter(b => b?.type === "text").map(b => b.text).join("");
+    const read = parseAuditResponse(text, { withStatus: true });
+    const findings = classifyAuditFindings(read.contradictions, section.lines, view.text);
+    const flagged = [...new Set(findings.filter(c => c.kind === "obligation" && c.confidence === "high" && c.obligationKind).map(c => c.obligationKind))];
+    return { audited: read.parsed, error: read.parsed ? null : "unparsed", flagged, findings };
+  } catch (err) {
+    return { audited: false, error: `error: ${String(err?.message ?? err)}`, flagged: [], findings: [] };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scoring
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One pass's score by kind: for each kind with a judge sentence the set gives
+ * a line, `lines` (entries with one), `flags`, `right` (flags on a labelled
+ * breach), `breaches`, `caught`, `wrongOnLabelled` (flags on a line a review
+ * found kept), whether the pass asks about it as the module ships (`asked`),
+ * and whether it passed the bar. An unlabelled line is a kept one.
+ *
+ * @param {Array<Object>} entries
+ * @param {Map<string, { flagged: string[] }>} results — by entry id
+ * @param {"judge"|"audit"} pass
+ * @returns {Object<string, Object>}
+ */
+export function scorePass(entries, results, pass) {
+  const score = {};
+  for (const kind of JUDGE_KINDS) {
+    const row = { lines: 0, flags: 0, right: 0, breaches: 0, caught: 0, wrongOnLabelled: 0, asked: askedIn(pass, kind) };
+    for (const e of entries) {
+      if (!e.lines.some(o => o.kind === kind) || e.labels[kind] === null) continue;
+      row.lines += 1;
+      const breach = e.labels[kind] === true;
+      const flagged = (results.get(e.id)?.flagged ?? []).includes(kind);
+      if (breach) row.breaches += 1;
+      if (flagged) row.flags += 1;
+      if (flagged && breach) { row.right += 1; row.caught += 1; }
+      if (flagged && e.labels[kind] === false) row.wrongOnLabelled += 1;
+    }
+    row.rightOk = row.flags < BAR.smallFlags ? row.right === row.flags : row.right / row.flags >= BAR.rightShare;
+    row.caughtOk = row.breaches > 0 && row.caught / row.breaches >= BAR.caughtShare;
+    row.passed = row.lines > 0 && row.rightOk && row.caughtOk;
+    if (row.lines) score[kind] = row;
+  }
+  return score;
+}
+
+/**
+ * The checks written in code, scored on the set with no model call (D6): for
+ * each, by its label in set.json (`harm`, D9), the same row as a pass's kind.
+ *
+ * @param {Array<Object>} entries
+ * @returns {{ harm: Object }}
+ */
+export function codeScore(entries) {
+  const row = { lines: 0, flags: 0, right: 0, breaches: 0, caught: 0, wrongOnLabelled: 0, flagged: [] };
+  for (const e of entries) {
+    if (e.labels.harm === null) continue;
+    row.lines += 1;
+    const breach = e.labels.harm === true;
+    const flagged = harmViolations(judgedView(e.raw, { offer: e.offer === true }).text, e.lines, e.ctx).length > 0;
+    if (breach) row.breaches += 1;
+    if (flagged) { row.flags += 1; row.flagged.push(e.id); }
+    if (flagged && breach) { row.right += 1; row.caught += 1; }
+    if (flagged && e.labels.harm === false) row.wrongOnLabelled += 1;
+  }
+  row.rightOk = row.flags < BAR.smallFlags ? row.right === row.flags : row.right / row.flags >= BAR.rightShare;
+  row.caughtOk = row.breaches > 0 && row.caught / row.breaches >= BAR.caughtShare;
+  row.passed = row.rightOk && row.caughtOk;
+  return { harm: row };
+}
+
+/**
+ * The bar over several runs (D7, D10): for each pass and kind, the counts
+ * summed over the runs that asked that pass about the kind (`asked` not
+ * false), and whether the sums meet the bar. The runs are the ones made with
+ * the current judge sentences (judges/pool.json): the model samples at its
+ * default, so a verdict can flip between runs, and one run's flip is noise.
+ *
+ * @param {Array<{ judge: Object, audit: Object }>} scores — each run's `score`
+ * @returns {{ judge: Object, audit: Object }}
+ */
+export function poolScores(scores) {
+  const pooled = { judge: {}, audit: {} };
+  for (const pass of ["judge", "audit"]) {
+    for (const score of scores) {
+      for (const [kind, r] of Object.entries(score?.[pass] ?? {})) {
+        if (r.asked === false) continue;
+        const row = pooled[pass][kind] ?? (pooled[pass][kind] = { runs: 0, flags: 0, right: 0, breaches: 0, caught: 0, wrongOnLabelled: 0 });
+        row.runs += 1;
+        for (const k of ["flags", "right", "breaches", "caught", "wrongOnLabelled"]) row[k] += r[k] ?? 0;
+      }
+    }
+    for (const row of Object.values(pooled[pass])) {
+      row.rightOk = row.flags < BAR.smallFlags ? row.right === row.flags : row.right / row.flags >= BAR.rightShare;
+      row.caughtOk = row.breaches > 0 && row.caught / row.breaches >= BAR.caughtShare;
+      row.passed = row.rightOk && row.caughtOk;
+    }
+  }
+  return pooled;
+}
+
+/** A kind's row, said in a line of the report. */
+const rowLine = (kind, r) => `| [${kind}] | ${r.lines} | ${r.flags} | ${r.right} | ${r.breaches} | ${r.caught} | ${r.wrongOnLabelled} | `
+  + `${r.asked === false ? "retired: not asked" : r.passed ? "**passed**" : "failed"} |`;
+
+/**
+ * The report, in markdown: what was run, each pass's table, the checks in
+ * code, and the assumptions.
+ *
+ * @param {{ judge: Object, audit: Object, code?: Object }} score
+ * @param {{ runId: string, commit?: string, entries: number, seeded: number, labelled: number, calls: number, usd?: number|null }} meta
+ * @returns {string}
+ */
+export function renderReport(score, meta) {
+  const table = (pass) => ["| Kind | Lines | Flags | Right | Breaches | Caught | Wrong on a labelled kept line | Bar |", "|---|---|---|---|---|---|---|---|",
+    ...Object.entries(score[pass]).map(([k, r]) => rowLine(k, r))].join("\n");
+  return [
+    `# The judges, measured — ${meta.runId}`,
+    "",
+    `Commit ${meta.commit ?? "(not recorded)"} · ${meta.entries} narrations (${meta.labelled} with a review's label, ${meta.seeded} seeded) · ${meta.calls} calls${meta.usd != null ? ` · $${meta.usd.toFixed(4)}` : ""}.`,
+    "",
+    `The bar (issue #399 D7): of a kind's flags, at least ${BAR.rightShare * 10} in 10 right — all of them, with fewer than ${BAR.smallFlags} — and at least two of every three breaches caught.`,
+    "",
+    "## The pre-post judge",
+    "",
+    table("judge"),
+    "",
+    "## The audit",
+    "",
+    table("audit"),
+    "",
+    ...(score.code ? ["## The checks in code", "", "| Check | Narrations | Flags | Right | Breaches | Caught | Wrong on a labelled kept line | Bar |",
+      "|---|---|---|---|---|---|---|---|", ...Object.entries(score.code).map(([k, r]) => rowLine(k, r)), ""] : []),
+    "## Assumptions",
+    "",
+    "- An unlabelled line is counted kept: a flag on it counts as wrong. A review that missed a breach makes a right flag look wrong.",
+    "- The audit is asked about the lines alone, with no ledger beside them; in play it is given the scene's ledger too.",
+    "- A [whereabouts] line's trip words, and the judge sentences, are rebuilt from the recorded text as the module builds them now.",
+    "- Each request is asked once, and the model samples at its default: an identical request can be answered otherwise in another run.",
+    "- The judge sentences and the harm check were written with the set's earlier results in view, so the set is not a test they have not seen.",
+  ].join("\n");
+}

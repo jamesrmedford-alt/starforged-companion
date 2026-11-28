@@ -25,11 +25,13 @@ import {
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern, namesOneWordName } from '../context/relevanceResolver.js';
 import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
+import { isAuthoringClient } from '../multiplayer/speaker.js';
 import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { lastSessionToTell } from '../session/lifecycle.js';
+import { splitOfferLine } from './closingOfferLine.js';
 import { proseToHtml } from '../audio/segments.js';
 import { unpacedClock, pacedByOneOf, planInPlayFor } from '../clocks/planClockPacing.js';
 import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
@@ -45,7 +47,7 @@ import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock 
 import { inferShipPosition, formatShipPositionLine }  from '../factContinuity/shipPosition.js';
 import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, framedAtThePlace } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
-import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
+import { runConsistencyCheck, postStillBrokenNote } from '../factContinuity/consistencyCheck.js';
 import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, rolledMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
 import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
 import { contractFor } from '../moves/contracts/table.js';
@@ -132,6 +134,14 @@ const DICE_FACTS_MAX = 4;
 const DICE_FACTS_PER_SUBJECT = 2;
 const DICE_STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'into', 'their', 'there', 'where', 'what', 'have',
   'been', 'were', 'they', 'them', 'your', 'about', 'over', 'down', 'back', 'still', 'then', 'than', 'just', 'some']);
+/**
+ * The words of a [dice] fact's subject, one of which the player's line must
+ * say for the fact to be told (diceFactsOf): lowercased, the possessive off,
+ * four letters or more, none of the stop words.
+ *
+ * @param {string} s
+ * @returns {string[]}
+ */
 const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '').split(/[^\p{L}\p{N}-]+/u)
   .filter(w => w.length >= 4 && !DICE_STOP.has(w));
 
@@ -154,7 +164,7 @@ const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '')
  * @param {string} line
  * @param {{ source?: Object, own?: string[], sceneId?: string|null }} [opts] — the record to read (default: the
  *   stored pages); the table's own names (meterOwnersOf); the current scene's id
- * @returns {Array<{ subject: string, fact: string, words: string[] }>}
+ * @returns {Array<{ subject: string, fact: string }>}
  */
 export function diceFactsOf(line, { source, own = [], sceneId = null } = {}) {
   try {
@@ -189,7 +199,7 @@ export function diceFactsOf(line, { source, own = [], sceneId = null } = {}) {
         if (seen.has(key)) continue;
         seen.add(key);
         perSubject.set(subject.toLowerCase(), (perSubject.get(subject.toLowerCase()) ?? 0) + 1);
-        facts.push({ subject, fact, words });
+        facts.push({ subject, fact });
         if (facts.length >= DICE_FACTS_MAX) return facts;
       }
     }
@@ -275,32 +285,44 @@ function xCardPlayCount() {
 export function watchXCard(campaignState) {
   const playsAtStart = xCardPlayCount();
   const dropsAtStart = connectionDrops();
+  // Why the narration is to be discarded, or null — the one test both
+  // `interrupted` and `stopped` read.
+  const why = () => {
+    // This client's connection dropped while the narration was written: a
+    // pause recorded meanwhile never reached its cache, so neither the count
+    // nor the flag can be trusted — the narration is discarded, its sidecar
+    // never applied (issue #347 AB19).
+    if (connectionDrops() !== dropsAtStart) return 'drop';
+    // Nor can a narration started on a page whose connection had already
+    // dropped: its cache may lack an X-Card played during the drop — a
+    // player's page, which keeps narrating on the player's own key (the
+    // Private Channel; a command or follow-up at a table with no keyed GM),
+    // is not reloaded for it (STALE-PLAYER-PAGE).
+    if (pageIsStale()) return 'stale';
+    if (!isXCardActive(campaignState) && xCardPlayCount() === playsAtStart) return null;
+    return 'xcard';
+  };
   return {
     interrupted(label) {
-      // This client's connection dropped while the narration was written: a
-      // pause recorded meanwhile never reached its cache, so neither the
-      // count nor the flag can be trusted — the narration is discarded, its
-      // sidecar never applied (issue #347 AB19).
       _discardedForDrop = false;
       _discardedForStale = false;
-      if (connectionDrops() !== dropsAtStart) {
+      const reason = why();
+      if (reason === 'drop') {
         console.warn(`${MODULE_ID} | ${label}: the connection to the server dropped while the narration was generated — discarded.`);
         _discardedForDrop = true;
-        return true;
-      }
-      // Nor can a narration started on a page whose connection had already
-      // dropped: its cache may lack an X-Card played during the drop — a
-      // player's page, which keeps narrating on the player's own key (the
-      // Private Channel; a command or follow-up at a table with no keyed GM),
-      // is not reloaded for it (STALE-PLAYER-PAGE).
-      if (pageIsStale()) {
+      } else if (reason === 'stale') {
         console.warn(`${MODULE_ID} | ${label}: this page's connection to the server dropped earlier and it has not reloaded — discarded.`);
         _discardedForStale = true;
-        return true;
+      } else if (reason === 'xcard') {
+        console.debug(`${MODULE_ID} | ${label}: X-Card played while the narration was generated — discarded.`);
       }
-      if (!isXCardActive(campaignState) && xCardPlayCount() === playsAtStart) return false;
-      console.debug(`${MODULE_ID} | ${label}: X-Card played while the narration was generated — discarded.`);
-      return true;
+      return reason !== null;
+    },
+    // The same test, quietly — no log and no flag: the check before posting
+    // asks it before its judge and its rows (checks.js narrateKeepingObligations
+    // `stopped`, issue #399's audit N14).
+    stopped() {
+      return why() !== null;
     },
   };
 }
@@ -613,7 +635,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // than the characters', and the people whose whereabouts are one — the
   // scene block's Elsewhere lines and the narration's [whereabouts]. A beat of
   // play's alone.
-  extras.elsewhere = (mode === 'move_resolution' || mode === 'paced_narrative')
+  extras.elsewhere = (mode === 'move_resolution' || mode === 'paced_narrative' || mode === 'round_resolution')
     ? withTripWords(elsewhereOf(playerNarration, sceneState ?? campaignState, { underway: expeditionUnderway(extras.progressTracks) }))
     : null;
   // Where the record has the characters, the other places and the people at
@@ -623,7 +645,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // arrival, and is held to it (PEOPLE-WAITING-AT-THE-ARRIVAL, round 8's a72).
   // A journey's arrival reads only those not with the characters as they set
   // out ([arrival] — PEOPLE-WAITING-AT-THE-ARRIVAL): one who was may have come along.
-  extras.here = (mode === 'move_resolution' || mode === 'paced_narrative' || mode === 'oracle_followup')
+  extras.here = (mode === 'move_resolution' || mode === 'paced_narrative' || mode === 'round_resolution' || mode === 'oracle_followup')
     ? hereOf(sceneState ?? campaignState, { underway: expeditionUnderway(extras.progressTracks),
       vehicle: getCommandVehicle(campaignState ?? {})?.name ?? null, arriving: mode === 'move_resolution' && arriving === true })
     : null;
@@ -1053,7 +1075,11 @@ function beatVariety(sessionId, claim = null, { names = [], keep = [], line = ''
   let variety;
   try {
     const cards = sessionNarratorCards(sessionId);
-    const all = cards.map(m => m?.flags?.[MODULE_ID]?.narrationText).filter(t => typeof t === 'string' && t.trim());
+    // Each narration's words, a card that offered a move without the closing
+    // line that invites it (closingOfferLine.js; issue #399's audit N32 — every
+    // italic span was dropped, a ship's name among them).
+    const all = cards.map(m => m?.flags?.[MODULE_ID]).map(f => (typeof f?.narrationText === 'string' && f.suggestedMove
+      ? splitOfferLine(f.narrationText).body : f?.narrationText)).filter(t => typeof t === 'string' && t.trim());
     const prose = all.slice(-IMAGE_SOURCE_CARDS);
     const beats = (game.messages?.contents ?? []).filter(m => isSessionBeatCard(m, sessionId)).length;
     variety = {
@@ -1635,7 +1661,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
     const kept = await narrateKeepingObligations(
       ask,
       moveObligations,
-      { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line },
+      { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line, moveId: resolution?.moveId ?? null },
+        stopped: () => xCard.stopped(),
         onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
     );
     const raw = kept.raw;
@@ -1688,7 +1715,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
         }));
         const raw = (await narrateKeepingObligations(ask,
           moveObligations,
-          { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line },
+          { apiKey, judge: obligationJudgeOn(), ctx: { vowName: resolution?.moveTarget ?? null, line: ground.line, moveId: resolution?.moveId ?? null },
+            stopped: () => xCard.stopped(),
             onVerdict: (v) => logObligationVerdict('move', v, campaignState, narrationId) },
         )).raw;
         if (xCard.interrupted('narrateResolution')) {
@@ -2101,8 +2129,10 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
     campaignState, { ...settings, narrationLength: sentenceTarget }, null, '', extras,
   );
   const roundChosenSince = choicesChosenSince({ except: entries.map(e => e.input?.resolutionId).filter(Boolean) });
+  const roundLines = roundLinesOf(entries, extras, characters, settings, campaignState);
   const userMessage = buildRoundUserMessage({
     chosenSince: roundChosenSince,
+    roundLines,
     recentContext: getRecentNarrationContext(
       campaignState?.currentSessionId ?? null,
       Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
@@ -2117,7 +2147,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   // What the round's narration must tell and must not — every entry's block
   // and the round's own, as buildRoundUserMessage puts them under it — for
   // the check before it posts (overhaul 4: checks.js narrateKeepingObligations).
-  const roundObligations = [...roundObligationsFor(entries, roundChosenSince), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
+  const roundObligations = [...roundObligationsFor(entries, roundChosenSince, roundLines), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   // Asked after the call's long wait: is this narration still the round's?
   const superseded = () => {
     if (typeof stillNarrating !== 'function' || stillNarrating()) return false;
@@ -2150,6 +2180,8 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       const raw = (await narrateKeepingObligations(ask,
         roundObligations,
         { apiKey, judge: obligationJudgeOn(), ctx: roundCheckContext(entries),
+          // Discarded if the X-Card is played or the round taken over meanwhile.
+          stopped: () => xCard.stopped() || superseded(),
           onVerdict: (v) => logObligationVerdict('round', v, campaignState, narrationId) },
       )).raw;
       if (superseded()) return { posted: null, superseded: true };
@@ -4420,8 +4452,9 @@ function sceneAnswerText(raw, campaignState, { matchedEntityIds = [], narrationI
   recordNarratorFactBlock(raw, { skipped: 'an @scene answer records nothing' });
   const text = typeof prose === 'string' ? prose : (typeof raw === 'string' ? raw : '');
   // …with fact continuity on, as every narration's audit is: off, nothing
-  // is checked against a ledger nobody keeps.
-  if (factContinuityEnabled() && campaignState && text.trim() && isCanonicalGM()) {
+  // is checked against a ledger nobody keeps. On the GM whose client
+  // answered, as every narration's audit (AA34's gate; issue #399's audit N26).
+  if (factContinuityEnabled() && campaignState && text.trim() && game.user?.isGM === true) {
     runConsistencyCheck(text, auditCampaignState(campaignState), {
       matchedEntityIds:  Array.isArray(matchedEntityIds) ? matchedEntityIds : [],
       currentLocationId: campaignState.currentLocationId ?? null,
@@ -4562,6 +4595,7 @@ export async function narrateOracleFollowup({
   // opposite not (overhaul 4: checks.js narrateKeepingObligations).
   const oracleObligations = [...oracleObligationsFor({ kind, question, rolledLine, here: arrivalHere }), ...sceneObligationsOf(extras.sceneLedger, campaignState)];
   const checking = { apiKey, judge: obligationJudgeOn(), ctx: { question: sanitizePlayerText(question ?? ''), line: question ?? '' },
+    stopped: () => xCard.stopped(),
     onVerdict: (v) => logObligationVerdict('oracle', v, campaignState, narrationId) };
   // A local `ask`, so the playthrough harness files the call as this
   // function's (lib/claude.mjs PASS_THROUGH looks through it and the check).
@@ -4836,20 +4870,24 @@ function personNamesOf(character) {
 }
 
 /**
- * A beat of play's [person] (BEAT-IN-THE-THIRD-PERSON — the seventh live
- * round told a11 "Mira turns the brass star-compass over in her palm" under a
- * second-person PERSPECTIVE): its character's names when the beat is told in
- * the second person — the perspective its system prompt was told
- * (buildNarratorSystemPrompt: no round, the session's recorded one). Null in
- * the third person, and with no character.
+ * A narration's [person] (BEAT-IN-THE-THIRD-PERSON — the seventh live round
+ * told a11 "Mira turns the brass star-compass over in her palm" under a
+ * second-person PERSPECTIVE): its character's names when it is told in the
+ * second person — the perspective its system prompt was told
+ * (buildNarratorSystemPrompt: more than one PC it is about, the third; else
+ * the session's recorded one). Null in the third person, and with no
+ * character. A beat of play's, and a set-piece's (issue #389 #4; issue
+ * #399's audit N29).
  *
  * @param {Object} settings — getNarratorSettings()
  * @param {Object} campaignState
- * @param {Object|null} character — the beat's PC (getActiveCharacter)
+ * @param {Object|null} character — its PC (getActiveCharacter)
+ * @param {Array|null} [roundCharacters] — the PCs it is about, as extras.roundCharacters holds them
  * @returns {{ names: string[] }|null}
  */
-function beatPersonOf(settings, campaignState, character) {
+function beatPersonOf(settings, campaignState, character, roundCharacters = null) {
   const perspective = resolveNarrationPerspective(settings?.narrationPerspective, {
+    actingCharacters: Array.isArray(roundCharacters) ? roundCharacters.filter(Boolean).length : 0,
     sessionPerspective: sessionPerspectiveOf(campaignState),
   });
   return perspective === 'second_person' ? personNamesOf(character) : null;
@@ -5051,10 +5089,12 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
 
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
   // A bookend starts one, never turns one: Begin's opening is the session's
-  // ("the session begins"), a closing or spotlight cutaway its own scene.
+  // ("the session begins"), a closing or spotlight cutaway its own scene —
+  // and a cutaway's audit is not held to the characters' place (issue #399, D1).
+  const cutaway = !/^\s*OPENING VIGNETTE\b/i.test(String(userMessage ?? ''));
   await ensureCurrentScene(campaignState, {
     mode: 'session_vignette', reason: 'session_vignette',
-    cause: /^\s*OPENING VIGNETTE\b/i.test(String(userMessage ?? '')) ? 'session' : 'cutaway',
+    cause: cutaway ? 'cutaway' : 'session',
   });
 
   // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
@@ -5077,15 +5117,11 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   // …and, in second person, to its character's "you" where they are in it —
   // an opening, a spotlight; a closing cuts away from them (issue #389 #4,
   // OPENING-IN-THE-THIRD-PERSON — checks.js personViolations). The
-  // perspective is the one its system prompt was told.
-  const perspective = resolveNarrationPerspective(settings.narrationPerspective, {
-    actingCharacters: Array.isArray(roundCharacters) ? roundCharacters.filter(Boolean).length : 0,
-    sessionPerspective: sessionPerspectiveOf(campaignState),
-  });
+  // perspective is the one its system prompt was told (beatPersonOf).
   const closing = /^\s*CLOSING VIGNETTE\b/i.test(String(userMessage ?? ''));
-  const person = perspective === 'second_person' && !closing ? personNamesOf(character) : null;
+  const person = closing ? null : beatPersonOf(settings, campaignState, character, roundCharacters);
   const obligations = obligationsFor({ mode: 'set-piece', material: rolledWordsOf(seeds, { told: `${systemPrompt}\n${userMessage}` }), person });
-  const checking = { judge: false, onVerdict: (v) => logObligationVerdict('session_vignette', v, campaignState, narrationId) };
+  const checking = { judge: false, stopped: () => xCard.stopped(), onVerdict: (v) => logObligationVerdict('session_vignette', v, campaignState, narrationId) };
   const ask = (addendum) => (addendum && xCard.interrupted('narrateSessionVignette') ? null : callNarratorAPI({
     label: addendum ? 'narrateSessionVignette:reask' : 'narrateSessionVignette',
     apiKey, systemPrompt,
@@ -5097,7 +5133,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   try {
     const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
     if (xCard.interrupted('narrateSessionVignette')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette' });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette', cutaway });
     if (!text?.trim()) return null;
     scheduleNarrationCapture(text, campaignState, capture);   // its NPCs' developments → their cards (#286 D4)
     return text;
@@ -5108,7 +5144,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
         // Checked as the first try is.
         const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
         if (xCard.interrupted('narrateSessionVignette')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette' });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, bookend: true, seeds, mode: 'session_vignette', cutaway });
         if (!text?.trim()) return null;
         scheduleNarrationCapture(text, campaignState, capture);
         return text;
@@ -5212,6 +5248,22 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
       ? `The clock "${clock.name}" (${typeFlair}) has TRIGGERED — it has now filled all ${clock.segments} segments.${pacedLine} Write exactly 2-3 sentences of vivid fiction describing the moment this threat materialises or this deadline arrives. Pure narrative — no game mechanics, no clock language, no numbers.`
       : `The clock "${clock.name}" (${typeFlair}) has advanced to ${clock.filled}/${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing how this pressure or looming threat grows by a notch. Pure narrative — no game mechanics, no clock language, no numbers.`;
 
+    // Held to its certain lines before it posts, as a session vignette is
+    // (issue #399's audit N29: it posted unchecked): "you" in a second-person
+    // game — it is set in the current fiction, its characters poised to
+    // respond — and no table words, its role's "do not name a move, a
+    // mechanic, the clock or its segments". No judge reads it. A local `ask`,
+    // so the playthrough harness files the call as this one's.
+    const obligations = obligationsFor({ mode: 'set-piece', person: beatPersonOf(settings, campaignState, character, roundCharacters) });
+    const checking = { judge: false, stopped: () => xCard.stopped(), onVerdict: (v) => logObligationVerdict('clock_vignette', v, campaignState, narrationId) };
+    const ask = (addendum) => (addendum && xCard.interrupted('narrateClockAdvancement') ? null : callNarratorAPI({
+      label: addendum ? 'narrateClockAdvancement:reask' : 'narrateClockAdvancement',
+      apiKey, systemPrompt,
+      userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+      model:     settings.narrationModel,
+      maxTokens: maxTokensWithSidecar(16000),
+    }));
+
     // A rewound trigger did not happen: nothing of it is applied (see above).
     const triggerStands = async () => {
       if (!clock.triggered || typeof stillTriggered !== 'function') return true;
@@ -5226,12 +5278,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     };
 
     try {
-      const raw = await callNarratorAPI({
-        label: 'narrateClockAdvancement',
-        apiKey, systemPrompt, userMessage,
-        model:     settings.narrationModel,
-        maxTokens: maxTokensWithSidecar(16000),
-      });
+      const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
       if (xCard.interrupted('narrateClockAdvancement')) return null;
       if (!(await triggerStands())) return null;
       const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
@@ -5250,12 +5297,8 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
       if (isRateLimit(err)) {
         try {
           await delay(RETRY_DELAY_MS);
-          const raw = await callNarratorAPI({
-        label: 'narrateClockAdvancement',
-            apiKey, systemPrompt, userMessage,
-            model:     settings.narrationModel,
-            maxTokens: maxTokensWithSidecar(16000),
-          });
+          // Checked as the first try is.
+          const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
           if (xCard.interrupted('narrateClockAdvancement')) return null;
           if (!(await triggerStands())) return null;
           const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
@@ -5364,13 +5407,23 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
   const recentScene  = getRecentNarrationContext(campaignState?.currentSessionId ?? null, getNarratorContextCards());
   const userMessage  = buildVowSwearingUserMessage(vow, ironTruth, { recentScene });
 
+  // Held to its certain lines before it posts, as a session vignette is
+  // (issue #399's audit N29: it posted unchecked): "you" for the PC who swore,
+  // in a second-person game, and no table words. No judge reads it. A local
+  // `ask`, called inside `call`, so the playthrough harness files the call as
+  // before (callNarratorAPI>call).
+  const obligations = obligationsFor({ mode: 'set-piece', person: beatPersonOf(settings, campaignState, character) });
+  const checking = { judge: false, stopped: () => xCard.stopped(), onVerdict: (v) => logObligationVerdict('vow_swearing', v, campaignState, narrationId) };
+  const ask = (addendum) => (addendum && xCard.interrupted('narrateVowSwearing') ? null : callNarratorAPI({
+    label: addendum ? 'narrateVowSwearing:reask' : 'narrateVowSwearing',
+    apiKey, systemPrompt,
+    userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+    model:     settings.narrationModel,
+    maxTokens: maxTokensWithSidecar(16000),
+  }));
+
   const call = async () => {
-    const raw  = await callNarratorAPI({
-      label: 'narrateVowSwearing',
-      apiKey, systemPrompt, userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(16000),
-    });
+    const raw  = (await narrateKeepingObligations(ask, obligations, checking)).raw;
     if (xCard.interrupted('narrateVowSwearing')) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, mode: 'vow_swearing', ground: groundOf({ line: vow?.name ?? '' }) });
     return (text && text.trim()) ? text : null;
@@ -5440,6 +5493,23 @@ export async function narrateAndPostVowSwearing({ vow, campaignState, speakerAct
 }
 
 /**
+ * The narration in a reply's prose, by its caller's view of it — an inciting
+ * incident's without the proposal block after it ("Suggested vow: …",
+ * "Situation: …", the card's swear button's, not the story's;
+ * incitingIncident.js splitIncitingMeta) — else all of it. The text its
+ * audit reads, as its checks before posting do (issue #399's audit N29: the
+ * audit read the block as narration). A view that throws is no view.
+ *
+ * @param {string} prose — the reply without its fact block
+ * @param {((prose: string) => string)|null} narrationOf — applyNarratorSidecar's ctx.narrationOf
+ * @returns {string}
+ */
+function narrationIn(prose, narrationOf) {
+  if (typeof narrationOf !== 'function') return prose;
+  try { return String(narrationOf(prose) ?? ''); } catch { return prose; }
+}
+
+/**
  * Compose the campaign's inciting incident — the dramatic opening event that
  * launches the campaign and sets up the first vow (rulebook "Begin your
  * adventure", step 1). Grounded in the established World Truths, starting
@@ -5448,10 +5518,15 @@ export async function narrateAndPostVowSwearing({ vow, campaignState, speakerAct
  * `Suggested vow: … (<rank>)` line, or null when narration is disabled / no key
  * / the call fails (the caller falls back to an oracle-spark-only card).
  *
- * @param {{ userMessage: string, campaignState: Object }} args
+ * `narrationOf(prose)` is the narration in the reply's prose — its caller's,
+ * who owns the proposal block's format (incitingIncident.js): what its checks
+ * and its audit read.
+ *
+ * @param {{ userMessage: string, campaignState: Object, narrationId?: string,
+ *           narrationOf?: ((prose: string) => string)|null }} args
  * @returns {Promise<string|null>}
  */
-export async function narrateIncitingIncident({ userMessage, campaignState, narrationId = newNarrationId() }) {
+export async function narrateIncitingIncident({ userMessage, campaignState, narrationId = newNarrationId(), narrationOf = null }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   if (isXCardActive(campaignState))  return null;
@@ -5476,15 +5551,28 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
     campaignState, settings, character, '', extras,
   );
 
+  // Held to its certain lines before it posts, as a session's opening is
+  // (issue #399's audit N29: it posted unchecked): "you" in a second-person
+  // game, and no table words — read in its prose alone, as its audit is: the
+  // proposal block after it ("Suggested vow: …", "Situation: …", which names
+  // the character) is the card's (`narrationOf`, its caller's). No judge
+  // reads it. A local `ask`, called inside `run`, so the playthrough harness
+  // files the call as before (callNarratorAPI>run).
+  const obligations = obligationsFor({ mode: 'set-piece', person: beatPersonOf(settings, campaignState, character, roundCharacters) });
+  const checking = { judge: false, stopped: () => xCard.stopped(), view: (prose) => narrationIn(prose, narrationOf),
+    onVerdict: (v) => logObligationVerdict('inciting_incident', v, campaignState, narrationId) };
+  const ask = (addendum) => (addendum && xCard.interrupted('narrateIncitingIncident') ? null : callNarratorAPI({
+    label: addendum ? 'narrateIncitingIncident:reask' : 'narrateIncitingIncident',
+    apiKey, systemPrompt,
+    userMessage: addendum ? `${userMessage}\n\n${addendum}` : userMessage,
+    model:     settings.narrationModel,
+    maxTokens: maxTokensWithSidecar(16000),
+  }));
+
   const run = async () => {
-    const raw = await callNarratorAPI({
-      label: 'narrateIncitingIncident',
-      apiKey, systemPrompt, userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(16000),
-    });
+    const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
     if (xCard.interrupted('narrateIncitingIncident')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, mode: 'inciting_incident' });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, mode: 'inciting_incident', narrationOf });
     return (text && text.trim()) ? text : null;
   };
 
@@ -5635,7 +5723,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
         ask,
         pacedObligations,
         { apiKey, judge: obligationJudgeOn(),
-          ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
+          ctx: { refusalCode: options.refusal?.code ?? null, line: playerText },
+          stopped: () => xCard.stopped(),
           onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
       );
       const raw = kept.raw;
@@ -5684,7 +5773,8 @@ export async function narratePacedInput(playerText, campaignState, options = {},
           const keptAgain = await narrateKeepingObligations(ask,
             pacedObligations,
             { apiKey, judge: obligationJudgeOn(),
-              ctx: { refusalCode: options.refusal?.code ?? null, offer: suggestedMove ?? null, line: playerText },
+              ctx: { refusalCode: options.refusal?.code ?? null, line: playerText },
+              stopped: () => xCard.stopped(),
               onVerdict: (v) => logObligationVerdict('paced', v, campaignState, narrationId) },
           );
           const raw = keptAgain.raw;
@@ -5692,9 +5782,11 @@ export async function narratePacedInput(playerText, campaignState, options = {},
             await postPacedNarrationPausedCard(campaignState);
             return null;
           }
+          // Its offer too, as the first try's (issue #399's audit N31: a binding
+          // ship change moved the ship before a Set a Course's roll here).
           const text = applyNarratorSidecar(raw, campaignState, { obligations: pacedObligations,
             moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-            mode: 'paced_narrative', ground: groundOf({ line: playerText }),
+            mode: 'paced_narrative', ground: groundOf({ line: playerText }), offer: suggestedMove ?? null,
           });
           if (text?.trim()) {
             const journey = journeyOfferOf(keptAgain, suggestedMove);
@@ -6048,36 +6140,13 @@ const MOVE_HINT_MATCHERS = Object.keys(MOVES)
   .map(({ id, name }) => ({ id, re: new RegExp(`\\b${escapeRegexLiteral(name)}\\b`, 'gi') }));
 
 /**
- * Extract the content of the LAST italic span in a narration string. The
- * paced-narrative move hint is, by instruction, the single italicized
- * sentence at the very end of the prose. Handles both markdown (`*…*`) and
- * HTML (`<em>…</em>` / `<i>…</i>`) emphasis. Returns '' when none is found.
- */
-function lastItalicSpan(text) {
-  const s = String(text ?? '');
-  let best = '';
-  let bestIdx = -1;
-  const patterns = [
-    /\*([^*\n]+)\*/g,                               // *markdown italics*
-    /<(?:em|i)\b[^>]*>([\s\S]*?)<\/(?:em|i)>/gi,    // <em>/<i> html italics
-  ];
-  for (const re of patterns) {
-    let m;
-    while ((m = re.exec(s)) !== null) {
-      if (m.index >= bestIdx) {
-        bestIdx = m.index;
-        best = m[1];
-      }
-    }
-  }
-  return best.trim();
-}
-
-/**
  * Read the move the narrator actually invited from its closing italic hint.
  * Returns the matched move id, or null when the hint names no recognised move
- * (or there is no hint). Only the final italic span is scanned, so single-word
- * move names ("Compel", "Strike") in the prose body cannot false-match.
+ * (or there is no hint). Only the closing offer line is scanned — the one
+ * detector of it (closingOfferLine.js; issue #399's audit N32: the last italic span
+ * anywhere was read, a ship's name mid-prose among them) — so single-word
+ * move names ("Compel", "Strike") in the prose body cannot false-match. Its
+ * one caller asks only for a narration offered a move (reconcileSuggestedMove).
  *
  * The hint can name more than one move-shaped word: "Binding that wound
  * before the battle could be a Heal." The move it invites is the one written
@@ -6090,7 +6159,7 @@ function lastItalicSpan(text) {
  * @returns {string|null}
  */
 export function extractMoveFromNarrationHint(narrationText) {
-  const hint = lastItalicSpan(narrationText);
+  const hint = splitOfferLine(narrationText).offer;
   if (!hint) return null;
   const found = [];
   for (const { id, re } of MOVE_HINT_MATCHERS) {
@@ -6919,7 +6988,7 @@ function obligationJudgeOn() {
  * @param {Array<Object>} chosenSince — choicesChosenSince's
  * @returns {Array<Object>}
  */
-function roundObligationsFor(entries, chosenSince) {
+function roundObligationsFor(entries, chosenSince, roundLines = {}) {
   const out = [];
   for (const e of entries ?? []) {
     const name = typeof e?.actorName === 'string' ? e.actorName.trim() : '';
@@ -6928,21 +6997,51 @@ function roundObligationsFor(entries, chosenSince) {
     if (input.kind === 'move') out.push(...obligationsFor({ mode: 'round-entry', resolution: input, speaker: name }));
     else if (input.refusal?.premise) out.push(...obligationsFor({ mode: 'round-entry', refusal: input.refusal }));
   }
-  out.push(...obligationsFor({ mode: 'round', chosenSince }));
+  out.push(...obligationsFor({ mode: 'round', chosenSince, ...roundLines }));
   return out;
+}
+
+/**
+ * What a round's own lines are built from, a move's beat-of-play lines among
+ * them (issue #399's audit N28: a round was held to fewer lines than a move)
+ * — for its message (narratorPrompt.js buildRoundUserMessage) and its check
+ * alike: what the dice decided of what its lines name, where the characters
+ * are and what the lines name elsewhere (none for a round that holds a
+ * journey's move, which takes them there), "you" for the one character of a
+ * second-person round, and the session's lines of speech.
+ *
+ * @param {Array<Object>} entries — the round's entries
+ * @param {Object} extras — buildNarratorExtras's, for the round
+ * @param {Array<Object>} characters — the round's characters (getActiveCharacter)
+ * @param {Object} settings
+ * @param {Object} campaignState
+ * @returns {{ dice: Array, here: Object|null, whereabouts: Object|null, person: Object|null, quotes: string[] }}
+ */
+function roundLinesOf(entries, extras, characters, settings, campaignState) {
+  const journey = (entries ?? []).some(e => e?.input?.kind === 'move' && JOURNEY_MOVES.has(e.input.moveId));
+  const lines = (entries ?? []).map(e => e?.text).filter(t => typeof t === 'string' && t.trim()).join('\n');
+  return {
+    dice: diceFactsOf(lines, { own: meterOwnersOf(campaignState), sceneId: campaignState?.currentSceneId ?? null }),
+    here: journey ? null : (extras?.here ?? null),
+    whereabouts: journey ? null : (extras?.elsewhere ?? null),
+    person: Array.isArray(characters) && characters.length === 1 ? beatPersonOf(settings, campaignState, characters[0]) : null,
+    quotes: Array.isArray(extras?.saidLines) ? extras.saidLines : [],
+  };
 }
 
 /**
  * The round's check's context: the vow a fulfilment in it names, the code of a
  * move it could not make, the round's player words (its [letgo] floor —
- * overhaul 2 §10.3).
+ * overhaul 2 §10.3), and its moves ([sheet]'s harm clause: a round that holds
+ * an Endure Harm tells a wound by design — checks.js harmViolations).
  */
 function roundCheckContext(entries) {
   const inputs = (entries ?? []).map(e => e?.input ?? {});
   const fulfil = inputs.find(i => i.kind === 'move' && i.moveId === 'fulfill_your_vow');
   const refused = inputs.find(i => i.kind !== 'move' && i.refusal?.code);
   return { vowName: fulfil?.moveTarget ?? null, refusalCode: refused?.refusal?.code ?? null,
-    line: groundOf({ lines: (entries ?? []).map(e => e?.text) }).line };
+    line: groundOf({ lines: (entries ?? []).map(e => e?.text) }).line,
+    moveIds: inputs.filter(i => i.kind === 'move' && typeof i.moveId === 'string').map(i => i.moveId) };
 }
 
 /**
@@ -6971,6 +7070,12 @@ function oracleObligationsFor({ kind, question = null, rolledLine = null, here =
  * @param {string|null} narrationId
  */
 function logObligationVerdict(mode, v, campaignState, narrationId) {
+  // What the narration still breaks after its one re-ask goes to the GM, on
+  // a GM-only Narrative Review card posted once its narration's card is
+  // (issue #399's audit N16 — it reached only this telemetry).
+  if (Array.isArray(v?.stillBroken) && v.stillBroken.length && typeof narrationId === 'string' && narrationId) {
+    noteStillBroken(narrationId, v.stillBroken);
+  }
   try {
     const rows = [
       ...(v?.verdicts ?? []).map(x => ({ kind: 'obligation', mode, ...x })),
@@ -6982,10 +7087,58 @@ function logObligationVerdict(mode, v, campaignState, narrationId) {
       sceneId: campaignState?.currentSceneId ?? '', sessionId: campaignState?.currentSessionId ?? null,
       sessionNumber: campaignState?.sessionNumber ?? null, prose: `[obligations ${mode}${narrationId ? ` ${narrationId}` : ''}]`,
       contradictions: rows, dispatched: false,
+      // The check before posting, by mode — the page shows it by what each verdict did (issue #399's audit N17).
+      obligations: mode,
     })?.catch?.(() => {});
   } catch (err) {
     console.warn(`${MODULE_ID} | obligations: the verdict could not be logged:`, err?.message ?? err);
   }
+}
+
+// A narration's breaches left after its one re-ask, by narrationId, until its
+// card posts (registerStillBrokenNoteHook). Held on the GM whose client
+// narrated — AA34's gate, as its audit — and only there: one note a narration.
+const STILL_BROKEN_KEPT = 20;
+const _stillBroken = new Map();
+
+/** Hold a narration's breaches for the note its card's posting sends. On a GM's client only. */
+function noteStillBroken(narrationId, stillBroken) {
+  if (globalThis.game?.user?.isGM !== true) return;
+  _stillBroken.set(narrationId, stillBroken.map(v => ({ ...v })));
+  while (_stillBroken.size > STILL_BROKEN_KEPT) _stillBroken.delete(_stillBroken.keys().next().value);
+}
+
+/**
+ * The kinds a narration's held note names — its audit posts no second card
+ * for them (consistencyCheck.js `notedKinds`).
+ *
+ * @param {string|null|undefined} narrationId
+ * @returns {Set<string>}
+ */
+export function stillBrokenKindsOf(narrationId) {
+  return new Set((_stillBroken.get(narrationId ?? '') ?? []).map(v => v?.tag).filter(Boolean));
+}
+
+/**
+ * Post the GM's note on a narration that still breaks a line after its one
+ * re-ask (issue #399's audit N16), when its narrator card is created: a
+ * Narrative Review card a breach, after the narration it is about. A fallback
+ * card or an X-carded one carries no note; a narration whose card never posts
+ * leaves its held note to age out. The hook fires on every client: the card's
+ * author posts the note — the client that narrated, which holds it.
+ */
+export function registerStillBrokenNoteHook() {
+  Hooks.on('createChatMessage', (message) => {
+    if (!isAuthoringClient(message)) return;
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.narratorCard || typeof f.narrationId !== 'string') return;
+    const held = _stillBroken.get(f.narrationId);
+    if (!held) return;
+    _stillBroken.delete(f.narrationId);
+    if (f.narrationFallback || f.xCarded) return;
+    postStillBrokenNote(held, storedCampaignState(), { narrationId: f.narrationId })
+      .catch(err => console.warn(`${MODULE_ID} | obligations: the still-broken note could not be posted:`, err?.message ?? err));
+  });
 }
 
 /** Whether fact continuity is switched on — on when the setting cannot be read (unit tests, very early init). */
@@ -7059,6 +7212,9 @@ function applyOwedPlanSideData(rawText, campaignState, ctx = {}) {
  * @param {string|null} [ctx.moveId]
  * @param {string|null} [ctx.narrationId] — the narration's id (its card
  *   carries it too), stamped on what the sidecar writes (issue #321 U07)
+ * @param {((prose: string) => string)|null} [ctx.narrationOf] — the narration
+ *   in the prose, where not all of it is (an inciting incident's): what the
+ *   audit reads (narrationIn)
  * @returns {string} prose with the sidecar block removed
  */
 export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
@@ -7161,19 +7317,28 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
 
   // Phase E — optional Haiku audit of the prose against the active-scene
   // ledger. Gated inside runConsistencyCheck on the
-  // factContinuity.consistencyCheck setting; fire-and-forget. Also gated on
-  // the canonical GM here: the audit makes an API call and posts a GM-only
-  // review card, so it must be single-emitter like the writes above. It
+  // factContinuity.consistencyCheck setting; fire-and-forget. It runs where
+  // the narration ran — the GM whose client narrated, AA34's gate, as the
+  // narration's capture and its judge — so one GM audits it: re-checking
+  // isCanonicalGM when the reply landed left a narration that a lower-id GM
+  // joining meanwhile had taken over unaudited (issue #399's audit N26), and
+  // a keyed GM who was not canonical judged a narration it then did not audit
+  // (N27). A player's client, narrating on its own key, audits nothing. It
   // audits the ledger as it stands in the store, never the caller's
   // pre-dialog snapshot (auditCampaignState, issue #329 X02).
-  if (campaignState && prose?.trim() && isCanonicalGM()) {
-    runConsistencyCheck(prose, auditCampaignState(campaignState), {
+  if (campaignState && prose?.trim() && game.user?.isGM === true) {
+    // The narration alone: an inciting incident's proposal block is not (N29).
+    runConsistencyCheck(narrationIn(prose, ctx.narrationOf), auditCampaignState(campaignState), {
       matchedEntityIds:  ctx.matchedEntityIds ?? [],
       currentLocationId: campaignState.currentLocationId ?? null,
       narrationId:       typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       // What the narration was told it must tell and must not (overhaul 4):
       // audited too, kind `obligation`.
       obligations:       Array.isArray(ctx.obligations) ? ctx.obligations : [],
+      // A cutaway is not held to where the characters are (issue #399, D1).
+      narrationKind:     ctx.cutaway === true ? 'cutaway' : null,
+      // The lines its own check already noted to the GM (N16): no second card.
+      notedKinds:        stillBrokenKindsOf(ctx.narrationId),
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );

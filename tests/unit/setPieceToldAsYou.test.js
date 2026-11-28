@@ -75,10 +75,13 @@ describe('[person]: a second-person set-piece never names its character outside 
     expect(personViolations('You watch the miracle of a working pump.', MIRA)).toEqual([]);
   });
 
-  it('is no obligation without names, and none of any other mode', () => {
+  it('is no obligation without names, and none of a mode that is no beat of play', () => {
     expect(obligationsFor({ mode: 'set-piece', person: null }).some(o => o.kind === 'person')).toBe(false);
     expect(obligationsFor({ mode: 'set-piece', person: { names: [] } }).some(o => o.kind === 'person')).toBe(false);
-    expect(obligationsFor({ mode: 'round', person: MIRA }).some(o => o.kind === 'person')).toBe(false);
+    // An oracle follow-up is no beat of play: none.
+    expect(obligationsFor({ mode: 'oracle', person: MIRA }).some(o => o.kind === 'person')).toBe(false);
+    // A Batch Mode round is one, and has had [person] since issue #399's audit N28.
+    expect(obligationsFor({ mode: 'round', person: MIRA }).some(o => o.kind === 'person')).toBe(true);
   });
 });
 

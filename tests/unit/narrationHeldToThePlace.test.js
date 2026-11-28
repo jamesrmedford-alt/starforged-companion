@@ -71,7 +71,7 @@ const violationsAt = (run, step, here = HERE) => {
 };
 
 describe('NOT SO [here] — where the record has the characters, on every beat of play', () => {
-  it('a paced line and a typed move are told it; a journey\'s own move, a round and a set-piece are not — an oracle only when given the place', () => {
+  it('a paced line, a typed move and a Batch Mode round are told it; a journey\'s own move and a set-piece are not — an oracle only when given the place', () => {
     for (const mode of ['paced', 'move']) {
       const lines = obligationsFor({ mode, resolution: mode === 'move' ? { moveId: 'develop_your_relationship', outcome: 'strong_hit' } : null, here: HERE });
       expect(lines.find(o => o.kind === 'here'), mode).toMatchObject({ list: 'NOT SO', here: 'Bleakhold Station', places: HERE.places, people: HERE.people });
@@ -81,7 +81,10 @@ describe('NOT SO [here] — where the record has the characters, on every beat o
     for (const moveId of ['set_a_course', 'undertake_an_expedition', 'finish_an_expedition']) {
       expect(obligationsFor({ mode: 'move', resolution: { moveId, outcome: 'strong_hit' }, here: HERE }).map(o => o.kind), moveId).not.toContain('here');
     }
-    for (const mode of ['round', 'set-piece']) expect(obligationsFor({ mode, here: HERE }).map(o => o.kind), mode).not.toContain('here');
+    expect(obligationsFor({ mode: 'set-piece', here: HERE }).map(o => o.kind)).not.toContain('here');
+    // A Batch Mode round is a beat of play (issue #399's audit N28); narrator.js roundLinesOf gives a round with
+    // a journey's move no place.
+    expect(obligationsFor({ mode: 'round', here: HERE }).map(o => o.kind)).toContain('here');
     // An oracle follow-up is held to the place only when the narrator gives it one: a journey's complication
     // at its destination (PEOPLE-WAITING-AT-THE-ARRIVAL, round 8 — arrivalHeldToThePlace.test.js). A question
     // asked of the oracle is given none.

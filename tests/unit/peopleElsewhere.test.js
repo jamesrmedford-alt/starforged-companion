@@ -146,12 +146,15 @@ describe('D6 — NOT SO [whereabouts]', () => {
     }
   });
 
-  it('a journey\'s own move is told none; nor is any other mode', () => {
+  it('a journey\'s own move is told none; nor is any mode but a beat of play', () => {
     for (const moveId of ['set_a_course', 'undertake_an_expedition', 'finish_an_expedition']) {
       expect(obligationsFor({ mode: 'move', resolution: { moveId, outcome: 'strong_hit' }, whereabouts: withWords }).map(o => o.kind), moveId)
         .not.toContain('whereabouts');
     }
-    for (const mode of ['round', 'oracle', 'set-piece']) expect(obligationsFor({ mode, whereabouts: withWords }).map(o => o.kind)).not.toContain('whereabouts');
+    for (const mode of ['oracle', 'set-piece']) expect(obligationsFor({ mode, whereabouts: withWords }).map(o => o.kind)).not.toContain('whereabouts');
+    // A Batch Mode round is a beat of play (issue #399's audit N28); narrator.js roundLinesOf gives a round with
+    // a journey's move none.
+    expect(obligationsFor({ mode: 'round', whereabouts: withWords }).map(o => o.kind)).toContain('whereabouts');
   });
 
   it('between places, the line says so', () => {
