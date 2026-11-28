@@ -236,3 +236,51 @@ Kept as `cold-read.md`, checked point by point in the scorecard's "The cold read
   - the memory questions;
   - the unanswered reward card;
   - x15.
+
+## The root-cause read, checked (the review session's, 2026-11-28)
+
+The session that wrote #402 read round 11 independently: whole prompts rebuilt from `recording.systemSections`, the transcript, the cold read and the code at 6c45d69a; read-only. Its causes, each checked here against the recorded call (✓ checked; — not checked here):
+
+- **REVEAL-FACTS-NOT-FILED (1) is #402's own seam, not the draft.** ✓
+  - a79's two truths carry no `from` tag, so D1's `factBasis` files them as the narrator's colour, which is not shown back once no narration restates it.
+  - Fulfill Your Vow states no stakes, so `decidedOfMove` files nothing.
+  - The plan's truth goes to Lore unconfirmed (`secrets.js` ~L1168), and the run's GM confirms nothing.
+  - The answer has no basis in any store, and lives only in RECENT SCENE and the rolling summary.
+  - FIGHT-WON-NOT-SAID (9) is the same mechanism, and WEAK-HIT-FILED-AS-CLEAN (8) its mirror: a stakes line is a promise written before the roll.
+- **Tamsin at Bleakhold (5) was asked for.** ✓
+  - a29, a31 and a32's prompts carry A THREAD GONE QUIET: "Tamsin Vey … has not come up for 5 scenes. Bring it back in this beat through one of its clues — 'She will not let the ledger leave her thumb.'" (`narratorPrompt.js` ~L3187).
+  - a31 and a32 obeyed. The missing place on record is why nothing stopped it, not why it happened.
+  - The rule picks a quiet plan with no test of whether its subject can be in the scene (QUIET-THREAD-BROUGHT-BACK-ELSEWHERE).
+- **The clock's "her" (7) has a second cause #402 made.** ✓
+  - The RESPONSE FORMAT example added by change 2 is "customs clerk (she/her)" (`narratorPrompt.js` L266).
+  - a94's clock request holds no other clerk with a pronoun, and the handle changed besides ("customs clerk", "Clerk", "berth clerk").
+- **The narrator's own facts are almost never shown back.** — Cause not traced: NARRATOR-FACTS-NOT-SHOWN-BACK.
+  - The run's fact blocks gave 44 untagged truths and 69 untagged state changes.
+  - Of 74 narrator requests with a scene block, one holds WHAT THE NARRATION HAS DESCRIBED, and three hold STANDING NOW.
+  - a58 and a59's truths about the clerk are not in a61's 1,415-character scene block.
+  - It is a likely cause of the slate and the clerk moving about (a63–a84). Look at the colour window (`sceneNarrationsOf`) and the scene the truths are filed under.
+- **Four plans on one question, decided apart (PLANS-DECIDED-APART).** —
+  - At a75: the vow's Foreman, the mystery's "buyer's go-between… which broker's counter", and Tamsin's second ledger of schedules.
+  - Nothing reconciles them, so the ledger-knot, the broker's counter and the runner all point away from the vow's answer.
+  - The stakes promised "a name or trail", and UNREVEALED forbids the vow's truth, so the narrator minted one (Quint, 3).
+- **The scene-answer call sees the hidden plans (SCENE-ANSWER-SEES-HIDDEN-PLANS).** — a83 is given HIDDEN PLANS and UNREVEALED, and stated Tamsin's hidden truth ("a second ledger of her own"; 12). Round 10's a80 was the same.
+- **The audit (6).** —
+  - a39's identity block lists "Mira Kestrel — she/her" over an indented "customs clerk — he/him", and the audit held the clerk's own "his" against Mira; a57's low finding is the same mistake.
+  - a46's struck fact is given in the positive under a negating header: round 9's backwards reading, in a block #399 D2 never rewrote.
+  - a26's logged [cost] finding may be the first right live finding in three rounds: the complication was told before a27 chose it.
+- **The example names have leaked before:** round 5's "Lyra" too (3).
+- **What #402 made:**
+  - the reveal's facts with no basis (1b with D1);
+  - stakes lines filed as facts;
+  - the "customs clerk (she/her)" example;
+  - D5's allowance for the audit's older kinds.
+- **What #402 missed:**
+  - the prompt's examples used as story;
+  - plans decided apart, and the quiet-thread rule;
+  - the hidden plans in the scene-answer call;
+  - the narrator's facts not shown back.
+
+Its three first tests:
+- a79's recorded reply reaches the session record, and a recap names the culprit;
+- a61's request holds a58's and a59's untagged truths;
+- no RESPONSE FORMAT example name is in any kept narration.
