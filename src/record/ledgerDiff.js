@@ -34,6 +34,7 @@
 
 import { recordEvent } from './record.js';
 import { entryBasis, binds } from '../factContinuity/provenance.js';
+import { pronounsFor } from '../factContinuity/pronouns.js';
 
 /** `retractedBy` of a truth a narration's removal retracted, not the table (factContinuity/ledgers.js). */
 const NOT_THE_TABLE = new Set(['xcard', 'superseded']);
@@ -101,7 +102,12 @@ export function ledgerEvents(before, after) {
   const sameScene = (before?.currentSceneId ?? null) === (after?.currentSceneId ?? null);
   // What play let go rides with the frame (overhaul 2 §7.3): the texts alone.
   const letGoOf = (f) => (Array.isArray(f?.letGo) ? f.letGo.map(e => (typeof e?.text === 'string' ? e.text : '')).filter(Boolean) : []);
-  const shape = (f) => JSON.stringify(f ? [f.location ?? null, f.present ?? [], f.situation ?? null, f.question ?? null, f.questionAnswered === true, letGoOf(f)] : null);
+  // Who is over a comm, and each person's pronouns as the scene was given them
+  // (issue #402, change 2) — of the people in this frame alone.
+  const remoteOf = (f) => (Array.isArray(f?.remote) ? f.remote : []);
+  const pronounsOf = (f) => pronounsFor(f?.pronouns, [...(Array.isArray(f?.present) ? f.present : []), ...remoteOf(f)]);
+  const shape = (f) => JSON.stringify(f ? [f.location ?? null, f.present ?? [], remoteOf(f), pronounsOf(f), f.situation ?? null,
+    f.question ?? null, f.questionAnswered === true, letGoOf(f)] : null);
   if (now && (!sameScene || shape(was) !== shape(now))) {
     events.push({
       kind: 'frame',
@@ -110,6 +116,8 @@ export function ledgerEvents(before, after) {
         ref: { nar: now.narrationId ?? null },
         d: {
           location: now.location ?? null, present: Array.isArray(now.present) ? now.present : [],
+          ...(remoteOf(now).length ? { remote: remoteOf(now) } : {}),
+          ...(pronounsOf(now).length ? { pronouns: pronounsOf(now) } : {}),
           situation: now.situation ?? null, question: now.question ?? null, questionAnswered: now.questionAnswered === true,
           ...(letGoOf(now).length ? { letGo: letGoOf(now) } : {}),
         },

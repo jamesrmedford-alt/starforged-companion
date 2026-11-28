@@ -70,7 +70,11 @@ describe('issue #362 D4 — an expedition\'s plan closes with its track', () => 
       outcome: 'strong_hit', outcomeLabel: 'Strong Hit', endingTrackIds: [track.id] }));
     expect(lastCall().system, 'the finishing narration has it in play').toContain(`(id ${plan.id})`);
     expect(planOf(plan.id)).toMatchObject({ status: 'resolved', truthRevealed: true });
-    expect((stored().sceneTruths ?? []).map(t => t.fact), 'its truth a stated fact').toContain(plan.truth);
+    // What waits at the end is filed as the narration told it (issue #402,
+    // change 1b): the plan's text pending the GM, no scene fact of its own.
+    expect((stored().sceneTruths ?? []).map(t => t.fact), 'no scene fact the prose did not give').not.toContain(plan.truth);
+    const { getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+    expect(gmOf(table).run(() => getNarratorAssertedLore(null)).map(e => e.text), 'its truth is Lore pending the GM').toContain(plan.truth);
 
     // A later beat does not see it.
     table.replies = reply({});

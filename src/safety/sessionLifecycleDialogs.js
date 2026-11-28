@@ -662,12 +662,13 @@ async function beginSessionOnce(payload, ctx = {}) {
       // narration off, no key here or the X-Card up, nothing is rolled.
       if (!sessionVignetteWillRun(cs)) return;
       const participants = collectGalleyParticipants(cs);
-      const { userMessage, seeds } = await composeOpeningScene(participants, cs, { pickUp });
+      const { userMessage, seeds, carry } = await composeOpeningScene(participants, cs, { pickUp });
       const narrationId  = newNarrationId();
       // The PCs in the scene are the vignette's CHARACTER blocks — never a
       // first PC whose player is away (issue #345 AA31).
       const actorIds = participants.active.map(p => p.actor?.id).filter(Boolean);
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds, seeds });
+      // Its scene opens with the people the last session stopped with, at that place (issue #402 D2).
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds, seeds, carry });
       if (text) {
         // The seeds were marked by the narration's own account of them; the
         // card keeps them (`builtFrom`) and shows them to the table.

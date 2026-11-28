@@ -19,6 +19,7 @@ import { lengthPhrase, sentenceRule } from './proseVariety.js';
 import { obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
 import { connectionStanding } from '../moves/situation.js';
 import { vowAsksWho } from '../world/tellingWords.js';
+import { pronounsIn } from '../factContinuity/pronouns.js';
 
 /**
  * The scene's own lines for a beat's obligations block (overhaul 2 §10.3 —
@@ -108,7 +109,7 @@ export function appendSidecarInstruction(options = {}) {
     exampleLines.push(
       '      "sceneFrame": {',
       '        "location":  "Lyra\'s orbital graveyard",',
-      '        "present":   ["Venri Quint"],',
+      '        "present":   ["Venri Quint (she/her)"],',
       '        "remote":    ["Vance"],',
       '        "situation": "Hailing Vance\'s shuttle across the debris field",',
       '        "question":  "Will Vance let them board?"',
@@ -256,7 +257,11 @@ export function appendSidecarInstruction(options = {}) {
       '  unnamed figure by a short handle, the same words the fact block\'s',
       '  stateChanges use for them, kept the same from beat to beat; "remote": a',
       '  named character heard or seen over a comm, a screen or a call — never in',
-      '  "present"; "situation": the',
+      // Issue #402, change 2: an unnamed person's pronoun had nowhere to live
+      // but a card — round 10's clerk was "her", then "he" after the break.
+      '  "present". An entry may end with its person\'s pronouns as your prose',
+      '  gives them — "customs clerk (she/her)"; the first set given is kept for',
+      '  them. "situation": the',
       '  situation in one sentence. Include it on EVERY response — it replaces',
       '  the previous snapshot. Keep names exactly as established. When the',
       '  player\'s line has moved the scene within the characters\' place, write',
@@ -551,7 +556,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // are told the scene by one renderer, from one read.
   const read = sceneForReading(campaignState, {
     sceneBeats: options?.sceneBeats, sceneFrameEnabled, nameChanges: options?.nameChanges ?? null,
-    underway: options?.underway ?? '',
+    underway: options?.underway ?? '', cardPronouns: options?.cardPronouns ?? null,
   });
   const what = read.began?.what ?? '';
   const beats = read.began?.beats ?? null;
@@ -732,7 +737,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
  * @returns {{ began: { cause: string, what: string, beats: number|null }|null, place: { id: string, name: string }|null,
  *   ship: string, where: string, present: string[], now: string, question: string, letGo: string[] }}
  */
-export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null, underway = '' } = {}) {
+export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null, underway = '', cardPronouns = null } = {}) {
   const anchor = campaignState?.sceneBegan && typeof campaignState.sceneBegan === 'object'
     && campaignState.sceneBegan.sceneId && campaignState.sceneBegan.sceneId === (campaignState.currentSceneId ?? null)
     ? campaignState.sceneBegan : null;
@@ -755,14 +760,21 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
     return t && changes.length ? writeNewNames(t, changes, { otherNames: others }) : t;
   };
   const question = typeof frame?.question === 'string' ? frame.question.trim() : '';
+  // Each person with their pronouns (issue #402, change 2): a recorded
+  // person's card's, else the first set the scene was given for them.
+  const named = (p) => {
+    const name = fresh(p);
+    const set = pronounsIn(cardPronouns, name) || pronounsIn(cardPronouns, p) || pronounsIn(frame?.pronouns, p);
+    return set ? `${name} (${set})` : name;
+  };
   return {
     began,
     place,
     between,
     ship,
     where: fresh(frame?.location),
-    present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
-    remote: (Array.isArray(frame?.remote) ? frame.remote : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
+    present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(named),
+    remote: (Array.isArray(frame?.remote) ? frame.remote : []).filter(p => typeof p === 'string' && p.trim()).map(named),
     now: fresh(frame?.situation),
     question: fresh(question),
     letGo: frame ? normaliseLetGo(frame.letGo).map(e => e.text) : [],
@@ -2034,7 +2046,7 @@ function formatEntityCardsBlock(entityCards) {
  */
 function formatLedgerSection(campaignState, settings = {}, {
   matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
-  nameChanges = null, progressTracks = [], elsewhere = null, pendingPeople = [],
+  nameChanges = null, progressTracks = [], elsewhere = null, pendingPeople = [], cardPronouns = [],
 } = {}) {
   const {
     factContinuityEnabled         = true,
@@ -2059,6 +2071,7 @@ function formatLedgerSection(campaignState, settings = {}, {
     underway: expeditionUnderway(progressTracks),
     elsewhere,
     pendingPeople,
+    cardPronouns,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -2733,6 +2746,8 @@ export function buildNarratorSystemBlocks(
     elsewhere: extras?.elsewhere ?? null,
     // The people met whom the table has not yet confirmed (whereabouts.js pendingPeopleOf).
     pendingPeople: Array.isArray(extras?.pendingPeople) ? extras.pendingPeople : [],
+    // The recorded people's pronouns, from their cards: they win over the frame's (issue #402, change 2).
+    cardPronouns: Array.isArray(extras?.cardPronouns) ? extras.cardPronouns : [],
   });
   if (ledgerBlock) parts.push(ledgerBlock);
 

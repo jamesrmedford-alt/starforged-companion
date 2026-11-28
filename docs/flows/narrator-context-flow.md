@@ -254,8 +254,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   OPENING-TOLD-FROM-THE-CUTAWAY) — its place (`scene.started`'s, else
   the session's end's), who was with them at the end (its last frame's
   `present`, the PCs left out — a one-character game's frames hold her, issue
-  #397 Code fix 5), what binds there (the truths its beats established — the
-  player's, the dice's, the GM's, the premise's, labelled; never colour), the
+  #397 Code fix 5 — each with the pronouns the scene was given for them, a
+  recorded person's card's winning, and who was over a comm, its `remote`:
+  issue #402 change 2, `stopPronouns`), what binds there (the truths its beats
+  established — the player's, the dice's, the GM's, the premise's, labelled;
+  never colour; an answered yes/no question among the dice's, issue #402
+  change 1a), the
   question still open (the last frame's, unanswered) and what play let go,
   the ship from its live record — "WHERE THE LAST SESSION STOPPED — session
   N's record, the table's facts" — then the last narration "as the table read
@@ -1491,6 +1495,15 @@ met who are not yet on record (`Not yet on record —`, at most four):
   stored frame lists her when the block's does not (`narrator.js
   withTheOnePlayerCharacter`, the `QUESTION_MODES`, never a bookend); with two
   or more nothing is added.
+- **Each person's pronouns** (issue #402, change 2). An entry may end with its
+  person's pronouns — "customs clerk (she/her)" (`factContinuity/pronouns.js`;
+  the parser keeps the name bare and the set in the frame's `pronouns`). The
+  first set given is kept for the scene (`ledgers.applySceneFrame`), carried
+  across a turn and on the record's frame events, and shown with the person
+  in THE SCENE's Present and Remote lines (`sceneForReading`), a recorded
+  person's card's set winning (`extras.cardPronouns`, from `listConnections`).
+  A narration that gives a person on record another pronoun is logged, never
+  asked again (`narrator.notePronounBreaks` → `pronouns.pronounBreaks`).
 A journey's hit carries NOT SO [arrival] in place of [here]. It names who the
 record has elsewhere, leaving out the people of the latest frame
 (`departedWith`, who may have come along). It is held by [here]'s people
@@ -1742,11 +1755,14 @@ A fulfilment that said "both are named now" recorded its vow's truth as
 revealed, and the truth became a binding scene fact and confirmed lore with
 none of it told — known-issues VOW-FULFILLED-WITH-NOBODY-NAMED. A floor, not
 a judgement: whether a truth is stated is asked of the narrator in UNREVEALED;
-a step the code forced is not checked), which becomes a ledger truth of the narration's own
-(`revealedTruthsOf` — the truth the sidecar leaves on the plan: a `plans`
-correction or decision of the same id is laid on first, so a truth changed or
-decided and revealed in one beat is the one the ledger and Lore both state,
-issue #362 AC13) and confirmed lore — the plan's truth mirrored into the Lore
+a step the code forced is not checked). The reveal adds no ledger truth of
+its own since issue #402 change 1b (`revealedTruthsOf` is deleted): the beat
+established what its own fact block gave, and the plan's truth — the one the
+sidecar leaves on the plan, a `plans` correction or decision of the same id
+laid on first (issue #362 AC13) — is filed as Lore pending the GM's
+confirmation (`onTruthRevealed`: narrator-asserted, unconfirmed; the
+narrator's ESTABLISHED LORE reads confirmed Lore alone, and a GM's Confirm
+makes it canon) — the plan's truth mirrored into the Lore
 journal, the entry naming its plan (`revealOf`) and stamped with the
 narration: an X-Card on the narration retracts it, and a Burn / Improve
 supersede, which takes back the narration's plans alone, takes this entry
@@ -1860,9 +1876,10 @@ Channel's relay), and a narration's reveal of it is not recorded — no plan
 mark, ledger fact, Lore entry or rolls card — while its clues, steps and clock
 stay in play; the GMs are whispered once which plan and how to lift it
 (`safety.postWithheldTruthsNotice`): a GM's edit of the truth's text lifts it,
-and Reveal now still reveals it, each later reveal confirming again the Lore
+and Reveal now still reveals it, each later reveal filing again the Lore
 entry the X-carded one filed, by the plan's id (`recordLoreDiscovery`'s
-`revealOf`) — issue #364 XCARD-REVEAL-REREVEAL-NO-LORE; a reveal whose
+`revealOf`; a narration's pending, the GM's confirmed) — issue #364
+XCARD-REVEAL-REREVEAL-NO-LORE; a reveal whose
 write the X-Card overtook (refused for the removed narration by
 `updateSkeleton`, so there was no reveal for the undo to take back) still
 marks the truth withheld, as bookkeeping, the GMs told once
@@ -2133,7 +2150,15 @@ carries the move's `resolutionId`, and a Burn Momentum or Improve Result that
 reverts the price drops it (`dropOracleResultsOf`, issue #342 Z11 — it told
 the strong hit's re-narration the undone price was established); every entry
 carries the id of its result card (`cardId`, the hook's own message id), so
-an X-Card on the narration that told it drops it too (issue #345 AA01) — for section [3b]
+an X-Card on the narration that told it drops it too (issue #345 AA01). An
+answered yes/no question is a fact the dice decided as well (issue #402
+change 1a): the follow-up's sidecar apply, on the canonical GM, files the
+card's question with its answer — "the oracle answered YES", basis `dice`,
+read from the card itself (`oracleMemory.yesNoAnswerOfCard` →
+`ledgers.fileOracleAnswer`, relayed by card id from a player's own key and
+filed only from that player's card) — stamped with the follow-up narration,
+so it binds, is on the record in that beat, and goes with the narration's
+X-Card — for section [3b]
 (the retired assembler's RECENT ORACLES section went with the module, 2026-07
 — issue #271).
 
@@ -2181,8 +2206,14 @@ begun before the narration, ended after the beat whose `endingTrackIds`
 name the track) — `endScene({ turn: true })`, which keeps the unanswered
 mysteries (carried by `secrets.js carrySceneMysteries`) and the `!pace`
 override (D16, amending #362 D4), then a start with the cause in words and
-the frame's cast, let-go questions and the spotlight's last actor carried
+the frame's cast (with the pronouns the scene was given for them, issue #402
+change 2), let-go questions and the spotlight's last actor carried
 (`carriedFrame`); the summary is made (fire-and-forget), no snapshot taken.
+A session's first scene starts with the people the last session stopped with,
+and their pronouns, when it opens at the place the last session stopped and
+the table gave no word of its own on where it picks up (issue #402 D2 —
+`galleyVignette.sessionCarry` → `narrateSessionVignette`'s `carry` →
+`carriedFrame`, read against the new scene's anchor).
 A copy on another scene than the store's turns nothing. The scene's opening
 beat is told so in overhaul 4's obligations block of its user message — TELL
 [scene] (`sceneTurns.js sceneObligations` → `sceneOpeningOf`: the anchor's
@@ -2199,10 +2230,9 @@ no stamp falls back to the end-of-scene place, `resolveScenePlace`: the
 frame's location by the same ladder, else the current location when the
 frame names no place); text truths and place-less scene truths → WJ Lore
 (titled with where the truth was asserted, else the frame's location, not
-the scene id) — save a hidden plan's revealed truth, marked `revealOf` (its
-plan's id) by the sidecar apply: the reveal filed it as Lore already
-("Threat: the escort"), and archived again it was two entries (issue #362
-AC37).
+the scene id). A reveal puts no truth of its own in the scene (issue #402
+change 1b), so nothing of it is archived again (issue #362 AC37's double
+entry cannot recur).
 It keeps each recorded character's location / vessel / condition on their
 record as `lastKnown` (C1, rendered as LAST KNOWN on the card) — each value
 with the `narrationId` that set it and the values it superseded (`previous`,

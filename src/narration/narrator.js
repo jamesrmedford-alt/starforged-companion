@@ -39,8 +39,9 @@ import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlig
 import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS, wornDetails, linesAlreadySaid } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { markSeedsUsed, rolledWordsOf } from '../session/sceneSeeds.js';
-import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
-import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
+import { applySidecar, applySceneFrame, retractNarrations, newNarrationId, fileOracleAnswer } from '../factContinuity/ledgers.js';
+import { normalisePronounList, pronounsIn, pronounBreaks } from '../factContinuity/pronouns.js';
+import { readRecentOracleResults, dropOracleResultsFor, yesNoAnswerOfCard } from '../oracles/oracleMemory.js';
 import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js';
 import { narrateKeepingObligations } from '../moves/contracts/checks.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
@@ -98,7 +99,7 @@ import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
 import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { withoutUntoldTruths } from '../world/secrets.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, peopleNamedIn, quietestPlan } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { readRecord } from '../record/read.js';
@@ -657,6 +658,9 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // where the record last had them with the characters, else where they came
   // into the story — so the fact block names them so, and where they are is kept.
   extras.pendingPeople = PENDING_PEOPLE_MODES.has(mode) ? pendingPeopleTold(sceneState ?? campaignState) : [];
+  // The recorded people's pronouns, from their cards: THE SCENE gives each
+  // person present theirs, and a card's win over the frame's (issue #402, change 2).
+  extras.cardPronouns = cardPronounsOf(campaignState);
 
   // The vow this scene serves (issue #353 R3): a linked track's vow, the
   // session's quest focus, or the only vow in play, with its progress — the
@@ -4618,7 +4622,7 @@ export async function narrateOracleFollowup({
   try {
     const raw = (await narrateKeepingObligations(ask, oracleObligations, checking)).raw;
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
+    const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }), oracleCardId });
 
     if (!text?.trim()) {
       fileUnansweredPlanRequests(extras.planRequests, campaignState);
@@ -4641,7 +4645,7 @@ export async function narrateOracleFollowup({
         // Checked as the first try is.
         const raw = (await narrateKeepingObligations(ask, oracleObligations, checking)).raw;
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
+        const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }), oracleCardId });
         if (text?.trim()) {
           sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -4911,6 +4915,24 @@ const STORY_PEOPLE_LISTED = 8;
 const PENDING_PEOPLE_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution', 'oracle_followup', 'scene_interrogation']);
 
 /**
+ * The recorded people's pronouns, by name, from their cards
+ * (listConnections — the card's Pronouns field over the record's): what wins
+ * over the set a scene's frame was given (issue #402, change 2). [] when none
+ * is recorded or the cards cannot be read.
+ *
+ * @param {Object|null} campaignState
+ * @returns {Array<{ name: string, pronouns: string }>}
+ */
+function cardPronounsOf(campaignState) {
+  try {
+    return normalisePronounList((listConnections(campaignState ?? {}) ?? []).map(c => ({ name: c?.name, pronouns: c?.pronouns })));
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: the recorded people's pronouns were not read:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
  * The people met whom the table has not yet confirmed (whereabouts.js
  * pendingPeopleOf), as THE SCENE tells them: each one's draft name and
  * description, and where the record last had them with the characters —
@@ -5106,9 +5128,12 @@ function meterOwnersOf(campaignState) {
  *   so it runs at interaction — discovery when it introduces someone
  * @param {boolean} [args.detect] — its capture runs the detection pass too,
  *   as a clock vignette's does (the spotlight's — detection follows latitude)
+ * @param {Object|null} [args.carry] — the opening's: the people the last
+ *   session stopped with, and where (galleyVignette.js composeOpeningScene) —
+ *   its scene starts with them when it opens there (issue #402 D2)
  * @returns {Promise<string|null>}
  */
-export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null, seeds = null, narratorClass = null, detect = false }) {
+export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null, seeds = null, narratorClass = null, detect = false, carry = null }) {
   if (!sessionVignetteWillRun(campaignState)) return null;
   const settings = getNarratorSettings();
   const xCard = watchXCard(campaignState);
@@ -5122,6 +5147,9 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   await ensureCurrentScene(campaignState, {
     mode: 'session_vignette', reason: 'session_vignette',
     cause: cutaway ? 'cutaway' : 'session',
+    // The opening's scene starts with the people the last session stopped
+    // with, at that place (issue #402 D2; galleyVignette.js sessionCarry).
+    carry: cutaway ? null : carry,
   });
 
   // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
@@ -6960,7 +6988,7 @@ async function postFallbackCard(resolution, campaignState = null, reason = claud
  * @returns {Promise<{ cause: string, what: string }|null>} the turn, when the scene turned
  */
 async function ensureCurrentScene(campaignState, {
-  mode = null, reason = 'unknown', cause = 'first', line = '', moveId = null, moveIds = [], endingTrackIds = [],
+  mode = null, reason = 'unknown', cause = 'first', line = '', moveId = null, moveIds = [], endingTrackIds = [], carry = null,
 } = {}) {
   if (!campaignState || !factContinuityEnabled()) return null;
   // A scene boundary is a world write (campaignState, WJ Lore pages, entity
@@ -6971,7 +6999,7 @@ async function ensureCurrentScene(campaignState, {
     console.debug?.(`${MODULE_ID} | ensureCurrentScene (${reason}): not the canonical GM — the scene is left to the GM.`);
     return null;
   }
-  if (!campaignState.currentSceneId) await startScene(campaignState, { reason, cause });
+  if (!campaignState.currentSceneId) await startScene(campaignState, { reason, cause, carry });
   // Only a beat of play turns a scene (overhaul 2 §4.3): a move's, a paced
   // line's, a round's, an oracle follow-up's narration — the beat sites,
   // provenance.js QUESTION_MODES. A bookend, a clock vignette, the oath scene,
@@ -7119,6 +7147,49 @@ function logObligationVerdict(mode, v, campaignState, narrationId) {
     })?.catch?.(() => {});
   } catch (err) {
     console.warn(`${MODULE_ID} | obligations: the verdict could not be logged:`, err?.message ?? err);
+  }
+}
+
+/**
+ * The pronoun-change check (issue #402, change 2): a narration that gives a
+ * person on record — a recorded person's card's set, else the first set the
+ * scene was given for them — another pronoun (factContinuity/pronouns.js
+ * pronounBreaks). Round 10's customs clerk was "her" from a26 to a43 and "he"
+ * at a53; round 9's survivor was "it", then "he". Logged only — to the console
+ * and the Consistency Check log, action "logged" — until it is measured on
+ * the kept runs (decisions.md, issue #402 change 2): it asks nothing again.
+ * Read from the frame as the narration's own block left it; the player
+ * characters and the scene's other people are the names a sentence must not
+ * hold. Never throws.
+ *
+ * @param {string} prose
+ * @param {Object} campaignState — as the narration's fact block left it
+ * @param {{ narrationId?: string|null, mode?: string|null }} [ctx]
+ * @returns {Array<Object>} the breaks found
+ */
+function notePronounBreaks(prose, campaignState, { narrationId = null, mode = null } = {}) {
+  try {
+    const frame = campaignState?.sceneFrame && typeof campaignState.sceneFrame === 'object' ? campaignState.sceneFrame : null;
+    const people = [...(Array.isArray(frame?.present) ? frame.present : []), ...(Array.isArray(frame?.remote) ? frame.remote : [])]
+      .filter(n => typeof n === 'string' && n.trim());
+    if (!people.length) return [];
+    const cards = cardPronounsOf(campaignState);
+    const onRecord = normalisePronounList(people.map(name => ({ name, pronouns: pronounsIn(cards, name) || pronounsIn(frame?.pronouns, name) })));
+    if (!onRecord.length) return [];
+    const recorded = new Set(onRecord.map(p => p.name.toLowerCase()));
+    const others = [...people.filter(n => !recorded.has(n.trim().toLowerCase())), ...playerNamesOf()];
+    const breaks = pronounBreaks(prose, onRecord, { others });
+    if (!breaks.length) return [];
+    console.info(`${MODULE_ID} | pronouns: ${breaks.map(b => `${b.name} (${b.pronouns}) written "${b.found}"`).join('; ')} — logged only.`);
+    void logConsistencyDecision({
+      sceneId: campaignState?.currentSceneId ?? '', sessionId: campaignState?.currentSessionId ?? null,
+      sessionNumber: campaignState?.sessionNumber ?? null, prose: `[pronouns ${mode ?? ''}${narrationId ? ` ${narrationId}` : ''}]`,
+      contradictions: breaks.map(b => ({ kind: 'pronoun', action: 'logged', ...b })), dispatched: false,
+    })?.catch?.(() => {});
+    return breaks;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | pronouns: the narration's pronouns were not checked:`, err?.message ?? err);
+    return [];
   }
 }
 
@@ -7336,11 +7407,18 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     console.debug?.(`${MODULE_ID} | factContinuity: the narrator's reply had no prose — its fact block is not recorded.`);
   }
   const applySidecarHere = isCanonicalGM();
-  if (sidecar && campaignState && narrated && !applySidecarHere) {
-    relayNarratorSidecar(sidecar, campaignState, ctx);
+  // An answered yes/no question is filed by the code whatever the fact block
+  // holds (issue #402, change 1a): with none, an empty one carries it.
+  const applied = sidecar ?? (narrated && typeof ctx.oracleCardId === 'string' && ctx.oracleCardId ? normaliseSidecar({}) : null);
+  if (applied && campaignState && narrated && !applySidecarHere) {
+    relayNarratorSidecar(applied, campaignState, ctx);
   }
-  if (sidecar && campaignState && narrated && applySidecarHere) {
-    applySidecarSideData(sidecar, campaignState, ctx);
+  if (applied && campaignState && narrated && applySidecarHere) {
+    applySidecarSideData(applied, campaignState, ctx);
+  }
+  // Another pronoun for a person on record (issue #402, change 2): logged only.
+  if (campaignState && narrated && applySidecarHere && ctx.cutaway !== true) {
+    notePronounBreaks(prose, campaignState, { narrationId: typeof ctx.narrationId === 'string' ? ctx.narrationId : null, mode: ctx.mode ?? null });
   }
 
   // Phase E — optional Haiku audit of the prose against the active-scene
@@ -7400,6 +7478,8 @@ function relayNarratorSidecar(sidecar, campaignState, ctx) {
       narrationId:      typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       // The plans the narration was asked to decide (issue #353): the GM files them.
       planRequests:     Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
+      // The oracle card it narrates: the GM files a yes/no answer from the card (issue #402, change 1a).
+      ...(typeof ctx.oracleCardId === 'string' && ctx.oracleCardId ? { oracleCardId: ctx.oracleCardId } : {}),
       // A session vignette's frame is a bookend's (applySidecarSideData).
       ...(ctx.bookend === true ? { bookend: true } : {}),
       // The narration's mode and the player's words it answered: the scene's
@@ -7474,11 +7554,12 @@ const RELAYED_SIDECAR_MAX_ENTRIES = 20;
  * with its vignette written (issue #362 AC08).
  *
  * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null, narrationId?: string|null,
- *   planRequests?: Object[], forced?: { reveals: Object[], clockId?: string, complication?: Object }|null }} payload
- * @param {Object} [_ctx]
+ *   planRequests?: Object[], forced?: { reveals: Object[], clockId?: string, complication?: Object }|null,
+ *   oracleCardId?: string }} payload
+ * @param {{ requesterId?: string|null, requesterIsGM?: boolean }} [relay] — gmRelay.js's ctx
  * @returns {Promise<void>}
  */
-export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
+export async function applyRelayedNarratorSidecar(payload = {}, relay = {}) {
   // Re-normalised and bounded: it crossed the socket from a client.
   const sidecar = normaliseSidecar(payload?.sidecar);
   if (!sidecar) return;
@@ -7526,7 +7607,38 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
     // Re-normalised: they crossed the socket (overhaul 2 §5.4).
     mode: typeof payload.mode === 'string' && QUESTION_MODES.has(payload.mode) ? payload.mode : null,
     ground: normaliseGround(payload.ground),
+    // The oracle card it narrates — its answer read from the card here, and
+    // only from a card its requester posted (or a GM's relay): issue #402, change 1a.
+    ...(typeof payload.oracleCardId === 'string' && /^[\w-]{1,64}$/.test(payload.oracleCardId)
+      ? { oracleCardId: payload.oracleCardId, requesterId: relay?.requesterId ?? null, requesterIsGM: relay?.requesterIsGM === true } : {}),
   });
+}
+
+/**
+ * The yes/no question a narration answers, from its oracle card on this GM
+ * (issue #402, change 1a): `ctx.oracleCardId`, the card its follow-up
+ * narrates. A relayed narration's card must be its requester's own — the
+ * player who asked narrates on their key — or the relay a GM's. Null for any
+ * other card, a table oracle's or a price's, or a yes/no card asked with no
+ * question.
+ *
+ * @param {{ oracleCardId?: string, relayed?: boolean, requesterId?: string|null, requesterIsGM?: boolean }} ctx
+ * @returns {{ question: string, answer: string }|null}
+ */
+function oracleAnswerOf(ctx) {
+  const id = typeof ctx?.oracleCardId === 'string' && ctx.oracleCardId ? ctx.oracleCardId : null;
+  if (!id) return null;
+  const card = globalThis.game?.messages?.get?.(id) ?? null;
+  const answered = yesNoAnswerOfCard(card);
+  if (!answered) return null;
+  if (ctx.relayed === true && ctx.requesterIsGM !== true) {
+    const author = card?.author?.id ?? card?.user?.id ?? card?.author ?? null;
+    if (!author || author !== ctx.requesterId) {
+      console.debug?.(`${MODULE_ID} | factContinuity: oracle card ${id} is not the relaying player's — its answer is not filed from the relay.`);
+      return null;
+    }
+  }
+  return answered;
 }
 
 /**
@@ -7757,28 +7869,12 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       otherChanges.push(c);
     }
   }
-  // A plan's truth this beat revealed becomes a stated fact (issue #353
-  // Phase 2): a truth of the narration's own, stamped with its id, so the
-  // X-Card retracts it with the reveal.
-  // The tracks and vows the beat ends: a plan their end resolved is still
-  // this narration's to reveal (issue #362 D4).
-  const endingSubjectIds = Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [];
-  // A revealed truth is marked with its plan's id (`revealOf`): its reveal
-  // files it as Lore, and the scene's end archives it no second time (issue
-  // #362 AC37). The marker is the code's: one the model's own truths carry
-  // is dropped. The revealed ones go first, so a model truth stating the same
-  // fact is the duplicate the ledger skips, not the marked one.
-  const ownTruths = (sidecar.newTruths ?? []).map(t => {
-    if (!t || typeof t !== 'object' || !('revealOf' in t)) return t;
-    const rest = { ...t };
-    delete rest.revealOf;
-    return rest;
-  });
-  const filteredSidecar = {
-    ...sidecar,
-    stateChanges: otherChanges,
-    newTruths:    [...revealedTruthsOf(sidecar, { endingSubjectIds }), ...ownTruths],
-  };
+  // A reveal files what the narration told (issue #402, change 1b): the
+  // facts of its own block, each resting on what it says. The plan's hidden
+  // text is no fact of the beat's — round 10's a75 told a name and "one hand
+  // behind all of it", and the plan's whole truth (who runs the raids, why,
+  // what he holds, a second name) was filed as the GM's and told by the recap.
+  const filteredSidecar = { ...sidecar, stateChanges: otherChanges };
 
   try {
     // Narrator-memory A2 — resolve sidecar subjects against the full
@@ -7820,6 +7916,15 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       // (issue #345 AA04 — W05's live read, for the write half).
       storedLedger: liveSceneLedger(campaignState),
     });
+    // The yes/no question this narration answers, filed as the dice decided
+    // it (issue #402, change 1a) — read from its card on this GM, never from
+    // the narration or a relay's word for it.
+    const answered = oracleAnswerOf(ctx);
+    if (answered) {
+      fileOracleAnswer(campaignState, answered, {
+        narrationId, sessionId: campaignState.currentSessionId ?? null, sceneId: campaignState.currentSceneId ?? null,
+      });
+    }
 
     // Narrator-memory A4 — merge the scene-frame snapshot (full
     // replacement; omitted frame keeps the previous one). Gated on its
@@ -7927,7 +8032,9 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       narrationId:  typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       moveId:       ctx.moveId ?? null,
       planRequests: Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
-      endingSubjectIds,
+      // The tracks and vows the beat ends: a plan their end resolved is still
+      // this narration's to reveal (issue #362 D4).
+      endingSubjectIds: Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [],
       // A relayed block names no plan by id (applyRelayedNarratorSidecar).
       relayed:      ctx.relayed === true,
       story:        storyPeople(campaignState),

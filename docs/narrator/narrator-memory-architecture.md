@@ -658,7 +658,7 @@ THE SCENE — began 3 beats ago, when the characters are at Lyra Station.
   Place:    Lyra Station — where the characters are, by the table's record
   Ship:     Wayfinder near Lyra Station
   Where:    Lyra's orbital graveyard — as the narration has it
-  Present:  Venri Quint, Vance
+  Present:  Venri Quint (she/her), Vance
   Now:      Hailing Vance's shuttle across the debris field — as the narration has it
   Turns on: Will Vance let them board? — from the player's line
 ```
@@ -666,6 +666,13 @@ THE SCENE — began 3 beats ago, when the characters are at Lyra Station.
 (An answered question reads `Turns on (answered): … — the scene has moved
 past it; set what it turns on now.`; a frame with none, `Turns on: none
 stands — …` as above.)
+
+Each person is shown with their pronouns (issue #402, change 2): a recorded
+person's card's set, else the first set the scene's fact blocks gave for them
+— an entry may end with one, "customs clerk (she/her)"; the parser keeps the
+name bare and the set in the frame's `pronouns` (`[{ name, pronouns }]`), the
+first given kept for the scene, carried across a turn, and on the record's
+frame events.
 
 Two side effects beyond display:
 1. `present` names are treated as mentioned for ledger scoping (§3).
@@ -683,6 +690,11 @@ question still open and what play let go; then the last narration as the
 table read it, its details the narration's own. Nothing in the opening
 contradicts what binds; its ending, the material's, never ends on a let-go
 hook. A session from before the record is told by its summary, as before.
+Since issue #402: "With them at the end" names each person with their
+pronouns, and who was over a comm; an answered yes/no question is among what
+binds (change 1a, filed by code as the dice's); and the session's first scene
+starts with those people when it opens at that place (D2,
+`galleyVignette.sessionCarry` → `carriedFrame`).
 
 **One place** (overhaul 2 slice 4 — §6, D9, D17;
 SHIP-POSITION-AND-FRAME-DISAGREE). In the fourth live run's session 3 the

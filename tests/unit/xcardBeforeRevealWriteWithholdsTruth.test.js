@@ -90,6 +90,12 @@ async function confirmedLore(text) {
   return gmOf(table).run(() => getConfirmedLore(null)).filter(e => e.text === text);
 }
 
+/** The Lore stating it, confirmed or pending the GM (a narration's reveal is pending since issue #402, change 1b). */
+async function loreStating(text) {
+  const { getConfirmedLore, getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+  return gmOf(table).run(() => [...getConfirmedLore(null), ...getNarratorAssertedLore(null)]).filter(e => e.text === text);
+}
+
 /** Two decided plans in this scene, filed as the canonical GM files them. */
 async function seedPlans() {
   const secrets = await gmOf(table).import('../../src/world/secrets.js');
@@ -144,7 +150,7 @@ describe('issue #364 XCARD-BEFORE-REVEAL-WRITE — a reveal the X-Card overtook 
     expect(planOf(plans.escort.id), 'withheld, by the removed narration, and still hidden')
       .toMatchObject({ truth: TRUTH, truthRevealed: false, truthWithheldBy: removed, status: 'active' });
     expect(planOf(plans.escort.id).rollsShown, 'no rolls shown for it').toBe(false);
-    expect(await confirmedLore(TRUTH), 'nothing filed as Lore').toEqual([]);
+    expect(await loreStating(TRUTH), 'nothing filed as Lore').toEqual([]);
     expect(planOf(plans.warden.id).clues[0].revealed, 'the write that landed after the X-Card is taken back').toBe(false);
 
     const [notice, ...more] = notices();
@@ -170,7 +176,7 @@ describe('issue #364 XCARD-BEFORE-REVEAL-WRITE — a reveal the X-Card overtook 
     expect(system, 'the plan is still in play').toContain(`(id ${plans.escort.id})`);
     expect(system, 'never its truth').not.toContain(TRUTH);
     expect(planOf(plans.escort.id)).toMatchObject({ truthRevealed: false, truthWithheldBy: removed });
-    expect(await confirmedLore(TRUTH)).toEqual([]);
+    expect(await loreStating(TRUTH)).toEqual([]);
   }, 120_000);
 });
 
@@ -206,7 +212,8 @@ describe('issue #364 XCARD-BEFORE-REVEAL-WRITE — controls', () => {
 
     expect(planOf(plans.escort.id)).toMatchObject({ truthRevealed: true, truthRevealedBy: revealer, truthWithheldBy: null });
     expect(planOf(plans.warden.id).clues[0].revealed).toBe(true);
-    expect(await confirmedLore(TRUTH)).toHaveLength(1);
+    expect(await loreStating(TRUTH), 'filed as Lore, pending the GM').toHaveLength(1);
+    expect(await confirmedLore(TRUTH)).toEqual([]);
     expect(notices()).toEqual([]);
   }, 90_000);
 });

@@ -91,7 +91,13 @@ describe('AUTHOR policy — runs once, on the client that typed it', () => {
     expect(table.cards(f => f.oracleCommandCard).map(c => c.author)).toEqual(['pl-1']);
     expect(state().recentOracles).toHaveLength(1);
     expect(state().recentOracles[0]).toMatchObject({ name: 'Ask the Oracle (likely)', question: 'is the hatch sealed' });
-    expect(table.claude.calls.map(c => [c.client, c.apiKey])).toEqual([['gm-1', 'sk-ant-gina']]);
+    // Narrated once, on the GM's key — and audited there: the answer is a
+    // fact of the scene now (issue #402, change 1a), so the ledger the audit
+    // reads it against is no longer empty.
+    expect(table.claude.calls.map(c => [c.client, c.apiKey, c.model])).toEqual([
+      ['gm-1', 'sk-ant-gina', 'claude-sonnet-5-5'], ['gm-1', 'sk-ant-gina', 'claude-haiku-5-5'],
+    ]);
+    expect(table.claude.calls[1].system).toMatch(/^You are auditing an Ironsworn: Starforged narrator response/);
     expect(table.cards(f => f.oracleNarrationCard).map(c => c.author)).toEqual(['gm-1']);
   });
 

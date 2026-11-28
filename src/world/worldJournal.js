@@ -604,11 +604,12 @@ function isGmRuledLore(entry) {
  * #330 D9 — the narrator mentioning it again made it canon again).
  *
  * `entry.revealOf` — a hidden plan's id, on the entry a reveal of that
- * plan's truth files (a narration's, or a GM's Reveal now): the entry is the
- * plan's truth mirrored into Lore, and follows it when a supersede takes the
- * reveal back (undoRevealedTruthLore) — and a reveal of the same plan's truth
- * confirms it again where the X-Card retracted an earlier reveal's: only a
- * reveal the X-Card's withholding no longer holds back gets here (issue #364
+ * plan's truth files (a narration's, pending the GM's confirmation — issue
+ * #402, change 1b — or a GM's Reveal now, confirmed): the entry is the plan's
+ * truth mirrored into Lore, and follows it when a supersede takes the reveal
+ * back (undoRevealedTruthLore) — and a reveal of the same plan's truth files
+ * it again where the X-Card retracted an earlier reveal's: only a reveal the
+ * X-Card's withholding no longer holds back gets here (issue #364
  * XCARD-REVEAL-REREVEAL-NO-LORE).
  *
  * Empty titles are rejected.
@@ -638,9 +639,10 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
   // A plan's truth revealed over the entry an earlier reveal of the same plan
   // filed: the plan is canonical, and its mirror follows it (issue #364
   // XCARD-REVEAL-REREVEAL-NO-LORE). The X-Card's retraction of that earlier
-  // reveal kept a reveal the GM let through out of canon: the new truth after
-  // a GM's edit, a GM's Reveal now.
-  const reRevealed = typeof entry?.revealOf === "string" && !!entry.revealOf && entry.confirmed === true
+  // reveal kept a reveal the GM let through out of the journal: the new truth
+  // after a GM's edit — a narration's, pending the GM (issue #402, change 1b)
+  // — or a GM's Reveal now, confirmed.
+  const reRevealed = typeof entry?.revealOf === "string" && !!entry.revealOf
     && existing?.revealOf === entry.revealOf;
   const retracted = typeof entry?.retracted === "boolean" ? entry.retracted : (existing?.retracted === true && !reRevealed);
 
@@ -1877,8 +1879,9 @@ function takenBackFrom(version, removed, keepPlanAbout = null) {
 /**
  * Take back the Lore entries the given narrations' reveals of a hidden plan's
  * truth filed (issue #364 SUPERSEDED-REVEAL-LORE-STANDS). A reveal files the
- * plan's truth as confirmed Lore (secrets.js onTruthRevealed): one fact in
- * two stores, the plan canonical, the Lore entry its mirror — named by the
+ * plan's truth as Lore (secrets.js onTruthRevealed — pending the GM's
+ * confirmation since issue #402, change 1b): one fact in two stores, the plan
+ * canonical, the Lore entry its mirror — named by the
  * plan's id (`revealOf`) and stamped with the revealing narration. A Burn
  * Momentum or Improve Result that supersedes that narration takes back its
  * plans alone (undoNarrationEntries, the Secrets category): the truth went

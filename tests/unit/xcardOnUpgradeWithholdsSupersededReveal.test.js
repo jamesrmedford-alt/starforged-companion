@@ -94,9 +94,10 @@ const revealing = (plan) => () => ({ prose: 'The escort speaks in the Choir\'s v
 const lastNarrationId = () => table.cards(f => f.narratorCard === true && f.narrationId).at(-1).flags[MODULE_ID].narrationId;
 const notices = () => table.cards(f => f.xcardTruthWithheldNotice === true);
 
-async function confirmedLore(text = TRUTH) {
-  const { getConfirmedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
-  return gmOf(table).run(() => getConfirmedLore(null)).filter(e => e.text === text || e.fact === text);
+/** The Lore stating it, confirmed or pending the GM (a narration's reveal is pending since issue #402, change 1b). */
+async function loreStating(text = TRUTH) {
+  const { getConfirmedLore, getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+  return gmOf(table).run(() => [...getConfirmedLore(null), ...getNarratorAssertedLore(null)]).filter(e => e.text === text || e.fact === text);
 }
 
 /** A decided plan in this scene, filed as the canonical GM files one. */
@@ -180,7 +181,7 @@ describe('issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL — the X-Card on 
     expect(again.system, 'the plan is still in play').toContain(`(id ${plan.id})`);
     expect(again.system, 'never its truth').not.toContain(TRUTH);
     expect(planOf(plan.id)).toMatchObject({ truthRevealed: false, truthWithheldBy: struck });
-    expect(await confirmedLore(), 'no Lore entry states it').toEqual([]);
+    expect(await loreStating(), 'no Lore entry states it').toEqual([]);
   }, 120_000);
 });
 
@@ -193,7 +194,7 @@ describe('issue #364 XCARD-ON-UPGRADE-AFTER-SUPERSEDED-REVEAL — controls', () 
     const again = await narrationRevealsAgain(plan);
     expect(again.system, 'the narrator is given the truth').toContain(TRUTH);
     expect(planOf(plan.id), 'the reveal clears the mark').toMatchObject({ truthRevealed: true, truthRevealedBy: again.id, truthWithheldBy: null, truthTakenBackBy: null });
-    expect(await confirmedLore(), 'one confirmed Lore entry').toHaveLength(1);
+    expect(await loreStating(), 'one Lore entry, pending the GM').toHaveLength(1);
   }, 120_000);
 
   it('an X-Card on a later beat, which leaves the struck narration, withholds nothing', async () => {

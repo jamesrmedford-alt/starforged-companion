@@ -115,9 +115,14 @@ describe('issue #329 X09 — a narration never applies its facts onto the cached
     await seed(A_SCENE);
     await table.client('pl-1').chat('!oracle yes likely is the dockmaster friendly', { speaker: { actor: 'pc-kira' } });
     await table.settle();
-    expect(world().sceneTruths.map(t => t.fact)).toEqual(['Owes the crew a favour']);
+    // The narration's own fact, and the question with its answer — the dice's (issue #402, change 1a).
+    const told = (truths) => truths.filter(t => t.source !== 'oracle_answer').map(t => t.fact);
+    const answered = (truths) => truths.filter(t => t.source === 'oracle_answer').map(t => [t.subject?.text, t.basis]);
+    expect(told(world().sceneTruths)).toEqual(['Owes the crew a favour']);
+    expect(answered(world().sceneTruths)).toEqual([['is the dockmaster friendly', 'dice']]);
     expect(world().sceneFrame?.location).toBe('the loading bay');
-    expect(gmCache().sceneTruths.map(t => t.fact)).toEqual(['Owes the crew a favour']);
+    expect(told(gmCache().sceneTruths)).toEqual(['Owes the crew a favour']);
+    expect(answered(gmCache().sceneTruths)).toEqual([['is the dockmaster friendly', 'dice']]);
   }, 30_000);
 
   // An answer records nothing (known-issues SCENE-ANSWER-NOT-A-CAMERA): the

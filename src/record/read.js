@@ -398,8 +398,9 @@ function sessionBeats(events, { xcarded, superseded }) {
       }
       case 'frame': {
         if (viaXCard) continue;
-        where = { location: d.location ?? null, present: Array.isArray(d.present) ? d.present : [], situation: d.situation ?? null,
-          question: d.question ?? null, questionAnswered: d.questionAnswered === true };
+        where = { location: d.location ?? null, present: Array.isArray(d.present) ? d.present : [],
+          remote: Array.isArray(d.remote) ? d.remote : [], pronouns: Array.isArray(d.pronouns) ? d.pronouns : [],
+          situation: d.situation ?? null, question: d.question ?? null, questionAnswered: d.questionAnswered === true };
         // A scene is where it began: its first frame. Each later frame gave it
         // its Where, so session 2's opening in the cockpit was labelled "A new
         // scene — Bleakhold Station docking ring", where it ended (known-issues

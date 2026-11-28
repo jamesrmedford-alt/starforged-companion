@@ -32,6 +32,7 @@ import { getConnection } from '../entities/connection.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { generatedName } from '../entities/nameMatch.js';
+import { pronounsFor } from './pronouns.js';
 import { judgedView, judgeMayAct, judgeIsAsked, judgedLine, JUDGED_LINES_RULE, quoteInNarration, offerMayBeGiven } from '../moves/contracts/checks.js';
 import { OBLIGATION_KINDS } from '../moves/contracts/obligations.js';
 
@@ -96,7 +97,7 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // ledger tier — so prose misgendering a character was the one contradiction
   // this check could never see. Fail-open: an empty block just skips the
   // section.
-  const identities = buildRecordedIdentitiesBlock(options.matchedEntityIds ?? []);
+  const identities = buildRecordedIdentitiesBlock(options.matchedEntityIds ?? [], { frame: campaignState?.sceneFrame ?? null });
 
   // What the narration was told it must tell and must not (overhaul 4): the
   // lines of the kinds the audit's measure passed (issue #399, D10 —
@@ -730,18 +731,22 @@ async function withdrawReviewCardById(messageId) {
  * record: all player characters (actor sheets) plus the connections matched
  * into this scene. Character-detail audit 2026-07 — pronouns live outside
  * every ledger tier, so without this section the audit could never flag a
- * misgendering. Returns '' when nobody has recorded pronouns. Never throws.
- * Exported for testing.
+ * misgendering. And each person in the scene's frame with no card's set, by
+ * the first set the scene was given for them (issue #402, change 2 — round
+ * 10's customs clerk had no card: "her", then "he"); a card's wins. Returns ''
+ * when nobody has recorded pronouns. Never throws. Exported for testing.
  *
  * @param {string[]} matchedEntityIds
+ * @param {{ frame?: Object|null }} [opts] — the scene's frame
  * @returns {string}
  */
-export function buildRecordedIdentitiesBlock(matchedEntityIds = []) {
+export function buildRecordedIdentitiesBlock(matchedEntityIds = [], { frame = null } = {}) {
   const lines = [];
+  const listed = new Set();
   try {
     for (const actor of getPlayerActors() ?? []) {
       const snap = readCharacterSnapshot(actor);
-      if (snap?.name && snap?.pronouns) lines.push(`  ${snap.name} — ${snap.pronouns}`);
+      if (snap?.name && snap?.pronouns) { lines.push(`  ${snap.name} — ${snap.pronouns}`); listed.add(snap.name.trim().toLowerCase()); }
     }
   } catch (err) {
     console.debug?.(`${MODULE_ID} | consistencyCheck: PC identity collect failed:`, err?.message ?? err);
@@ -749,10 +754,15 @@ export function buildRecordedIdentitiesBlock(matchedEntityIds = []) {
   try {
     for (const id of matchedEntityIds ?? []) {
       const rec = getConnection(id);
-      if (rec?.name && rec?.pronouns) lines.push(`  ${rec.name} — ${rec.pronouns}`);
+      if (rec?.name && rec?.pronouns) { lines.push(`  ${rec.name} — ${rec.pronouns}`); listed.add(rec.name.trim().toLowerCase()); }
     }
   } catch (err) {
     console.debug?.(`${MODULE_ID} | consistencyCheck: NPC identity collect failed:`, err?.message ?? err);
+  }
+  // The people in the frame with no card's set: the scene's first one for them.
+  const inFrame = [...(Array.isArray(frame?.present) ? frame.present : []), ...(Array.isArray(frame?.remote) ? frame.remote : [])];
+  for (const e of pronounsFor(frame?.pronouns, inFrame)) {
+    if (!listed.has(e.name.toLowerCase())) lines.push(`  ${e.name} — ${e.pronouns}`);
   }
   return lines.length ? lines.join('\n') : '';
 }

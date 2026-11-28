@@ -64,7 +64,9 @@ describe('issue #353 Phase 2 — what a beat shows of a plan is recorded', () =>
     expect(lastCall().system).toContain('[e1] It asks again, closer (played)');
   }, 40_000);
 
-  it('the truth revealed becomes a stated fact — the ledger and lore — and the oracle rolls behind it are shown', async () => {
+  it('the truth revealed is filed as Lore pending the GM — no scene fact of its own — and the oracle rolls behind it are shown', async () => {
+    // Issue #402, change 1b: a reveal files what the narration told — its own
+    // fact block — and the plan's truth as Lore the GM confirms.
     const plan = await seedPlan();
     table.replies = revealing(plan.id, { revealed: ['truth'] }, 'The drone speaks in the Choir\'s voice.');
     await narrateMoveOn(table, moveResolution({ outcome: 'strong_hit', outcomeLabel: 'Strong Hit' }));
@@ -72,12 +74,11 @@ describe('issue #353 Phase 2 — what a beat shows of a plan is recorded', () =>
     expect(planOf(plan.id)).toMatchObject({ truthRevealed: true, rollsShown: true });
     const card = table.cards(f => f.narratorCard === true && f.narrationId).at(-1);
     const nid = card.flags[MODULE_ID].narrationId;
-    const truth = (stored().sceneTruths ?? []).find(t => t.fact === TRUTH);
-    expect(truth, 'the ledger holds it').toBeTruthy();
-    expect(truth.narrationId).toBe(nid);
-    const { getConfirmedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
-    const lore = gmOf(table).run(() => getConfirmedLore(null)).find(e => e.text === TRUTH);
-    expect(lore, 'confirmed lore').toBeTruthy();
+    expect((stored().sceneTruths ?? []).find(t => t.fact === TRUTH), 'the ledger holds no fact the prose did not give').toBeFalsy();
+    const { getConfirmedLore, getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+    expect(gmOf(table).run(() => getConfirmedLore(null)).find(e => e.text === TRUTH), 'not canon').toBeFalsy();
+    const lore = gmOf(table).run(() => getNarratorAssertedLore(null)).find(e => e.text === TRUTH);
+    expect(lore, 'Lore pending the GM').toBeTruthy();
     expect(lore.narrationId).toBe(nid);
     const rolls = table.cards(f => f.secretRollsCard === true).at(-1);
     expect(rolls?.content).toContain('Character Role: Scout; Character Disposition: Hostile');
@@ -87,7 +88,7 @@ describe('issue #353 Phase 2 — what a beat shows of a plan is recorded', () =>
     expect(lastCall().system).toContain('(already revealed — the characters know it)');
   }, 40_000);
 
-  it('the X-Card on the revealing narration undoes the reveal, its lore and its ledger truth', async () => {
+  it('the X-Card on the revealing narration undoes the reveal and its lore', async () => {
     const plan = await seedPlan();
     await patSpeaks(table);
     table.replies = revealing(plan.id, { revealed: ['truth', 'c2'] }, 'The drone speaks in the Choir\'s voice.');
@@ -97,9 +98,9 @@ describe('issue #353 Phase 2 — what a beat shows of a plan is recorded', () =>
     await playXCard(table);
     expect(planOf(plan.id)).toMatchObject({ truthRevealed: false, status: 'active' });
     expect(planOf(plan.id).clues[1].revealed).toBe(false);
-    const { getConfirmedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
-    expect(gmOf(table).run(() => getConfirmedLore(null)).some(e => e.text === TRUTH)).toBe(false);
-    expect((stored().sceneTruths ?? []).find(t => t.fact === TRUTH)?.retracted).toBe(true);
+    const { getConfirmedLore, getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+    expect(gmOf(table).run(() => [...getConfirmedLore(null), ...getNarratorAssertedLore(null)]).some(e => e.text === TRUTH)).toBe(false);
+    expect((stored().sceneTruths ?? []).some(t => t.fact === TRUTH && !t.retracted)).toBe(false);
   }, 40_000);
 
   it('a plan whose story ended leaves play', async () => {

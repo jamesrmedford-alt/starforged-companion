@@ -650,7 +650,15 @@ plan's truth as revealed). Three parts:
   (`secrets.withoutUntoldTruths` → `skeletons.proseTellsTruth`, in
   `applyNarratorSidecar`): "truth" comes off the reveal, which still ends the
   plan's story; the truth is no scene fact and no lore, its rolls stay hidden,
-  and a GM can Reveal now from the Secrets panel.
+  and a GM can Reveal now from the Secrets panel;
+- **a reveal files what the narration told** (issue #402, change 1b): the
+  beat's facts are its own fact block's, and the plan's truth is no scene
+  fact of the reveal's — it is filed as Lore pending the GM's confirmation
+  (`secrets.onTruthRevealed`, narrator-asserted and unconfirmed; ESTABLISHED
+  LORE reads confirmed Lore alone), so the session record holds no
+  "established (the GM)" plan for the recap to retell. Round 10's a75 told a
+  name and "one hand behind all of it"; the plan's whole text had been filed
+  as the GM's. A GM's Reveal now files it confirmed.
 
 ## 4. Fulfilment
 

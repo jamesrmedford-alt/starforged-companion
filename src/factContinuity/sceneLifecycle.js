@@ -50,6 +50,7 @@ import { recordEvent } from '../record/record.js';
 import { sceneStores, sceneAnchorOf, anchorFilled, sceneTurnDue, shipPlaceKey, causeText } from './sceneTurns.js';
 import { entryBasis, raisedBasis, binds } from './provenance.js';
 import { personSaidIn } from '../entities/nameMatch.js';
+import { pronounsFor } from './pronouns.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -180,6 +181,8 @@ async function turnIfDue(campaignState, beat) {
   const frame = campaignState.sceneFrame && typeof campaignState.sceneFrame === 'object' ? campaignState.sceneFrame : null;
   const carry = {
     present: Array.isArray(frame?.present) ? frame.present : [],
+    // …with the pronouns the scene was given for them (issue #402, change 2).
+    pronouns: Array.isArray(frame?.pronouns) ? frame.pronouns : [],
     letGo: Array.isArray(frame?.letGo) ? frame.letGo : [],
     lastActorId: campaignState.spotlight?.lastActorId ?? null,
   };
@@ -276,11 +279,6 @@ async function openScene(campaignState, reason, { cause = null, what = null, car
   ensureSceneStateShape(campaignState);
   campaignState.sceneState.sceneId = id;
   ensureSceneTruthsShape(campaignState);
-  // A4 — frame is scene-scoped; a new scene starts frameless, save what a turn
-  // carries into it (overhaul 2 §4.4): the cast walking with the characters —
-  // their cards stay in scope until the scene's first narration writes its
-  // own frame — and what play let go, which stays let go.
-  campaignState.sceneFrame = carriedFrame(carry, id);
   // #232 — rotation restarts per scene; a turn remembers who acted last.
   campaignState.spotlight = { lastActorId: typeof carry?.lastActorId === 'string' ? carry.lastActorId : null, sceneId: id };
   // The scene's anchor (overhaul 2 §4.1): why it began, and what it began
@@ -290,6 +288,13 @@ async function openScene(campaignState, reason, { cause = null, what = null, car
   campaignState.sceneBegan = sceneAnchorOf(await sceneStoresNow(campaignState), {
     sceneId: id, cause: began, what: typeof what === 'string' ? what : causeText(began),
   });
+  // A4 — frame is scene-scoped; a new scene starts frameless, save what a turn
+  // carries into it (overhaul 2 §4.4): the cast walking with the characters —
+  // their cards stay in scope until the scene's first narration writes its
+  // own frame — and what play let go, which stays let go. A session's first
+  // scene is given the last session's people only at the place it stopped
+  // (issue #402 D2), read from the anchor just made.
+  campaignState.sceneFrame = carriedFrame(carry, id, { place: campaignState.sceneBegan?.place?.name ?? null });
 
   // An empty scene replaced by this one ended too (endScene ran only for a
   // scene with entries): its pacing override goes with it (issue #322 V21).
@@ -507,9 +512,9 @@ function endedSceneRetractions(campaignState, latest, closed, sceneId = null) {
 /**
  * One scene truth leaving its scene (endScene): an entity's goes to its
  * generative tier; a scene-kind one to the place the scene happened at; the
- * rest — and a place-less scene truth — to World Journal Lore, save a hidden
- * plan's revealed truth, which its reveal already filed there (`revealOf`,
- * issue #362 AC37). Marks the truth's `migratedTo`.
+ * rest — and a place-less scene truth — to World Journal Lore. A reveal adds
+ * no truth of its own to the scene (issue #402, change 1b), so none is its
+ * plan's to skip. Marks the truth's `migratedTo`.
  *
  * The truth's entry in the store is read right before each write and again
  * after it, while the store still holds the scene: endScene works on a copy,
@@ -570,16 +575,6 @@ async function migrateSceneTruth(truth, campaignState, placeOf, sceneId = null) 
       }
       if (settled()) return 'skipped';   // before the archive's write
     }
-  }
-  // A hidden plan's truth the narration revealed (secrets.js revealedTruthsOf
-  // marks it `revealOf`, the plan's id) is confirmed Lore already: the reveal
-  // filed it ("Threat: the escort"). Archived again here under "<subject>:
-  // <fact>", nothing tied the two — the same truth was two Lore entries,
-  // two of ESTABLISHED LORE's slots, and a GM's correction of one left the
-  // other (issue #362 AC37).
-  if (typeof truth.revealOf === 'string' && truth.revealOf) {
-    truth.migratedTo = { kind: 'worldJournalLore', revealOf: truth.revealOf };
-    return 'skipped';
   }
   const result = await safeArchiveSceneTruth(truth, campaignState);
   if (!result?.pageId) return 'skipped';
@@ -756,18 +751,27 @@ function adoptStoredScene(campaignState) {
 
 /**
  * The first frame of a scene a turn opened (overhaul 2 §4.4): no where and no
- * now of its own — the narration writes those — the old frame's cast, and the
- * session's let-go questions. null with nothing to carry.
+ * now of its own — the narration writes those — the old frame's cast, with
+ * the pronouns the scene was given for them (issue #402, change 2), and the
+ * session's let-go questions. A session's first scene is given the people
+ * with the characters where the last session stopped, when it opens at that
+ * place (`carry.place`, D2: an unnamed person is carried through the next
+ * session's first scene there — galleyVignette.js sessionCarry); at another
+ * place, none of them. null with nothing to carry.
  *
- * @param {{ present?: string[], letGo?: Object[] }|null} carry
+ * @param {{ present?: string[], pronouns?: Object[], letGo?: Object[], place?: string }|null} carry
  * @param {string} sceneId
+ * @param {{ place?: string|null }} [at] — the place the new scene opens at (its anchor's)
  * @returns {Object|null}
  */
-function carriedFrame(carry, sceneId) {
-  const present = Array.isArray(carry?.present) ? carry.present.filter(p => typeof p === 'string' && p.trim()) : [];
+function carriedFrame(carry, sceneId, { place = null } = {}) {
+  const there = typeof carry?.place === 'string' && carry.place.trim()
+    ? carry.place.trim().toLowerCase() === String(place ?? '').trim().toLowerCase() : true;
+  const present = there && Array.isArray(carry?.present) ? carry.present.filter(p => typeof p === 'string' && p.trim()) : [];
+  const pronouns = pronounsFor(carry?.pronouns, present);
   const letGo = Array.isArray(carry?.letGo) ? carry.letGo.filter(e => e && typeof e.text === 'string' && e.text) : [];
   if (!present.length && !letGo.length) return null;
-  return { location: '', present, situation: '', ...(letGo.length ? { letGo } : {}), sceneId, updatedAt: Date.now() };
+  return { location: '', present, situation: '', ...(pronouns.length ? { pronouns } : {}), ...(letGo.length ? { letGo } : {}), sceneId, updatedAt: Date.now() };
 }
 
 function hasActiveStateEntries(campaignState) {
