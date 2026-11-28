@@ -51,6 +51,7 @@
  */
 
 import { normalisePlans, normaliseOpenQuestions, normaliseReveals, normaliseCountdown, normaliseNewThreats } from '../world/skeletons.js';
+import { splitPronounMark, normalisePronounList, pronounsFor } from './pronouns.js';
 
 // Matches each complete ``` … ``` fence in the response. Group 1 is the
 // `json` info string when present (spaces before it allowed); group 2 is the
@@ -218,17 +219,21 @@ export function normaliseSidecar(parsed) {
   };
 }
 
-/** The two places a narrator fact may say it comes from (overhaul 2 §5.2). */
-const FROM_VALUES = new Set(['line', 'result']);
+/**
+ * The one place a narrator fact may say it comes from (overhaul 2 §5.2):
+ * the player's line. "result" is no tag since issue #402's D1 — what the dice
+ * decided the code files itself — and reads as untagged.
+ */
+const FROM_VALUES = new Set(['line']);
 
 /**
  * A fact's `from` as the narrator gave it (overhaul 2 §5.2, D5): "line" —
- * the player's line says it — or "result" — the move's outcome or the
- * oracle's answer decides it — else null: absent, misspelled, another value,
- * a non-string. Untagged is the narrator's own colour. Case and spaces aside.
+ * the player's line says it — else null: absent, misspelled, "result" (issue
+ * #402, D1), another value, a non-string. Untagged is the narrator's own
+ * colour. Case and spaces aside.
  *
  * @param {unknown} from
- * @returns {"line"|"result"|null}
+ * @returns {"line"|null}
  */
 function normaliseFrom(from) {
   const v = typeof from === 'string' ? from.trim().toLowerCase() : '';
@@ -289,12 +294,14 @@ function normaliseBuiltFrom(raw) {
  * Normalise the optional scene-frame snapshot (fact-continuity Cluster A4 —
  * see docs/narrator/narrator-memory-architecture.md). Shape:
  *
- *   { "location": "Lyra's graveyard", "present": ["Venri Quint", "Vance"],
+ *   { "location": "Lyra's graveyard", "present": ["Venri Quint (she/her)", "Vance"],
  *     "situation": "Hailing Vance across the debris field",
  *     "question": "Will Vance let them board?", "questionAnswered": false }
  *
  * Returns null when absent or unusable so callers can keep the previous
- * frame. String fields are trimmed; `present` keeps non-empty strings only.
+ * frame. String fields are trimmed; `present` keeps non-empty strings only,
+ * each its name alone: a pronoun set marked on an entry goes to `pronouns`,
+ * [{ name, pronouns }] (issue #402, change 2 — factContinuity/pronouns.js).
  */
 function normaliseSceneFrame(frame) {
   if (!frame || typeof frame !== 'object' || Array.isArray(frame)) return null;
@@ -309,21 +316,41 @@ function normaliseSceneFrame(frame) {
   // present entry the narration marked as on the comm goes under remote.
   const present = [];
   const remote = [];
+  // An entry may carry its person's pronouns — "customs clerk (she/her)"
+  // (issue #402, change 2): the name is the entry's, the set is kept apart.
+  const pronouns = [];
+  const unmarked = (entry) => {
+    let name = entry;
+    let set = '';
+    let onComm = false;
+    for (let pass = 0; pass < 2; pass += 1) {
+      const split = splitPronounMark(name);
+      if (split.pronouns) { name = split.name; set = set || split.pronouns; }
+      const bare = name.replace(COMM_MARK, '').trim();
+      if (bare !== name && bare) { name = bare; onComm = true; }
+    }
+    if (set) pronouns.push({ name, pronouns: set });
+    return { name, onComm };
+  };
   for (const p of listed) {
-    const bare = p.replace(COMM_MARK, '').trim();
-    if (bare !== p && bare) remote.push(bare); else present.push(p);
+    const { name, onComm } = unmarked(p);
+    if (onComm) remote.push(name); else present.push(name);
   }
   for (const r of Array.isArray(frame.remote) ? frame.remote : []) {
-    const name = typeof r === 'string' ? r.trim() : '';
+    const name = typeof r === 'string' && r.trim() ? unmarked(r.trim()).name : '';
     if (name && !remote.includes(name)) remote.push(name);
   }
   if (!location && !situation && !present.length && !remote.length) return null;
   // The scene's question — what is being decided here — and whether this
   // beat answered it (issue #353 R2; kept by ledgers.applySceneFrame).
   const question  = typeof frame.question === 'string' ? frame.question.replace(/\s+/g, ' ').trim().slice(0, SCENE_QUESTION_MAX) : '';
+  // A frame already read — a relayed block, re-normalised on the GM — keeps
+  // the list it carries, for the people it lists.
+  const kept = pronounsFor([...pronouns, ...normalisePronounList(frame.pronouns)], [...present, ...remote]);
   return {
     location, present, situation,
     ...(remote.length ? { remote } : {}),
+    ...(kept.length ? { pronouns: kept } : {}),
     ...(question ? { question } : {}),
     ...(frame.questionAnswered === true ? { questionAnswered: true } : {}),
   };

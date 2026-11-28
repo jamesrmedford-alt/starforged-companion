@@ -1607,7 +1607,7 @@ export class SettingsPanelApp extends ApplicationV2 {
                    ${ctx.factContinuity.consistencyCheck ? 'checked' : ''} ${dis}>
             Consistency check
           </label>
-          <span class="pacing-field-hint">Two quick Haiku checks on each narration. Before it posts, the narration is read for the slips this check has been measured to catch — a refused move told as done, a fight or a price told before it is chosen, an oracle's answer contradicted — and on one the narrator is asked once more. After it posts, the prose is audited against the scene frame, binding truths, retracted facts, current state and ship position, and high-confidence contradictions surface on the GM Narrative Review card. Both run on the GM's key: a narration made on a player's own key gets neither. About $0.0004 a call; on by default.</span>
+          <span class="pacing-field-hint">Two quick Haiku checks on each narration. Before it posts, the narration is read for slips such as a refused move told as done, a fight or a price told before it is chosen, or an oracle's answer contradicted; what it finds is logged to the API Log, and the narration posts as written. After it posts, the prose is audited against the scene frame, binding truths, retracted facts, current state and ship position, and high-confidence contradictions of a truth, a state or a recorded identity surface on the GM Narrative Review card. Both run on the GM's key: a narration made on a player's own key gets neither. About $0.0004 a call; on by default.</span>
         </div>
         <div class="pacing-field">
           <label class="pacing-field-label">

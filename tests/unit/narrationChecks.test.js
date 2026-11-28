@@ -140,16 +140,16 @@ describe("narrateKeepingObligations", () => {
   // Issue #399, D7: authority follows the measure. [premise] passed it, so
   // its verdict is asked again; round 9's four re-asks were all on kinds
   // that had not been measured.
-  it("a violating draft, judged on a kind that passed the measure: asked again once, and the redraft posts", async () => {
+  it("a violating draft, judged on a kind that passed the measure: its verdict is logged, and the draft posts (issue #402, change 5)", async () => {
     judgeReplies.push('{"violations":[{"line":1,"quote":"lays the binding out on the bench"}]}');
     const call = vi.fn(async (addendum) => (addendum ? CLEAN : JUDGED));
     const onVerdict = vi.fn();
     const kept = await narrateKeepingObligations(call, pacedRefused(), { apiKey: "sk-test", ctx: { refusalCode: "recoverable-health" }, onVerdict });
     expect(apiPost).toHaveBeenCalledTimes(1);
-    expect(call).toHaveBeenCalledTimes(2);
-    expect(kept).toMatchObject({ raw: CLEAN, reasked: true, stillBroken: [] });
-    expect(kept.verdicts).toContainEqual({ tag: "premise", line: 1, quote: "lays the binding out on the bench", class: "judge", action: "reask", draft: 1 });
-    expect(onVerdict).toHaveBeenCalledWith(expect.objectContaining({ reasked: true }));
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(kept).toMatchObject({ raw: JUDGED, reasked: false, stillBroken: [] });
+    expect(kept.verdicts).toContainEqual({ tag: "premise", line: 1, quote: "lays the binding out on the bench", class: "judge", action: "logged", draft: 1 });
+    expect(onVerdict).toHaveBeenCalledWith(expect.objectContaining({ reasked: false }));
   });
 
   it("a62's draft is caught in code before any judge is asked: [sheet]'s harm clause (D9)", async () => {

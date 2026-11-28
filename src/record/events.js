@@ -109,8 +109,11 @@ export const RECORD_EVENTS = Object.freeze([
   row('scene.ended', 2, ['sceneId', 'reason', 'turn'], [], ['log']),
   // `letGo`: the questions play let go in the scene, as the frame keeps them
   // (overhaul 2 §7.3) — read by the session summary, which is told LET GO.
-  row('frame', 2, ['location', 'present', 'situation', 'question', 'questionAnswered', 'letGo'], ['nar'], ['log', 'recap', 'summary'],
-    { blank: ['location', 'present', 'situation', 'question', 'letGo'] }),
+  // `remote`: who is over a comm, not there in person; `pronouns`: each
+  // person's, as the scene was given them, [{ name, pronouns }] (issue #402,
+  // change 2) — the opening's "With them at the end" reads both.
+  row('frame', 2, ['location', 'present', 'remote', 'pronouns', 'situation', 'question', 'questionAnswered', 'letGo'], ['nar'], ['log', 'recap', 'summary'],
+    { blank: ['location', 'present', 'remote', 'pronouns', 'situation', 'question', 'letGo'] }),
   // ── A beat of play ────────────────────────────────────────────────────────
   row('line', 1, ['via', 'forcedMoveId', 'repost'], ['line', 'round'], ['log', 'recap'], { text: true }),
   row('question', 2, [], ['nar', 'card'], ['log', 'recap'], { text: true }),

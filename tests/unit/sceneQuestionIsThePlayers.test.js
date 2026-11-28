@@ -89,11 +89,12 @@ describe('overhaul 2 §7.2 — the scene\'s question is the player\'s', () => {
   });
 
   it('the ground is the beat\'s player words, bounded', () => {
-    // (Its `decided` half — what the dice decided — is slice 3's: provenanceFloor.test.js.)
-    expect(groundOf({ line: `  ${A65.line} ` })).toEqual({ line: A65.line, decided: '', rolled: false });
-    expect(groundOf({ lines: ['I draw.', '', 'I fire.'] })).toEqual({ line: 'I draw.\nI fire.', decided: '', rolled: false });
+    // (What the dice decided is no ground: the code files it — issue #402, D1;
+    // rolledMoveResultBinds.test.js.)
+    expect(groundOf({ line: `  ${A65.line} ` })).toEqual({ line: A65.line });
+    expect(groundOf({ lines: ['I draw.', '', 'I fire.'] })).toEqual({ line: 'I draw.\nI fire.' });
     expect(groundOf({ line: 'x'.repeat(9000) }).line.length).toBeLessThanOrEqual(4000);
-    expect(groundOf()).toEqual({ line: '', decided: '', rolled: false });
+    expect(groundOf()).toEqual({ line: '' });
   });
 
   it('playersFrame reads only a new question: one the frame holds is kept as before, and an answer still marks it', () => {

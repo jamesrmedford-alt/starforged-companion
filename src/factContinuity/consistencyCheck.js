@@ -32,7 +32,8 @@ import { getConnection } from '../entities/connection.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { generatedName } from '../entities/nameMatch.js';
-import { judgedView, judgeMayAct, judgedLine, JUDGED_LINES_RULE, quoteInNarration, offerMayBeGiven } from '../moves/contracts/checks.js';
+import { pronounsFor } from './pronouns.js';
+import { judgedView, judgeMayAct, judgeIsAsked, judgedLine, JUDGED_LINES_RULE, quoteInNarration, offerMayBeGiven } from '../moves/contracts/checks.js';
 import { OBLIGATION_KINDS } from '../moves/contracts/obligations.js';
 
 const MODULE_ID     = 'starforged-companion';
@@ -62,9 +63,10 @@ const MAX_TOKENS    = 1300;   // was 1000 — Haiku 5.5 counts the same text as 
  *   and no telemetry line, both of which quote the removed prose
  *   (XCARD-LATE-REVIEW)
  * @param {string|null} [options.narrationKind] — what narration this is
- *   (checks.js judgedView): a `cutaway` is not held to where the characters
- *   are (issue #399, D1 — round 9's a93 closing cutaway to Tamsin was carded
- *   against the characters' place)
+ *   (checks.js judgedView): a `cutaway` or a `scene-answer` is not held to
+ *   where the characters are (issue #399, D1 — round 9's a93 closing cutaway
+ *   to Tamsin was carded against the characters' place; issue #402, change 5
+ *   — round 10's a49, an `@scene` answer that looked back)
  * @returns {Promise<{ contradictions: Array<Object>, dispatched: boolean }>}
  */
 export async function runConsistencyCheck(prose, campaignState, options = {}) {
@@ -95,7 +97,7 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // ledger tier — so prose misgendering a character was the one contradiction
   // this check could never see. Fail-open: an empty block just skips the
   // section.
-  const identities = buildRecordedIdentitiesBlock(options.matchedEntityIds ?? []);
+  const identities = buildRecordedIdentitiesBlock(options.matchedEntityIds ?? [], { frame: campaignState?.sceneFrame ?? null });
 
   // What the narration was told it must tell and must not (overhaul 4): the
   // lines of the kinds the audit's measure passed (issue #399, D10 —
@@ -104,9 +106,11 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // (an empty ledger is still not audited).
   const { lines: auditLines, text: obligations } = auditObligationSection(options.obligations);
 
-  // A cutaway is somewhere else by design: not held to the characters' place
-  // (D1 — round 9's a93 closing cutaway to Tamsin was carded against it).
-  const place = view.cutaway ? '' : ledger.place;
+  // A cutaway is somewhere else by design, and a scene question's answer may
+  // look back: neither is held to the characters' place (D1 — round 9's a93
+  // closing cutaway to Tamsin was carded against it; issue #402 — round 10's
+  // a49, "Back at Hollow Spire, the only dock trader…").
+  const place = view.heldToPlace ? ledger.place : '';
 
   // Nothing to audit against — an empty ledger means nothing can be
   // contradicted. What binds alone (overhaul 2 §5.8, D15): the scene's place
@@ -145,6 +149,9 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
   // A finding on an obligation line is one by its line, whatever kind the
   // model gave it (N19, N20): by its number, else by its subject's tag.
   contradictions = classifyAuditFindings(contradictions, auditLines, view.text);
+  // A place finding where no place was given is held to nothing the audit
+  // was shown (issue #402): dropped, as a quote outside the view is.
+  if (!place) contradictions = contradictions.map(c => (c.kind === 'place' ? { ...c, action: 'dropped', why: 'no place was given' } : c));
 
   // The X-Card may have removed the narration while the call was out: the
   // review card and the telemetry line both quote its prose, so neither is
@@ -157,12 +164,12 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
 
   let dispatched = false;
   for (const c of contradictions) {
-    if (c.confidence !== 'high') continue;
-    // An obligation line's finding posts a card only for a kind that has
-    // passed the audit's measure (issue #399, D7; checks.js judgeMayAct):
-    // held — logged below, as every finding is — and no card. Round 9's six
-    // cards were all wrong. Truths, state, place, retractions and identities
-    // card as before.
+    if (c.confidence !== 'high' || c.action === 'dropped') continue;
+    // An obligation line's finding posts a card only for a kind that may act
+    // (checks.js judgeMayAct): none since issue #402, change 5 — held,
+    // logged below as every finding is, and no card. Round 9's six cards and
+    // round 10's were all wrong. Truths, state, place, retractions and
+    // identities card as before.
     if (c.kind === 'obligation' && !judgeMayAct(c.obligationKind, 'audit')) { c.action = 'held'; continue; }
     // The narration's own check before posting already noted this line to
     // the GM (postStillBrokenNote; issue #399's audit N16): no second card.
@@ -519,6 +526,33 @@ function normaliseKind(v) {
 }
 
 /**
+ * The GM's note on a plan this beat reveals that does not name one person the
+ * story has met (issue #402, change 3a's R3; D3: reported, not mended — the
+ * block check cannot choose the culprit): a ◈ Narrative Review card naming the
+ * vow and who its plan names, with the remedy — the plan is the GM's, in the
+ * Secrets panel. The narration tells the plan as it is written. Posted by the
+ * narrator as it builds the beat's instructions (narrator.js
+ * noteRevealFaults), on the canonical GM. The Contradiction Notifications
+ * setting governs it, as every review card.
+ *
+ * @param {{ why: string, named: Array<{ name: string, met: boolean }> }} fault — blockCheck.js revealFault
+ * @param {Object} plan — the plan (skeletons.js normaliseSkeleton)
+ * @param {Object} campaignState
+ * @returns {Promise<number>} the cards posted
+ */
+export async function postPlanRevealNote(fault, plan, campaignState) {
+  if (!fault || !plan?.subject || !campaignState) return 0;
+  const named = (fault.named ?? []).map(n => (n.met ? n.name : `${n.name}, whom the story has not met`)).join('; ');
+  const out = await applyStateTransition({
+    entryType: 'factContinuity', change: 'contradicted', kind: 'plan',
+    name: plan.subject.name ?? 'a vow', subjectLabel: plan.subject.name ?? 'a vow',
+    summary: `this beat fulfils the vow, and its plan ${fault.why}${named ? ` (${named})` : ''}. The narration tells the plan as it is written.`,
+    recorded: '', evidence: '', truthId: null, matchedEntityIds: [], narrationId: null,
+  }, campaignState).catch(err => { console.warn(`${MODULE_ID} | consistencyCheck: a plan's reveal note failed:`, err?.message ?? err); return null; });
+  return out && out.posted !== false ? 1 : 0;
+}
+
+/**
  * The GM's note on a narration that still breaks a line after its one re-ask
  * (issue #399's audit N16: `stillBroken` reached only telemetry): a ◈
  * Narrative Review card a line, naming it and quoting the narration, with the
@@ -561,10 +595,11 @@ export async function postStillBrokenNote(stillBroken, campaignState, { narratio
 }
 
 /**
- * The obligation lines the audit is given: the lines of the kinds its finding
- * may act on, and no others (issue #399, D10 — a pass is asked only what it
- * has been shown to judge: checks.js JUDGE_KINDS_THAT_ACT.audit, by the
- * measure). Overhaul 4 gave it every line but a certain-class one, and round
+ * The obligation lines the audit is given: the lines of the kinds it is
+ * asked about, and no others (issue #399, D10 — a pass is asked only what it
+ * has been shown to judge: checks.js JUDGE_KINDS_ASKED.audit, by the
+ * measure). Its findings on them are logged and act on nothing (issue #402,
+ * change 5: checks.js judgeMayAct). Overhaul 4 gave it every line but a certain-class one, and round
  * 9's audit raised 44 findings on them, none right: 13 on the closing offer
  * line, 11 on lines the code had held, 12 on TELL lines. Their order is their
  * numbers.
@@ -576,7 +611,7 @@ function auditObligationLines(obligations) {
   if (!Array.isArray(obligations)) return [];
   return obligations
     .filter(o => o && typeof o.text === 'string' && o.text.trim())
-    .filter(o => judgeMayAct(o.kind, 'audit'));
+    .filter(o => judgeIsAsked(o.kind, 'audit'));
 }
 
 /**
@@ -696,18 +731,22 @@ async function withdrawReviewCardById(messageId) {
  * record: all player characters (actor sheets) plus the connections matched
  * into this scene. Character-detail audit 2026-07 — pronouns live outside
  * every ledger tier, so without this section the audit could never flag a
- * misgendering. Returns '' when nobody has recorded pronouns. Never throws.
- * Exported for testing.
+ * misgendering. And each person in the scene's frame with no card's set, by
+ * the first set the scene was given for them (issue #402, change 2 — round
+ * 10's customs clerk had no card: "her", then "he"); a card's wins. Returns ''
+ * when nobody has recorded pronouns. Never throws. Exported for testing.
  *
  * @param {string[]} matchedEntityIds
+ * @param {{ frame?: Object|null }} [opts] — the scene's frame
  * @returns {string}
  */
-export function buildRecordedIdentitiesBlock(matchedEntityIds = []) {
+export function buildRecordedIdentitiesBlock(matchedEntityIds = [], { frame = null } = {}) {
   const lines = [];
+  const listed = new Set();
   try {
     for (const actor of getPlayerActors() ?? []) {
       const snap = readCharacterSnapshot(actor);
-      if (snap?.name && snap?.pronouns) lines.push(`  ${snap.name} — ${snap.pronouns}`);
+      if (snap?.name && snap?.pronouns) { lines.push(`  ${snap.name} — ${snap.pronouns}`); listed.add(snap.name.trim().toLowerCase()); }
     }
   } catch (err) {
     console.debug?.(`${MODULE_ID} | consistencyCheck: PC identity collect failed:`, err?.message ?? err);
@@ -715,10 +754,15 @@ export function buildRecordedIdentitiesBlock(matchedEntityIds = []) {
   try {
     for (const id of matchedEntityIds ?? []) {
       const rec = getConnection(id);
-      if (rec?.name && rec?.pronouns) lines.push(`  ${rec.name} — ${rec.pronouns}`);
+      if (rec?.name && rec?.pronouns) { lines.push(`  ${rec.name} — ${rec.pronouns}`); listed.add(rec.name.trim().toLowerCase()); }
     }
   } catch (err) {
     console.debug?.(`${MODULE_ID} | consistencyCheck: NPC identity collect failed:`, err?.message ?? err);
+  }
+  // The people in the frame with no card's set: the scene's first one for them.
+  const inFrame = [...(Array.isArray(frame?.present) ? frame.present : []), ...(Array.isArray(frame?.remote) ? frame.remote : [])];
+  for (const e of pronounsFor(frame?.pronouns, inFrame)) {
+    if (!listed.has(e.name.toLowerCase())) lines.push(`  ${e.name} — ${e.pronouns}`);
   }
   return lines.length ? lines.join('\n') : '';
 }

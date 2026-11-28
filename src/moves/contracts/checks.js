@@ -39,7 +39,8 @@
  *             has her docked): one small model call (Haiku, through
  *             api-proxy.js, label `obligationJudge`) asks whether the prose
  *             tells any tripped line as true (its `judge` words where it has
- *             them); a violation re-asks only for a kind judgeMayAct allows
+ *             them); its verdict is logged, and re-asks only for a kind
+ *             judgeMayAct allows — none since issue #402, change 5
  *   logged    everything else ([scene] among them), left to the
  *             post-narration audit
  *
@@ -96,6 +97,15 @@ const TRACK_WORDS = /\b(?:box|boxes|track|progress|milestones?)\b/i;
 // sentence should be about someone other than Ren: Vance, or Mira." opened a
 // recorded round (the batch-round playthrough, 2026-11-25).
 const SHAPE_ECHO = /\bfirst sentence\b|\bacting character\b/i;
+// The narration speaking of its own drafting (issue #402, change 5;
+// REDRAFT-NARRATES-ITS-FIX): round 10's a77 redraft posted "The draft says
+// nothing in your voice. The break is Okoro's 'Hold the line,' … I'll cut
+// it", and round 8's a17 opening began with the model's notes on its
+// material ("Result 1: 'Follow Balance' can be read as Mira trying to keep
+// things even"). Narrow by design: of the 823 narrations of the kept runs,
+// these are the only two it reads ("the draft" alone is a draught of air in
+// round 1's a48).
+const DRAFT_TALK = /\b(?:the|this|my|your) draft (?:says|tells|names|breaks|keeps|reads|has)\b|\bthe break is\b|\bthe player(?:'s|’s)?\b|\bResult \d+:|\bcan be read as\b/i;
 
 /**
  * Whether a narration may close on an offer line: it was offered a move —
@@ -121,31 +131,41 @@ function bodyOf(prose, { offer = false } = {}) {
 }
 
 /**
+ * The narrations that are not about where the characters are now, so are not
+ * held to the lines that say so: a `cutaway` (a session's closing vignette, a
+ * spotlight — issue #399, D1: round 9's a93 cutaway to Tamsin was carded
+ * against the characters' place) and a `scene-answer` — an `@scene` answer,
+ * which may look back at where the story began (issue #402, change 5: round
+ * 10's a49, "Back at Hollow Spire, the only dock trader the story has
+ * recorded as yours…", carded as putting them there).
+ */
+const NOT_HELD_TO_THE_PLACE = new Set(["cutaway", "scene-answer"]);
+
+/**
  * The one text any judge reads (issue #399, D1): the narration without its
  * fact block and, where it may give one (`offer` — offerMayBeGiven of its
  * lines), without its closing offer line — the line the rules let name a
  * move, which round 9's judge and audit read as the move made (eleven false
- * findings, none right). `kind` says what narration this is; a `cutaway` (a
- * session's closing vignette, a spotlight) is not about where the characters
- * are, so it is not held to the lines that say so. Both the pre-post judge
- * (judgeNarration) and the audit (consistencyCheck.js) read it; nothing else
- * builds text for a judge. Pure.
+ * findings, none right). `kind` says what narration this is; a cutaway or a
+ * scene question's answer is not held to where the characters are
+ * (NOT_HELD_TO_THE_PLACE). Both the pre-post judge (judgeNarration) and the
+ * audit (consistencyCheck.js) read it; nothing else builds text for a judge.
+ * Pure.
  *
  * @param {string} text — a narration, its fact block on or off
- * @param {{ kind?: string|null, offer?: boolean }} [opts] — the narration's kind: `cutaway`, a mode, or
- *   none; `offer`: it was offered a move, so it may close on the line inviting it
- * @returns {{ text: string, cutaway: boolean }}
+ * @param {{ kind?: string|null, offer?: boolean }} [opts] — the narration's kind: `cutaway`,
+ *   `scene-answer`, a mode, or none; `offer`: it was offered a move, so it may close on the line inviting it
+ * @returns {{ text: string, heldToPlace: boolean }}
  */
 export function judgedView(text, { kind = null, offer = false } = {}) {
   const raw = String(text ?? "");
   const prose = extractSidecar(raw).prose ?? raw;
-  return { text: bodyOf(prose, { offer }), cutaway: kind === "cutaway" };
+  return { text: bodyOf(prose, { offer }), heldToPlace: !NOT_HELD_TO_THE_PLACE.has(kind) };
 }
 
 /**
- * The kinds whose verdicts may act, by pass (issue #399, D7: authority
- * follows the measure) — the pre-post judge's (`judge`) may re-ask a
- * narration before it posts, the audit's (`audit`) may post its review card.
+ * The kinds each pass is asked about (issue #399, D7 and D10) — the pre-post
+ * judge (`judge`) before a narration posts, the audit (`audit`) after it.
  * Each pass is measured on its own (the audit's N3: the two read every line
  * with different prompts), on the labelled set of the kept runs
  * (test/ci/playwright/judges.mjs; decisions.md → "Issue #399"). A kind is
@@ -153,22 +173,50 @@ export function judgedView(text, { kind = null, offer = false } = {}) {
  * runs made with the current judge sentences (judges/pool.json), the newest
  * as the module ships: the model samples at its default, so one run's flip
  * of a verdict is noise, and the pool is the measure.
- * tests/unit/judgeMeasure.test.js holds the sets to it.
- *
- * A pass is asked about a kind only where its verdict may act (D10): the
- * judge-class kinds are exactly the `judge` set (a kind that failed it was
- * retired to "logged", so it trips no call), and the audit is sent the lines
- * of the `audit` set's kinds and no others (consistencyCheck.js). [dice]
- * and [place] passed neither, and no judge reads them.
+ * tests/unit/judgeMeasure.test.js holds the sets to it. The judge-class kinds
+ * are exactly the `judge` set (a kind that failed it was retired to
+ * "logged", so it trips no call), and the audit is sent the lines of the
+ * `audit` set's kinds and no others (consistencyCheck.js). [dice] and
+ * [place] passed neither, and no judge reads them.
  */
-const JUDGE_KINDS_THAT_ACT = Object.freeze({
+const JUDGE_KINDS_ASKED = Object.freeze({
   judge: Object.freeze(new Set(["cost", "fight", "foe", "oracle", "premise", "price", "unsaid", "whereabouts"])),
   audit: Object.freeze(new Set(["cost", "fight", "offer", "premise", "price", "state"])),
 });
 
 /**
+ * The kinds whose verdicts may act, by pass — none (issue #402, change 5;
+ * decisions.md → "Issue #402"). Over rounds 9 and 10 the two passes acted on
+ * 13 findings and none was right: round 10's one re-ask took Okoro's line
+ * for the character's ([unsaid], a77) and its redraft was worse than the
+ * draft. A verdict is asked for and logged (the API Log, a run's record); it
+ * re-asks nothing and its obligation finding posts no card. A kind is put
+ * back here on #399 D7's bar counted on live verdicts read in a review — at
+ * least ten flags, nine in ten of them right — not on the labelled set's.
+ */
+const JUDGE_KINDS_THAT_ACT = Object.freeze({
+  judge: Object.freeze(new Set()),
+  audit: Object.freeze(new Set()),
+});
+
+const kindOf = (kind) => String(kind ?? "").replace(/^\[|\]$/g, "");
+
+/**
+ * Whether `pass` — "judge" or "audit" — is asked about a line of `kind`, its
+ * verdict logged (JUDGE_KINDS_ASKED).
+ *
+ * @param {string} kind
+ * @param {"judge"|"audit"} pass
+ * @returns {boolean}
+ */
+export function judgeIsAsked(kind, pass) {
+  const asked = JUDGE_KINDS_ASKED[pass];
+  return !!asked && asked.has(kindOf(kind));
+}
+
+/**
  * Whether a verdict on a line of `kind` may act in `pass` — "judge" (re-ask)
- * or "audit" (a review card) — by JUDGE_KINDS_THAT_ACT.
+ * or "audit" (a review card) — by JUDGE_KINDS_THAT_ACT: none may (issue #402).
  *
  * @param {string} kind
  * @param {"judge"|"audit"} pass
@@ -176,7 +224,7 @@ const JUDGE_KINDS_THAT_ACT = Object.freeze({
  */
 export function judgeMayAct(kind, pass) {
   const acting = JUDGE_KINDS_THAT_ACT[pass];
-  return !!acting && acting.has(String(kind ?? "").replace(/^\[|\]$/g, ""));
+  return !!acting && acting.has(kindOf(kind));
 }
 
 /**
@@ -208,6 +256,8 @@ function apparatusViolations(body) {
   if (number) out.push({ tag: "apparatus", quote: quoteAround(body, number.index, number[0].length) });
   const shape = SHAPE_ECHO.exec(body);
   if (shape) out.push({ tag: "apparatus", quote: quoteAround(body, shape.index, shape[0].length) });
+  const drafting = DRAFT_TALK.exec(body);
+  if (drafting) out.push({ tag: "apparatus", quote: quoteAround(body, drafting.index, drafting[0].length), note: "the narration speaks of its own drafting: tell the story alone" });
   const meter = METER_TERM.exec(body);
   if (meter) out.push({ tag: "apparatus", quote: quoteAround(body, meter.index, meter[0].length) });
   for (const found of [STAT_NUMBER.exec(body), BOXES_AGO.exec(body), TRACK_WORDS.test(body) ? OF_TEN.exec(body) : null]) {
@@ -595,7 +645,19 @@ export const FLOOR_CHECKS = Object.freeze({
     const ending = lastSentences(body, 2);
     return !takenUp && touchesLetGo(ending, line, [o.letGo]) ? [{ tag: "letgo", quote: ending.slice(0, 200) }] : [];
   } }),
+  // What a vow's plan owed the beat (issue #402, change 4): a telling word of
+  // the clue or the step, the culprit's name. Logged, not re-asked, until
+  // live verdicts measure them (D5's bar).
+  clue: Object.freeze({ action: "logged", check: (body, o) => (o.clue && !sharesStem(o.clue, body) ? [{ tag: "clue", quote: "" }] : []) }),
+  culprit: Object.freeze({ action: "logged", check: (body, o) => (o.culprit && !personSaidIn(body, o.culprit) ? [{ tag: "culprit", quote: "" }] : []) }),
+  escalation: Object.freeze({ action: "logged", check: (body, o) => (o.step && !sharesStem(o.step, body) ? [{ tag: "escalation", quote: "" }] : []) }),
 });
+
+/** Whether `body` holds a telling word of `text`, by its stem (tellingWords.js tellingStems). */
+function sharesStem(text, body) {
+  const said = tellingStems(body);
+  return [...tellingStems(text)].some(st => said.has(st));
+}
 
 /**
  * The floor checks (FLOOR_CHECKS): every floor-class line, on the prose's
@@ -873,8 +935,10 @@ export function redraftBlock(draft, violations, obligations) {
   const broke = [...groups.values()].map(g => `- [${g.tag}] ${g.text}`
     + `${g.quotes.length ? ` (it says: ${g.quotes.map(q => `"${q}"`).join("; ")})` : ""}`
     + `${g.notes.length ? ` — ${g.notes.join("; ")}.` : ""}`);
+  // "…alone": a re-ask invites a note about the change, and round 10's a77
+  // posted one to the table (issue #402, change 5).
   return `## YOUR DRAFT — NOT POSTED\n"${String(draft ?? "").trim()}"\n\nThis breaks:\n${broke.join("\n")}\n`
-    + "Write the narration again; keep everything else.";
+    + "Write the narration again; keep everything else. Reply with the narration alone — no note about the draft or what changed.";
 }
 
 /** A reply's checks in code — certain and floor — for one draft: what re-asks, and what is logged. */
@@ -945,8 +1009,8 @@ export async function narrateKeepingObligations(call, obligations, { apiKey = nu
   const offer = offerMayBeGiven(obligations);
   const tripsOf = (text) => trippedLines(judgedView(seen(text), { offer }).text, obligations, ctx);
   // A verdict's rows, and the lines it may act on: a verdict on a kind that
-  // has not passed the measure is logged and counted, and acts on nothing
-  // (issue #399, D7).
+  // may not act is logged and counted, and acts on nothing (issue #399, D7)
+  // — since issue #402, change 5, every kind's (judgeMayAct).
   const verdictOn = (verdict, tripped, draft) => {
     verdicts.push({ class: "judge", draft, tripped: tripped.map(o => o.kind), judged: verdict.judged, error: verdict.error ?? null });
     for (const d of verdict.dropped ?? []) verdicts.push({ ...d, class: "judge", action: "dropped", draft });

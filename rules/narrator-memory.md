@@ -111,8 +111,10 @@ layers. This file is the never-break list.
    (`secrets.withoutUntoldTruths`, before the ledger and the plans read the
    block — VOW-FULFILLED-WITH-NOBODY-NAMED). It is a floor; the instruction
    (UNREVEALED, THIS BEAT ENDS A VOW) is what asks for the truth to be stated.
-   A newTruth's and a stateChange's `from` ("line" | "result", else null —
-   the narrator's own colour) is normalised in `sidecarParser.js`, asked for
+   A newTruth's and a stateChange's `from` ("line", else null — the
+   narrator's own colour; "result" is no tag since issue #402's D1: what the
+   dice decided the code files itself, `narrator.js moveDiceFacts` /
+   `ledgers.js fileDiceFact`) is normalised in `sidecarParser.js`, asked for
    in `appendSidecarInstruction` (a fact the player's own line states is
    always tagged "line", shown by a worked example whose facts pass the
    floor — the tag is the only way a narrator fact binds), and floored in
@@ -173,9 +175,17 @@ layers. This file is the never-break list.
    (D16 — amends issue #362 D4): the scene's unanswered mysteries go on in
    the next scene (`secrets.js carrySceneMysteries`) and the `!pace`
    override stands; both end at the GM's `!scene end`, a `!scene start` over
-   the scene, End a Session and the mint. A turn carries the frame's cast, its
-   let-go questions and the spotlight's last actor into the new scene, takes
-   no world snapshot, and makes the session summary. The frame's scene
+   the scene, End a Session and the mint. A turn carries the frame's cast
+   (with the pronouns the scene was given for them — issue #402, change 2),
+   its let-go questions and the spotlight's last actor into the new scene,
+   takes no world snapshot, and makes the session summary. A session's first
+   scene starts with the people the last session stopped with, and their
+   pronouns, only when it opens at the place it stopped and the table gave no
+   word of its own (issue #402 D2 — `carriedFrame`'s `carry.place`, read
+   against the new scene's anchor); after that the frame is the narrations'.
+   A person's pronouns are the frame's `pronouns`, the first set given kept
+   for the scene — never written by a later block, never read from the prose;
+   a recorded person's card wins wherever both exist. The frame's scene
    question goes with the scene (issue #353 R2: never carried into the next
    scene; within its scene it stands until a beat answers
    it or play has left it unanswered for `SCENE_QUESTION_BEATS` beats, when

@@ -4,11 +4,12 @@
  *
  * Overhaul 2, slice 3 (§5.1–5.2, D5) — every fact carries its basis. A
  * narrator fact says where it comes from (`"from": "line"` — the player's
- * line says it; `"from": "result"` — the move's outcome or the oracle's answer
- * decides it), and code checks the claim against the beat's own words with
+ * line says it), and code checks the claim against the beat's own words with
  * the floor a plan's reveal is read by: one of the fact's own telling words,
  * stemmed, in the ground — a name no evidence. Anything else is the
- * narrator's own colour.
+ * narrator's own colour. (Its `"from": "result"` — the move's outcome or the
+ * oracle's answer decides it — is retired by issue #402's D1: what the dice
+ * decided the code files itself; rolledMoveResultBinds.test.js.)
  *
  * The long haul's fourth live run (its replay.json), read so: a6's "gave the
  * PC a written dock-fee slip" — the narration's invention, untagged — is
@@ -63,14 +64,14 @@ describe('overhaul 2 §5.2 — the floor over the beat\'s own words', () => {
     expect(factBasis('line', A7.own, groundOf({ line: A7.line }), { about: about('Mira Kestrel') })).toBe('player');
   });
 
-  it('a Compel hit\'s "agreed to hold the manifest", tagged result, is the dice\'s — against the stakes the hit delivered', () => {
-    const ground = groundOf({ line: 'I ask Tamsin to keep the manifest safe.', decided: decidedOfMove(COMPEL.resolution) });
-    expect(ground.decided).toBe(COMPEL.resolution.stakes.hit);
-    expect(factBasis('result', COMPEL.fact, ground, { about: about('Tamsin Vey') })).toBe('dice');
-    // On a miss the miss is what the dice decided, not the hit.
-    expect(decidedOfMove({ ...COMPEL.resolution, outcome: 'miss' })).toEqual(['Tamsin turns her back']);
-    // A result tag with no result to bear it out is colour.
-    expect(factBasis('result', COMPEL.fact, groundOf({ line: 'I ask Tamsin to keep the manifest safe.' }), { about: about('Tamsin Vey') })).toBe('narrator');
+  it('a Compel hit\'s "agreed to hold the manifest", tagged result, is colour — the code files the stakes the hit delivered (issue #402, D1)', () => {
+    // Even against the ground #388 #5 gave it — the stakes the hit delivered, a rolled move's — which bound it as the dice's.
+    expect(factBasis('result', COMPEL.fact, { line: 'I ask Tamsin to keep the manifest safe.', decided: COMPEL.resolution.stakes.hit, rolled: true },
+      { about: about('Tamsin Vey') })).toBe('narrator');
+    expect(decidedOfMove(COMPEL.resolution)).toEqual([COMPEL.resolution.stakes.hit]);
+    // On a miss the miss is what the dice decided where it is the price paid — not the hit.
+    expect(decidedOfMove({ ...COMPEL.resolution, outcome: 'miss', stakes: { ...COMPEL.resolution.stakes, priceStated: true } }))
+      .toEqual(['Tamsin turns her back']);
   });
 
   it('a name is no evidence; a fact with no telling word of its own binds nothing', () => {
@@ -95,7 +96,7 @@ describe('overhaul 2 §5.2 — the floor over the beat\'s own words', () => {
 });
 
 describe('overhaul 2 §5.2 — the tag, through the parser and the ledger', () => {
-  it('"from" is "line" or "result", case and spaces aside; anything else is colour', () => {
+  it('"from" is "line", case and spaces aside; anything else — "result" too (issue #402, D1) — is colour', () => {
     const { newTruths, stateChanges } = normaliseSidecar({
       newTruths: [
         { subject: 'Tamsin Vey', fact: 'a', from: 'line' },
@@ -110,8 +111,8 @@ describe('overhaul 2 §5.2 — the tag, through the parser and the ledger', () =
       stateChanges: [{ subject: 'Tamsin Vey', attribute: 'location', value: 'her stall', from: 'LINE' }, { subject: 'x', attribute: 'y', value: 'z', from: {} }],
     });
     // An untagged, misspelled or garbage tag is left off: the fact is colour.
-    expect(newTruths.slice(0, 6).map(t => t.from)).toEqual(['line', 'result', undefined, undefined, undefined, undefined]);
-    expect(newTruths.slice(2, 6).every(t => !('from' in t))).toBe(true);
+    expect(newTruths.slice(0, 6).map(t => t.from)).toEqual(['line', undefined, undefined, undefined, undefined, undefined]);
+    expect(newTruths.slice(1, 6).every(t => !('from' in t))).toBe(true);
     expect(newTruths.slice(6)).toEqual(['not an entry', null]);
     expect(stateChanges.map(c => c.from)).toEqual(['line', undefined]);
   });
@@ -137,9 +138,13 @@ describe('overhaul 2 §5.2 — the tag, through the parser and the ledger', () =
     expect(Object.values(cs.sceneState.bySubject)[0][0]).toMatchObject({ attribute: 'location', basis: 'narrator' });
   });
 
-  it('a hidden plan\'s revealed truth is the GM\'s, whatever the floor says (issue #388 #6)', () => {
-    // The fifth live long haul's a81: the vow's plan, made at a3, revealed by
-    // the fulfilment and held as colour — then filed to Lore at its scene's end.
+  it('a reveal adds no fact of its own: a truth marked with a plan rests on its words, like any other (issue #402, change 1b)', () => {
+    // The fifth live long haul's a81 had the plan's truth filed as the GM's
+    // (issue #388 #6); round 10's a75 then had a plan's whole text — the
+    // culprit, why, what he holds, a second name — filed as established beside
+    // a narration that told a name and "one hand behind all of it". A reveal
+    // now files what the narration told: a `revealOf` mark, the model's or
+    // anyone's, gives a truth no basis and is not kept.
     const cs = { currentSessionId: 's1', currentSceneId: 'sc-1', sceneTruths: [], sceneState: { bySubject: {}, sceneId: 'sc-1' } };
     const truth = "The raiders are not strangers: they hold access to the Kobayashi IV's own systems, and have been listening through the galley's unexplained installation since before Mira swore her vow.";
     applySidecar({
@@ -148,7 +153,7 @@ describe('overhaul 2 §5.2 — the tag, through the parser and the ledger', () =
       stateChanges: [],
     }, { campaignState: cs, asserter: 'narrator', narrationId: 'nar-81', basisOf: () => 'narrator' });
     expect(cs.sceneTruths.map(t => [t.fact, t.basis, t.revealOf ?? null])).toEqual([
-      [truth, 'gm', 'sk-F64M6OWBHfW7CGwa'],
+      [truth, 'narrator', null],
       ['rubs the pen between her fingers', 'narrator', null],
     ]);
   });

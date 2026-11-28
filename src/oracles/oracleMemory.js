@@ -28,6 +28,25 @@
 
 export const RECENT_ORACLE_CAP = 8;
 
+const MODULE_ID = 'starforged-companion';
+
+/**
+ * The question and the answer an Ask the Oracle card holds — a yes/no card
+ * asked with a question — or null (issue #402, change 1a). Read from the
+ * card's own flags, the dice's answer: never a narration's word for it. The
+ * answer is YES or NO; a match is the narration's to read, not the fact.
+ *
+ * @param {Object|null} card — a ChatMessage (or its data)
+ * @returns {{ question: string, answer: "YES"|"NO" }|null}
+ */
+export function yesNoAnswerOfCard(card) {
+  const f = card?.flags?.[MODULE_ID];
+  if (f?.oracleCommandCard !== true || f.oracleNarration?.kind !== 'oracle_yes_no') return null;
+  const question = typeof f.oracleMemory?.question === 'string' ? f.oracleMemory.question.replace(/\s+/g, ' ').trim() : '';
+  const answer = /^\s*(YES|NO)\b/.exec(String(f.oracleMemory?.answer ?? ''))?.[1] ?? null;
+  return question && answer ? { question, answer } : null;
+}
+
 /**
  * Append an oracle result to the ring. Mutates campaignState in place;
  * persistence is the caller's responsibility. Entries missing both a name

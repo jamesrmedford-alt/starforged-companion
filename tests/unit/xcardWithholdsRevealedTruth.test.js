@@ -6,8 +6,9 @@
  * X-Card's exclusion holds).
  *
  * The X-Card on a narration that revealed a hidden plan's truth puts the
- * truth back to hidden (by its `truthRevealedBy` mark), retracts its Lore
- * entry and blocks its scene fact. The narrator was still given the truth
+ * truth back to hidden (by its `truthRevealedBy` mark) and retracts its Lore
+ * entry — pending the GM since issue #402's change 1b, which also files no
+ * scene fact of the reveal's own. The narrator was still given the truth
  * under UNREVEALED and asked to record "truth" when it comes out, so a later
  * narration revealed it again: the plan read "revealed" while its Lore entry
  * stayed retracted and the only scene fact for it was the X-Card's — the
@@ -68,6 +69,12 @@ async function confirmedLore(text) {
   return gmOf(table).run(() => getConfirmedLore(null)).filter(e => e.text === text);
 }
 
+/** The Lore stating it, confirmed or pending the GM — a retracted entry is neither. */
+async function loreStating(text) {
+  const { getConfirmedLore, getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+  return gmOf(table).run(() => [...getConfirmedLore(null), ...getNarratorAssertedLore(null)]).filter(e => e.text === text);
+}
+
 /** A decided plan in this scene, filed as the canonical GM files one. */
 async function seedPlan() {
   const secrets = await gmOf(table).import('../../src/world/secrets.js');
@@ -100,7 +107,7 @@ async function revealThenXCard(plan) {
   await patSpeaks(table);
   const revealer = await narrationReveals(plan, { revealed: ['truth'] });
   expect(planOf(plan.id), 'the narration revealed it (setup)').toMatchObject({ truthRevealed: true, truthRevealedBy: revealer });
-  expect(await confirmedLore(TRUTH), 'and filed it as Lore (setup)').toHaveLength(1);
+  expect(await loreStating(TRUTH), 'and filed it as Lore (setup)').toHaveLength(1);
   await playXCard(table);
   await liftXCard();
   return revealer;
@@ -113,7 +120,7 @@ describe('issue #364 XCARD-REVEAL-REREVEAL-NO-LORE — the X-Card that took back
 
     const record = planOf(plan.id);
     expect(record).toMatchObject({ truthRevealed: false, truthWithheldBy: revealer, truth: TRUTH, status: 'active' });
-    expect(await confirmedLore(TRUTH), 'its Lore entry is retracted').toHaveLength(0);
+    expect(await loreStating(TRUTH), 'its Lore entry is retracted').toHaveLength(0);
     const [notice, ...more] = notices();
     expect(more, 'told once').toEqual([]);
     expect(notice, 'the GMs are told').toBeTruthy();
@@ -144,7 +151,7 @@ describe('issue #364 XCARD-REVEAL-REREVEAL-NO-LORE — the X-Card that took back
     expect(record, 'the plan stays unrevealed, still withheld').toMatchObject({ truthRevealed: false, truthWithheldBy: revealer, truth: TRUTH });
     expect(record.clues[0].revealed, 'the clue the beat showed is recorded').toBe(true);
     expect(record.escalation[0].done, 'and the step it played').toBe(true);
-    expect(await confirmedLore(TRUTH), 'nothing is filed as Lore').toHaveLength(0);
+    expect(await loreStating(TRUTH), 'nothing is filed as Lore').toHaveLength(0);
     expect(loreEntries().filter(e => e.title === LORE_TITLE), 'the X-Card\'s retracted entry is the only one').toHaveLength(1);
     expect(liveFacts(TRUTH), 'no scene fact states it').toEqual([]);
     expect(rollsCards().length, 'no rolls card is posted').toBe(rollsBefore);
@@ -190,7 +197,7 @@ describe('issue #364 XCARD-REVEAL-REREVEAL-NO-LORE — the X-Card that took back
 });
 
 describe('issue #364 XCARD-REVEAL-REREVEAL-NO-LORE — controls', () => {
-  it('a truth never X-carded is revealed as before: the plan reads revealed, one confirmed Lore entry, its scene fact', async () => {
+  it('a truth never X-carded is revealed as before: the plan reads revealed, one Lore entry pending the GM, no scene fact of its own', async () => {
     const plan = await seedPlan();
     await narrateMoveOn(table, moveResolution());
     expect(narrationCallsOf(table).at(-1).system, 'the narrator is given the truth').toContain(TRUTH);
@@ -198,12 +205,13 @@ describe('issue #364 XCARD-REVEAL-REREVEAL-NO-LORE — controls', () => {
     const revealer = await narrationReveals(plan, { revealed: ['truth'] });
 
     expect(planOf(plan.id)).toMatchObject({ truthRevealed: true, truthRevealedBy: revealer, truthWithheldBy: null });
-    expect(await confirmedLore(TRUTH)).toHaveLength(1);
-    expect(liveFacts(TRUTH)).toHaveLength(1);
+    expect(await loreStating(TRUTH)).toHaveLength(1);
+    expect(await confirmedLore(TRUTH), 'pending the GM').toHaveLength(0);
+    expect(liveFacts(TRUTH), 'the reveal files only what the narration\'s block gave').toHaveLength(0);
     expect(notices()).toEqual([]);
   }, 60_000);
 
-  it('a GM\'s edit of the truth lifts the withholding: the next narration is given the new truth, and its reveal is recorded with one confirmed Lore entry', async () => {
+  it('a GM\'s edit of the truth lifts the withholding: the next narration is given the new truth, and its reveal is recorded with one Lore entry', async () => {
     const plan = await seedPlan();
     await revealThenXCard(plan);
     const { editSkeleton } = await gmOf(table).import('../../src/world/secrets.js');
@@ -220,9 +228,9 @@ describe('issue #364 XCARD-REVEAL-REREVEAL-NO-LORE — controls', () => {
 
     expect(narrationCallsOf(table).at(-1).system, 'the narrator is given the new truth').toContain(NEW_TRUTH);
     expect(planOf(plan.id)).toMatchObject({ truthRevealed: true, truthRevealedBy: revealer, truthWithheldBy: null });
-    expect(await confirmedLore(NEW_TRUTH), 'one confirmed Lore entry, stating the new truth').toHaveLength(1);
-    expect(loreEntries().filter(e => e.title === LORE_TITLE && e.confirmed && !e.retracted)).toHaveLength(1);
-    expect(liveFacts(NEW_TRUTH)).toHaveLength(1);
+    expect(await loreStating(NEW_TRUTH), 'one Lore entry, stating the new truth, pending the GM').toHaveLength(1);
+    expect(loreEntries().filter(e => e.title === LORE_TITLE && !e.retracted), 'the X-Card\'s retraction lifted').toHaveLength(1);
+    expect(liveFacts(NEW_TRUTH)).toHaveLength(0);
   }, 90_000);
 
   it('a GM\'s Reveal now still reveals the withheld truth, as the GM\'s decision', async () => {

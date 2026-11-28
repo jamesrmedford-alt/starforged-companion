@@ -43,7 +43,9 @@ const LONG_HAUL = read('charters/long-haul.json');
 
 describe('the scenarios suite, beside the long haul', () => {
   it('names its scenarios, each a charter of its own; the long haul is not one of them, and its caps are its own still', () => {
-    expect(SUITE.scenarios).toEqual(['scenario-fight', 'scenario-connection', 'scenario-vow', 'scenario-recovery', 'scenario-expedition', 'scenario-scene-answer']);
+    // Issue #402, change 6: a scenario for each open fault — a Repair spent late, a session break.
+    expect(SUITE.scenarios).toEqual(['scenario-fight', 'scenario-connection', 'scenario-vow', 'scenario-recovery', 'scenario-expedition', 'scenario-scene-answer',
+      'scenario-repair', 'scenario-break']);
     expect(new Set(SUITE.scenarios).size).toBe(SUITE.scenarios.length);
     expect(SUITE.scenarios).not.toContain('long-haul');
     expect(LONG_HAUL.caps, 'the long haul\'s caps are a settled decision — raised by the maintainer after round 8').toEqual({ actions: 400, calls: 1600, minutes: 240, usd: 15 });

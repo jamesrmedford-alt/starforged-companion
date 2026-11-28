@@ -1405,6 +1405,50 @@ changed since is left out; the report names the run and its commit), so the
 one reader re-measured alone is judged against the two readers' last reading
 without paying to read them again.
 
+### A fix is proved on the kept runs before a live round (issue #402, change 6)
+
+- **A fix lands with a test over kept-run data that fails without it**, recorded in
+  `docs/testing/fix-sensitivity.md` (`node scripts/fix-sensitivity.mjs <commit>… --md …`), as an
+  audit's fixes are.
+- **A review lists each fix under test as held, broke or not reached** — a table of three
+  columns in `review-notes.md`, one row a fix, each cell the steps that show it. "Not reached"
+  is not "held": round 10's nine fixes had seven the run never reached.
+- **A kept run keeps its requests' system prompts**, each section's text once: the recording's
+  `systemSections` (by hash) and each exchange's `system` (its sections' ids, in order) —
+  `lib/claude.mjs splitSections`, `sectionId`, `systemPromptOf`. A replay kept a call's user turn
+  alone, so round 10's review could not read back what a prompt said; a recording made before
+  this reads back `""`.
+- **A beat the charter forces is labelled so** (`"forced"`: why, in words — `charter.mjs` holds
+  it to a string): the scorecard's Beats table has a "Forced by the charter" column and the
+  annotated transcript's heading says it, and what follows from such a beat — the long haul's
+  vow fulfilled at three boxes on a scripted roll (b24), its Develop lines one after another
+  until the track is full (b22) — is filed as the charter's pace, not as the module's fault.
+- **A scenario for each open fault**, in the suite: `scenario-repair` (a Repair whose points are
+  spent late), `scenario-break` (a session break with an unnamed person and an oracle's answer),
+  and `scenario-vow` — now told what a vow's plan owes a milestone (`rehearsalPlan.tellsWhatIsOwed`:
+  the stand-in writes a [clue]'s, an [escalation]'s words and a [culprit]'s name, `rehearsal.mjs
+  owedToTell`). The suite's total is $12: eight scenarios at the ceiling. Each is rehearsed for
+  free; a live suite needs the maintainer's go-ahead, and the scope asks for three runs a fix.
+- **The refrains test (Part 7).** `standing-scene` is a charter of its own — twelve lines of play
+  in one scene, two bystanders present and a third person on a comm, round 10's a57–a75 —
+  run with `EXPLORE_CHARTER=standing-scene` (step 1, the capture: its recording keeps every
+  prompt whole). `node test/ci/playwright/refrains-arms.mjs --run <its kept folder>` is step 2:
+  each beat whose last six narrations hold a detail in five or six of them (`lib/arms.mjs
+  beatsToAsk`), asked five times under each arm, with no Foundry — arm 0 as sent; 1 the sentences
+  holding the locked-in detail out of the recent narrations; 2 only the last narration word for
+  word, the older a line each from their fact blocks; 3 the worn list with the scene's people
+  on it and no cap; 4 a code-written line naming what kept showing, to leave out unless it acts;
+  5 the list moved into NOT SO. Each reply is scored by the share of locked-in details it writes
+  again and held to its guards (in budget; its fact block lists who is present); an arm wins if
+  it halves arm 0 in every asking and breaks no more guards (`verdict`). `--dry` prints the plan
+  and asks nothing; a live run needs ANTHROPIC_API_KEY and stops at `--usd` (15). Each reply's row
+  is written as it comes (`<run>/refrains-arms.rows.jsonl`), and a run started again asks only what
+  has none (`--seed-log <log>` takes an earlier run's lines, which keep no reply). Its 180 calls
+  outrun a background command's 30-minute default: give it a longer timeout. A reply is asked for
+  4,000 tokens — at 1,500 a fact block that decides plans was cut off and read as no one present.
+  The first result is kept at `explorations/standing-scene-live-20261128-041322/` (decisions.md →
+  "Part 7's result").
+
 ## Quench batch coupling — shared defaults and hooks
 
 Settings defaults and module hooks are **shared state across all Quench

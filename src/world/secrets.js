@@ -35,12 +35,7 @@ import {
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
   normaliseNewThreats, withAlias, BEING_KINDS, planInPlay, isPlanRequestLabel, selectRelevantSkeletons,
   MAX_RELEVANT_SKELETONS, SKELETON_KIND_LABELS, PLAN_REQUESTS_PER_NARRATION, proseTellsTruth,
-  truthNamesSomeone, truthWithWho,
 } from "./skeletons.js";
-import { vowAsksWho } from "./tellingWords.js";
-import { collectAllEntities } from "../context/relevanceResolver.js";
-import { getPlayerActors } from "../character/actorBridge.js";
-import { rollOracle } from "../oracles/roller.js";
 import { GM_RELAY_SOCKET, hasActiveGM } from "../multiplayer/gmRelay.js";
 
 import { sameSubject, personNameMatch, withoutTitle, isBareTitle } from "../entities/nameMatch.js";
@@ -865,8 +860,8 @@ async function rollMysteryAnswer() {
  * unrevealed — the narrator is given it again, a GM can Reveal now.
  *
  * Run on the narration's own reveals before anything reads them
- * (narrator.js applyNarratorSidecar — revealedTruthsOf and applyPlanSideData
- * both read the block it returns), never on a step the code forced. A client
+ * (narrator.js applyNarratorSidecar — applyPlanSideData reads the block it
+ * returns), never on a step the code forced. A client
  * that reads no plan (a player's, issue #362 D1) checks nothing: its reveals
  * are dropped at the relay. Never throws.
  *
@@ -900,122 +895,6 @@ export function withoutUntoldTruths(sidecar, prose) {
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: a narration's reveals could not be checked against its prose:`, err?.message ?? err);
     return sidecar;
-  }
-}
-
-/**
- * The plan subject and fact a revealed truth becomes in the scene's ledger
- * (issue #353 Phase 2: "a revealed truth is promoted to Lore and the ledger,
- * so it becomes a stated fact"): the plans a sidecar's `reveals` reveal the
- * truth of, that were not revealed before. Read synchronously, for the
- * sidecar apply to add to the narration's own truths — stamped with its id,
- * so the X-Card retracts them with it.
- *
- * The truth is the one this sidecar leaves on the plan: a `plans` entry for
- * the same id — the narration recording the change its prose made, or
- * deciding the plan it reveals — is laid on first (issue #362 AC13). The
- * ledger was read before applyPlanSideData applied that entry, so a truth
- * changed and revealed in one beat put the old, contradicted truth in the
- * scene's facts beside a Lore entry stating the new one, and a plan decided
- * and revealed in one beat got no scene fact at all. An entry answered
- * `sameAs`, or one deciding a waiting plan under another plan's subject
- * (joinedByName), is not laid on: applyPlanSideData joins it to that plan —
- * the waiting plan retired, its reveal with it — or leaves the plan as it is.
- *
- * @param {Object} sidecar — normaliseSidecar's
- * @param {{ endingSubjectIds?: string[] }} [opts] — the tracks and vows the
- *   narration's beat ends: a plan their end resolved is still its to reveal
- *   (skeletons.js planInPlay, issue #362 D4)
- * @returns {Array<{ subject: string, fact: string, revealOf: string }>} `revealOf`: the plan's id — the
- *   reveal files the truth as Lore itself, so the scene's end does not archive it again (issue #362 AC37)
- */
-export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
-  if (!skeletonsEnabled()) return [];
-  const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
-  const decided = new Map(normalisePlans(sidecar?.plans).map(p => [p.id, p]));
-  const out = [];
-  for (const reveal of normaliseReveals(sidecar?.reveals)) {
-    if (!reveal.revealed.includes("truth")) continue;
-    const stored = getSkeleton(reveal.id);
-    // A truth the X-Card withheld files no fact (issue #364 XCARD-REVEAL-REREVEAL-NO-LORE).
-    if (!stored || !planInPlay(stored, ending) || stored.truthRevealed || stored.truthWithheldBy) continue;
-    const plan = decided.get(reveal.id);
-    const record = plan && !plan.sameAs && !joinedByName(stored, plan) ? applyPlanToSkeleton(stored, plan) : stored;
-    if (!record.truth) continue;
-    out.push(record.kind === "mystery" && record.question
-      ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}`, revealOf: record.id }
-      : { subject: record.subject.name, fact: record.truth, revealOf: record.id });
-  }
-  return out;
-}
-
-/** The kinds of entity that are people, for a plan's truth (VOW-FULFILLED-UNANSWERED). */
-const PERSON_TYPES = new Set(["connection", "npc"]);
-
-/**
- * The story's names, for whether a plan's truth names a person
- * (skeletons.js truthNamesSomeone): its people — the roster's NPC cards — and
- * the names that are no person's: its places, ships and factions, the player
- * characters (never the one behind a vow they swore), and the vow's own
- * words. Never throws.
- *
- * @param {Object|null} campaignState
- * @param {Object} record — the plan
- * @returns {{ people: string[], notNames: string[] }}
- */
-function namesOfTheStory(campaignState, record) {
-  const people = [];
-  const notNames = [String(record?.subject?.name ?? "")];
-  try {
-    for (const e of collectAllEntities(campaignState ?? {})) {
-      const name = String(e?.name ?? "").trim();
-      if (!name) continue;
-      (PERSON_TYPES.has(e?.entityType) ? people : notNames).push(name);
-    }
-  } catch (err) { console.debug?.(`${MODULE_ID} | secrets: the story's names were not read:`, err?.message ?? err); }
-  try { for (const actor of getPlayerActors() ?? []) if (actor?.name) notNames.push(actor.name); }
-  catch (err) { console.debug?.(`${MODULE_ID} | secrets: the player characters were not read:`, err?.message ?? err); }
-  return { people, notNames };
-}
-
-/** A name drawn from the name oracle — Given Name and Family Name — or null when it draws none. */
-function drawPersonName() {
-  try {
-    const given = rollOracle("given_name")?.result;
-    const family = rollOracle("family_name")?.result;
-    const name = [given, family].map(x => String(x ?? "").trim()).filter(x => x && x !== "—").join(" ");
-    return name || null;
-  } catch (err) {
-    console.warn(`${MODULE_ID} | secrets: no name was drawn for the one behind a vow:`, err?.message ?? err);
-    return null;
-  }
-}
-
-/**
- * A decided plan for a vow that asks who, whose truth names no one, is given
- * the one behind it — a name drawn from the name oracle, written into its
- * truth (VOW-FULFILLED-UNANSWERED: five live long hauls running, a "find who"
- * vow was fulfilled with "No name is written yet" — the plan's truth held
- * none, and the fulfilment may tell nothing more than its truth). The same
- * narration's version (`narrationId`). Any other plan, or one that names
- * someone, as it is. Never throws.
- *
- * @param {Object|null} record — the plan as written
- * @param {{ narrationId?: string|null, campaignState?: Object|null }} [opts]
- * @returns {Promise<Object|null>} the plan as it now stands
- */
-async function namedIfAWhoVow(record, { narrationId = null, campaignState = null } = {}) {
-  try {
-    if (!record?.id || record.kind !== "vow" || !vowAsksWho(record.subject?.name) || !String(record.truth ?? "").trim()) return record;
-    if (truthNamesSomeone(record.truth, namesOfTheStory(campaignState, record))) return record;
-    const name = drawPersonName();
-    if (!name) return record;
-    const named = await updateSkeleton(record.id, r => ({ ...r, truth: truthWithWho(r.truth, name) }), { narrationId });
-    if (named) console.info(`${MODULE_ID} | secrets: the vow "${record.subject?.name}" asks who and its plan named no one — the one behind it is ${name} (from the name oracle).`);
-    return named ?? record;
-  } catch (err) {
-    console.warn(`${MODULE_ID} | secrets: the one behind a vow was not named:`, err?.message ?? err);
-    return record;
   }
 }
 
@@ -1086,8 +965,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const planned = req.subject ? null
         : (plannedAs(plan?.sameAs, req.kind) ?? (plan?.subject ? activePlanAbout(plan.subject, req.kind) : null));
       if (planned) {
-        const merged = await namedIfAWhoVow(await updateSkeleton(planned.id, r => withAlias(mergePlanInto(r, plan), plan.subject), { narrationId }),
-          { narrationId, campaignState });
+        const merged = await updateSkeleton(planned.id, r => withAlias(mergePlanInto(r, plan), plan.subject), { narrationId });
         if (merged) {
           out.decided += 1;
           reportSnapshotEvent("plan_decided");
@@ -1105,10 +983,10 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       if (known) {
         const link = req.subject.id && !known.subject.id ? { ...req.subject } : null;
         if (known.status === "active" && (plan || link)) {
-          const joined = await namedIfAWhoVow(await updateSkeleton(known.id, r => {
+          const joined = await updateSkeleton(known.id, r => {
             const next = plan ? mergePlanInto(r, plan) : r;
             return link ? { ...next, subject: link } : next;
-          }, { narrationId }), { narrationId, campaignState });
+          }, { narrationId });
           if (joined && plan) {
             out.decided += 1;
             reportSnapshotEvent("plan_decided");
@@ -1131,7 +1009,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       };
       const decided = plan ? applyPlanToSkeleton(normaliseSkeleton({ ...base, id: "pending" }), plan) : base;
       const record = req.subject && plan ? { ...decided, subject: { ...req.subject } } : decided;
-      const filed = await namedIfAWhoVow(await createSkeleton(record, { narrationId }), { narrationId, campaignState });
+      const filed = await createSkeleton(record, { narrationId });
       if (filed) {
         out.filed += 1;
         await showRollsIfSet(filed);
@@ -1154,8 +1032,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
         }
         continue;
       }
-      const decided = await namedIfAWhoVow(await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId }),
-        { narrationId, campaignState });
+      const decided = await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId });
       if (decided) {
         out.decided += 1;
         reportSnapshotEvent("plan_decided");
@@ -1272,18 +1149,23 @@ function loreTitleOf(record) {
 }
 
 /**
- * A plan's truth the fiction revealed: filed as confirmed lore (stamped with
- * the narration, so the X-Card retracts it with the reveal, and naming the
- * plan — `revealOf` — so a Burn / Improve supersede of the narration takes it
- * back with the truth it mirrors: worldJournal.js undoRevealedTruthLore, issue
- * #364 SUPERSEDED-REVEAL-LORE-STANDS), and the oracle
- * rolls behind it shown to the table — "hidden until their truth is revealed,
- * then shown" (decided) — unless they already were.
+ * A plan's truth the fiction revealed: filed as Lore pending the GM's
+ * confirmation — the narration's word for it, not canon (issue #402, change
+ * 1b). The narration's own fact block is what the beat established; the
+ * plan's whole text is the GM's to confirm. Round 10's a75 told a name and
+ * "one hand behind all of it", and the plan's truth — who runs the raids, why,
+ * what he holds, a second name — was filed as confirmed and told by the recap.
+ * Stamped with the narration, so the X-Card retracts it with the reveal, and
+ * naming the plan — `revealOf` — so a Burn / Improve supersede of the
+ * narration takes it back with the truth it mirrors (worldJournal.js
+ * undoRevealedTruthLore, issue #364 SUPERSEDED-REVEAL-LORE-STANDS). The
+ * oracle rolls behind it are shown to the table — "hidden until their truth is
+ * revealed, then shown" (decided) — unless they already were.
  */
 async function onTruthRevealed(record, { campaignState, narrationId, rollsWereShown }) {
   if (isNarrationXCarded(narrationId)) return;   // issue #362 AC35
   await recordLoreDiscovery(loreTitleOf(record), {
-    text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
+    text: record.truth, category: "other", confirmed: false, narratorAsserted: true, subject: record.subject.name, fact: record.truth,
     ...(narrationId ? { narrationId, revealOf: record.id } : {}),
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));

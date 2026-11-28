@@ -151,9 +151,10 @@ describe('VOW-FULFILLED-WITH-NOBODY-NAMED — a plan is not marked revealed by a
   const stored = () => gmOf(table).run(() => game.settings.get(MODULE_ID, 'campaignState'));
   const planOf = (id) => plansOf(table).find(p => p.id === id);
   const lastCall = () => narrationCallsOf(table).at(-1);
+  // Confirmed or pending the GM: a narration's reveal files Lore pending since issue #402, change 1b.
   const lore = async () => {
-    const { getConfirmedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
-    return gmOf(table).run(() => getConfirmedLore(null));
+    const { getConfirmedLore, getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+    return gmOf(table).run(() => [...getConfirmedLore(null), ...getNarratorAssertedLore(null)]);
   };
   const reply = (prose, sidecar) => () => ({ prose, sidecar: { newTruths: [], stateChanges: [], ...sidecar } });
 
@@ -187,14 +188,16 @@ describe('VOW-FULFILLED-WITH-NOBODY-NAMED — a plan is not marked revealed by a
     expect(table.cards(f => f.narratorCard === true && f.narrationText === A64_PROSE), 'the narration itself posts').toHaveLength(1);
   }, 60_000);
 
-  it('a fulfilment that tells the truth reveals it: the plan, the scene fact, the lore', async () => {
+  it('a fulfilment that tells the truth reveals it: the plan, and Lore pending the GM — no scene fact of its own', async () => {
     const plan = await seedVowPlan();
     table.replies = reply(TELLING, { reveals: [{ id: plan.id, revealed: ['truth'], resolved: true }] });
     await narrateMoveOn(table, fulfilment());
 
     expect(planOf(plan.id)).toMatchObject({ truthRevealed: true, status: 'resolved' });
-    expect((stored().sceneTruths ?? []).map(t => t.fact)).toContain(TRUTH);
-    expect((await lore()).map(e => e.text)).toContain(TRUTH);
+    // Issue #402, change 1b: the beat files what its own fact block gave.
+    expect((stored().sceneTruths ?? []).map(t => t.fact)).not.toContain(TRUTH);
+    const filed = (await lore()).find(e => e.text === TRUTH);
+    expect(filed).toMatchObject({ confirmed: false, narratorAsserted: true, revealOf: plan.id });
   }, 60_000);
 
   it('the rest of an untold reveal stands: a clue shown with it is still marked', async () => {

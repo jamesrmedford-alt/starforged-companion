@@ -32,6 +32,12 @@
  *                formatVowFulfilledBlock — VOW-FULFILLED-WITH-NOBODY-NAMED)
  *   [recommit]   a progress miss's recommit is the player's (new)
  *   [milestone]  Reach a Milestone's headway, as the scene showed it (new)
+ *   [clue]       the vow's plan's next clue, shown by its milestone (issue
+ *                #402, change 4 — skeletons.js vowPlanOwed)
+ *   [culprit]    a who-vow's culprit the story has not met, entering it by
+ *                name on a milestone (change 4)
+ *   [escalation] the vow's plan's next escalation step, played by a missed
+ *                fulfilment (change 4, D4)
  *   [oracle]     a yes/no answer binds the narration (formatOracleAnswerRule —
  *                ORACLE-NO-NARRATED-AS-YES)
  *   [match]      a match's twist, never the word (MATCH_TOLD_AS_TWIST)
@@ -77,6 +83,7 @@ import { MOVES } from "../../schemas.js";
 import { stakesShown, stakesLine } from "../stakes.js";
 import { findThresholdCard } from "../combatThreshold.js";
 import { contractFor } from "./table.js";
+import { instructionFaults, SPEND_EFFECTS, WEAK_HIT_COST_CLAUSE } from "./blockCheck.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -232,6 +239,12 @@ function stateBreach(fact) {
 // The kinds
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** A plan's words as one sentence for a quoted line: trimmed, ended once. */
+function asSentence(text) {
+  const said = String(text ?? "").replace(/\s+/g, " ").trim();
+  return /[.!?…]["”’)]?$/.test(said) ? said : `${said}.`;
+}
+
 /**
  * One row a kind: its list (a function where the kind's list depends on what
  * it tells — a price pending is NOT YET, declined NOT SO), its check class
@@ -303,7 +316,10 @@ export const OBLIGATION_KINDS = Object.freeze({
     // and leaves the cost ([cost]); an Enter the Fray whose fight is still
     // only offered, or declined, delivers its hit as the opening the roll
     // won, never a blow struck ([fight]).
-    text: ({ resolution }) => {
+    // `noCost`, `spend`: the block check's mends (blockCheck.js; issue #402,
+    // change 3a) — R1, a weak hit whose outcome names no cost; R2, a hit whose
+    // effect waits on the player's spend.
+    text: ({ resolution, noCost = false, spend = null }) => {
       const shown = stakesShown(resolution?.stakes ?? null);
       const outcome = resolution?.outcome ?? null;
       const lines = shown.map(s => (s.kind === "hit" ? `On a hit: ${s.text}` : `On a miss: ${s.text}${s.cost ? ` (${s.cost})` : ""}`));
@@ -311,12 +327,16 @@ export const OBLIGATION_KINDS = Object.freeze({
       const miss = shown.some(s => s.kind === "miss");
       const priceChoice = resolution?.priceChoice ?? null;
       let deliver = "";
-      if (isHit(outcome) && hit && fightNotBegun(resolution?.fightOffer)) {
+      if (isHit(outcome) && hit && spend) {
+        deliver = `This is a ${outcome === "strong_hit" ? "strong" : "weak"} hit: it gives ${spend.gives}, and the player has not spent them. `
+          + "The hit as stated is what that spend may buy, not what is done — the [spend] line says how far the narration goes.";
+      } else if (isHit(outcome) && hit && fightNotBegun(resolution?.fightOffer)) {
         deliver = `This is a ${outcome === "strong_hit" ? "strong" : "weak"} hit: the hit as stated is the opening this roll has won — ` +
           "where it puts them — not a blow already struck. The [fight] line says how far the narration goes.";
       } else if (outcome === "strong_hit" && hit) deliver = "This is a strong hit: deliver the hit as stated.";
       else if (outcome === "weak_hit" && hit && resolution?.openChoice) deliver = "This is a weak hit: deliver the hit as stated. Its cost is the player's choice, and is not chosen yet — the [cost] line says how to leave it.";
-      else if (outcome === "weak_hit" && hit) deliver = "This is a weak hit: deliver the hit as stated, with the cost or complication the move outcome names.";
+      else if (outcome === "weak_hit" && hit && noCost) deliver = "This is a weak hit: deliver the hit as stated. The move outcome names no cost or complication, and none is added.";
+      else if (outcome === "weak_hit" && hit) deliver = `This is a weak hit: deliver the hit as stated, ${WEAK_HIT_COST_CLAUSE}.`;
       else if (outcome === "miss" && miss && priceChoiceOpen(priceChoice)) deliver = `This is ${priceAlternative(priceChoice).miss}: the stated miss is the price it offers, not a price paid — the [price] line says where it stands.`;
       else if (outcome === "miss" && miss) deliver = "This is a miss: deliver the miss as stated — it is what this miss costs.";
       else if (outcome === "miss") deliver = "This is a miss: the hit did not come. Its cost is the move outcome's, not a stated one.";
@@ -347,6 +367,17 @@ export const OBLIGATION_KINDS = Object.freeze({
       return `The narration tells as paid the price this miss offers${price ? ` (${price})` : ""}, though the player has not chosen yet whether `
         + "to pay it. That price shown arriving, the hardship or threat it brings about to cost them, breaks nothing.";
     },
+  }),
+  // R2 of the block check (blockCheck.js; issue #402, change 3a): a hit whose
+  // effect waits on the player's spend — Repair's points, spent on the card
+  // after its roll. Four rounds told the mending done, and a cost besides,
+  // with the sheet unchanged (round 10's a57: "your supplies run thinner").
+  spend: Object.freeze({
+    list: "NOT YET", check: "logged",
+    text: ({ spend }) => `${String(spend?.gives ?? "WHAT THIS MOVE GIVES").toUpperCase()} ARE NOT SPENT YET. `
+      + `This move gives ${spend?.gives ?? "what it gives"}, and the player spends them on the card that follows. `
+      + `Until then ${spend?.decides ?? "what they buy"} is not decided, and nothing more is used up: tell the work begun — `
+      + "the effort, the hands on it — not what it fixes, and no supply or other cost it takes.",
   }),
   cost: Object.freeze({
     list: "NOT YET", check: "judge",
@@ -461,6 +492,28 @@ export const OBLIGATION_KINDS = Object.freeze({
   milestone: Object.freeze({
     list: "TELL", check: "logged",
     text: ({ resolution }) => `Tell the headway as the scene has shown it${resolution?.moveTarget ? `: ${String(resolution.moveTarget).trim()}` : ""}.`,
+  }),
+  // A vow's plan played toward (issue #402, change 4; D4): what the vow's
+  // hidden plan owes the beat — its next clue on a milestone, a stranger
+  // culprit's first showing, its next escalation on a missed fulfilment
+  // (skeletons.js vowPlanOwed). Floors, logged until measured.
+  clue: Object.freeze({
+    list: "TELL", check: "floor",
+    carry: ({ clue }) => ({ clue: String(clue ?? "") }),
+    text: ({ clue }) => "THE HEADWAY TURNS SOMETHING UP. Show this in the beat — seen, found, heard or let slip — in the fiction, "
+      + `never explained: "${asSentence(clue)}"`,
+  }),
+  culprit: Object.freeze({
+    list: "TELL", check: "floor",
+    carry: ({ culprit }) => ({ culprit: String(culprit ?? "") }),
+    text: ({ culprit }) => `${String(culprit ?? "").trim()} enters the story in this beat, by name — seen, heard or spoken of — `
+      + "with nothing said yet of what they have done.",
+  }),
+  escalation: Object.freeze({
+    list: "TELL", check: "floor",
+    carry: ({ step }) => ({ step: String(step ?? "") }),
+    text: ({ step }) => "WHAT THE VOW IS UP AGAINST MOVES. This miss plays it, as something that happens in the scene, never "
+      + `explained: "${asSentence(step)}"`,
   }),
   oracle: Object.freeze({
     list: ({ part }) => (part === "not" ? "NOT SO" : "TELL"), check: "judge",
@@ -949,7 +1002,40 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
     out.push({ ...line("foe", { fight: r.fightStanding }), fight: r.fightStanding });
   }
   if (obliges.has("recommit") && r.outcome === "miss") out.push(line("recommit", { resolution: r }));
+  // What the vow's plan owes this beat (issue #402, change 4): read off the
+  // plan by the narration's caller (narrator.js vowPlanOwedFor).
+  for (const o of Array.isArray(r.planOwed) ? r.planOwed : []) {
+    const said = typeof o?.text === "string" ? o.text.trim() : "";
+    if (!said) continue;
+    if (o.kind === "clue") out.push(line("clue", { clue: said }));
+    else if (o.kind === "culprit") out.push(line("culprit", { culprit: said }));
+    else if (o.kind === "escalation") out.push(line("escalation", { step: said }));
+  }
   if (r.gateNote) out.push(line("overridden", { note: r.gateNote }));
+  return mendResultLines(out, r);
+}
+
+/**
+ * The result's lines, checked against the move's own data before they are
+ * sent and mended where the fault is certain (blockCheck.js; issue #402,
+ * change 3a, D3): R1 — a weak hit whose outcome names no cost is not asked for
+ * one; R2 — a hit whose effect waits on the player's spend tells the work
+ * begun, and its spend NOT YET. Pure.
+ *
+ * @param {Array<Object>} lines — the result's lines, as resultObligations built them
+ * @param {Object} r — the resolution
+ * @returns {Array<Object>}
+ */
+function mendResultLines(lines, r) {
+  const faults = instructionFaults({ lines, moveId: r?.moveId ?? null, outcome: r?.outcome ?? null, consequences: r?.consequences ?? null });
+  if (!faults.length) return lines;
+  const spend = faults.some(f => f.rule === "R2") ? SPEND_EFFECTS[r.moveId] : null;
+  const noCost = faults.some(f => f.rule === "R1");
+  const out = lines.map(o => (o.kind === "stakes" ? line("stakes", { resolution: r, noCost, spend }) : o));
+  if (spend) {
+    const at = out.findIndex(o => o.kind === "stakes");
+    out.splice(at >= 0 ? at + 1 : out.length, 0, line("spend", { spend }));
+  }
   return out;
 }
 

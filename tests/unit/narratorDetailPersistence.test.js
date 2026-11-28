@@ -615,7 +615,11 @@ describe('a keyless-GM table keeps what a player\'s narration records (D2)', () 
     const from = table.claude.calls.length;
     await type('pl-1', '!oracle yes likely is the hatch welded shut');
     expect(table.claude.calls.slice(from).filter(isNarration).map(c => c.client)).toEqual(['pl-1']);
-    expect(world().sceneTruths).toMatchObject([{ fact: 'the hatch is welded shut', subject: { kind: 'scene' }, sceneId: 'sc-1' }]);
+    expect(world().sceneTruths.filter(t => t.source !== 'oracle_answer'))
+      .toMatchObject([{ fact: 'the hatch is welded shut', subject: { kind: 'scene' }, sceneId: 'sc-1' }]);
+    // …and the question with its answer, filed by the GM from the player's own card (issue #402, change 1a).
+    expect(world().sceneTruths.filter(t => t.source === 'oracle_answer'))
+      .toMatchObject([{ subject: { kind: 'text', text: 'is the hatch welded shut' }, basis: 'dice', sceneId: 'sc-1' }]);
     expect(table.errors).toEqual([]);
   });
 

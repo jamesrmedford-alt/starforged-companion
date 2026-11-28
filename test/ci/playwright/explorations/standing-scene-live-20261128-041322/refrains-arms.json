@@ -1,0 +1,2094 @@
+{
+  "run": "test/ci/playwright/artifacts/explore/standing-scene-live-20261128-041322",
+  "askings": 5,
+  "arms": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "beats": [
+    {
+      "step": "a9",
+      "locked": [
+        "guard"
+      ]
+    },
+    {
+      "step": "a10",
+      "locked": [
+        "guard"
+      ]
+    },
+    {
+      "step": "a11",
+      "locked": [
+        "guard"
+      ]
+    },
+    {
+      "step": "a12",
+      "locked": [
+        "guard",
+        "clerk"
+      ]
+    },
+    {
+      "step": "a13",
+      "locked": [
+        "guard",
+        "clerk"
+      ]
+    },
+    {
+      "step": "a14",
+      "locked": [
+        "guard",
+        "clerk"
+      ]
+    }
+  ],
+  "usd": 0.7812697999999998,
+  "rows": [
+    {
+      "step": "a9",
+      "arm": 0,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 0,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 0,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 0,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 0,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 1,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 1,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 1,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 1,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 1,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 2,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 2,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 2,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 2,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 2,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 3,
+      "asking": 0,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 3,
+      "asking": 1,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 3,
+      "asking": 2,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 3,
+      "asking": 3,
+      "locked": 1,
+      "again": 0,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 3,
+      "asking": 4,
+      "locked": 1,
+      "again": 0,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 4,
+      "asking": 0,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 4,
+      "asking": 1,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 4,
+      "asking": 2,
+      "locked": 1,
+      "again": 0,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 4,
+      "asking": 3,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 4,
+      "asking": 4,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 5,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 5,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 5,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 5,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a9",
+      "arm": 5,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 0,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 0,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 0,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 0,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 0,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 1,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 1,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 1,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 1,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 1,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 2,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 2,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 2,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 2,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 2,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 3,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 3,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 3,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 3,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 3,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 4,
+      "asking": 0,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 4,
+      "asking": 1,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 4,
+      "asking": 2,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 4,
+      "asking": 3,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 4,
+      "asking": 4,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 5,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 5,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 5,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 5,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a10",
+      "arm": 5,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 0,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 0,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 0,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 0,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 0,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 1,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 1,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 1,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 1,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 1,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 2,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 2,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 2,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 2,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 2,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 3,
+      "asking": 0,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 3,
+      "asking": 1,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 3,
+      "asking": 2,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 3,
+      "asking": 3,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 3,
+      "asking": 4,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 4,
+      "asking": 0,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 4,
+      "asking": 1,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 4,
+      "asking": 2,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 4,
+      "asking": 3,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 4,
+      "asking": 4,
+      "locked": 1,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 5,
+      "asking": 0,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 5,
+      "asking": 1,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 5,
+      "asking": 2,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 5,
+      "asking": 3,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a11",
+      "arm": 5,
+      "asking": 4,
+      "locked": 1,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 0,
+      "asking": 0,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 0,
+      "asking": 1,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 0,
+      "asking": 2,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 0,
+      "asking": 3,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 0,
+      "asking": 4,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 1,
+      "asking": 0,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 1,
+      "asking": 1,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 1,
+      "asking": 2,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 1,
+      "asking": 3,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 1,
+      "asking": 4,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 2,
+      "asking": 0,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 2,
+      "asking": 1,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 2,
+      "asking": 2,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 2,
+      "asking": 3,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 2,
+      "asking": 4,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 3,
+      "asking": 0,
+      "locked": 2,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 3,
+      "asking": 1,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 3,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 3,
+      "asking": 3,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 3,
+      "asking": 4,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 4,
+      "asking": 0,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 4,
+      "asking": 1,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 4,
+      "asking": 2,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 4,
+      "asking": 3,
+      "locked": 2,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 4,
+      "asking": 4,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 5,
+      "asking": 0,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 5,
+      "asking": 1,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 5,
+      "asking": 2,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 5,
+      "asking": 3,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a12",
+      "arm": 5,
+      "asking": 4,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 0,
+      "asking": 0,
+      "locked": 2,
+      "again": 2,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 0,
+      "asking": 1,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 0,
+      "asking": 2,
+      "locked": 2,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 0,
+      "asking": 3,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 0,
+      "asking": 4,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 1,
+      "asking": 0,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 1,
+      "asking": 1,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 1,
+      "asking": 2,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 1,
+      "asking": 3,
+      "locked": 2,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 1,
+      "asking": 4,
+      "locked": 2,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 2,
+      "asking": 0,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 2,
+      "asking": 1,
+      "locked": 2,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 2,
+      "asking": 2,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 2,
+      "asking": 3,
+      "locked": 2,
+      "again": 2,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 2,
+      "asking": 4,
+      "locked": 2,
+      "again": 2,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 3,
+      "asking": 0,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 3,
+      "asking": 1,
+      "locked": 2,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 3,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 3,
+      "asking": 3,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 3,
+      "asking": 4,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 4,
+      "asking": 0,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 4,
+      "asking": 1,
+      "locked": 2,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 4,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 4,
+      "asking": 3,
+      "locked": 2,
+      "again": 1,
+      "ok": true,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 4,
+      "asking": 4,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 5,
+      "asking": 0,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 5,
+      "asking": 1,
+      "locked": 2,
+      "again": 1,
+      "ok": false,
+      "fromLog": true
+    },
+    {
+      "step": "a13",
+      "arm": 5,
+      "asking": 2,
+      "locked": 2,
+      "again": 1,
+      "details": [
+        "guard"
+      ],
+      "ok": false,
+      "words": 58,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [],
+      "reply": "The guard rises first, one hand on his belt. The hook man looks at him, then at you, and sets his jaw. He crosses to the stack by the hatch and rests his palm on the third crate. Its tape is fresh and crooked. <npc>\"This one,\"</npc> he says, barely audible. <npc>\"He'll want to know why I showed you.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"hook man\", \"fact\": \"showed the PC the third crate in the stack by the hatch, its tape fresh and crooked\", \"from\": \"line\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"hook man\", \"attribute\": \"location\", \"value\": \"at the crate stack by the hatch, hand on the third crate\" },\n    { \"subject\": \"Customs Guard\", \"attribute\": \"posture\", \"value\": \"standing, hand on his belt, watching the hook man\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"Customs Guard (he/him)\", \"hook man (he/him)\"],\n    \"remote\": [\"Tamsin\"],\n    \"situation\": \"The hook man has shown you the cut crate while the guard stands and watches.\",\n    \"question\": \"\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"A harbour officer re-pressed the stamp to make the cutter's cargo of sealed medical and water-purification stock look legally landed, so it could be quietly sold against the ring's rationing.\",\n      \"wants\": \"To keep the cargo's true route and buyer hidden.\",\n      \"knows\": \"The night log's stray user code belongs to someone in the harbour office.\",\n      \"escalation\": [\"The guard reports the PC's questions upward.\", \"The log page goes missing.\", \"Dockhands are told to stop talking.\"],\n      \"clues\": [\"A user code not on shift\", \"Scraped and re-pressed date\", \"Fresh tape on the cargo\"],\n      \"resolutions\": [\"The PC names the officer and forces the cargo into the open.\"]\n    },\n    {\n      \"id\": \"sk"
+    },
+    {
+      "step": "a13",
+      "arm": 5,
+      "asking": 3,
+      "locked": 2,
+      "again": 1,
+      "details": [
+        "guard"
+      ],
+      "ok": false,
+      "words": 65,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [],
+      "reply": "The guard reaches the stack by the hatch before the hook man does, and plants himself beside the nearest crate with his arms folded. The hook man stops two paces short, wiping his palms on his trousers. The tape on the lid has been cut clean and pressed down again with a thumb. <npc>\"That one stays shut,\"</npc> the guard says. <npc>\"Unless you've brought a warrant.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Customs Guard\", \"fact\": \"stands beside the cutter crate by the hatch and refuses to let it be opened without a warrant\" },\n    { \"subject\": \"hook man\", \"fact\": \"stopped two paces short of the crate rather than show it to the PC, wary of the guard\" },\n    { \"subject\": \"cutter crate\", \"fact\": \"its lid tape was cut clean and pressed down again by thumb\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Customs Guard\", \"attribute\": \"location\", \"value\": \"beside the cutter crates by the hatch, arms folded\" },\n    { \"subject\": \"hook man\", \"attribute\": \"location\", \"value\": \"two paces from the crate stack by the hatch\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"customs guard (he/him)\", \"hook man (he/him)\"],\n    \"remote\": [\"Tamsin\"],\n    \"situation\": \"The guard blocks the cutter crate while the hook man hangs back from showing it.\",\n    \"question\": \"Will the hook man show the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring with access to the harbour press re-stamped the manifest at third bell to make the cutter's cargo look legal, using a user code not belonging to the night shift.\",\n      \"wants\": \"To keep the cutter's cargo looking lawful and the stamper unnamed.\",\n      \"knows\": \"Who holds the off-shift user code, and who ordered the press used after the cutter went silent.\",\n      \"escalation\": [\"The guard reports the PC's questions upward.\", \"The stamper moves to clear the night log.\", \"Someone on the ring confronts the PC to silence the clerk.\"],\n      \"clues\": [\"The night log shows a stamp press at third bell under an unknown user code.\", \"The date was scraped and pressed again.\", \"The clerk will not say who pressed it"
+    },
+    {
+      "step": "a13",
+      "arm": 5,
+      "asking": 4,
+      "locked": 2,
+      "again": 1,
+      "details": [
+        "guard"
+      ],
+      "ok": false,
+      "words": 72,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [],
+      "reply": "The guard is on his feet now, one hand on the desk, and he lets the hook man take three steps before he moves. The hook man takes them anyway, to the stack by the hatch. He stops at the third crate, where the lid sits a finger's width off true and the tape hangs cut. <npc>\"That one,\"</npc> he says, not touching it. Behind you, the guard's boots start across the deck.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"hook man\", \"fact\": \"led the PC to the third crate in the stack by the hatch, its lid off true and its tape cut\", \"from\": \"line\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"hook man\", \"attribute\": \"location\", \"value\": \"at the stack of cutter crates by the hatch, beside the third crate\" },\n    { \"subject\": \"Customs Guard\", \"attribute\": \"location\", \"value\": \"crossing the customs hall toward the hatch, on his feet\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"Customs Guard (he/him)\", \"hook man (he/him)\"],\n    \"remote\": [\"Tamsin\"],\n    \"situation\": \"The hook man has shown the third crate, its lid off true, and the guard is walking over.\",\n    \"question\": \"What is in the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk"
+    },
+    {
+      "step": "a14",
+      "arm": 0,
+      "asking": 0,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": false,
+      "words": 68,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [],
+      "reply": "<npc>\"Bring water if you can carry it, and don't come hungry,\"</npc> Tamsin says, and the comm clicks dead. The hall smells of cold metal and the sour tang from the crate. Footsteps stop at the corridor mouth. The dockhand has come back, and a stranger in a long grey coat stands beside him. The stranger looks at the crate, then at your hand still resting on the comm.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall on Hollow Spire; Mira told her she will come by it\", \"from\": \"line\" },\n    { \"subject\": \"stranger in a long grey coat\", \"fact\": \"unnamed newcomer (identity unknown) brought to the customs hall by the dockhand; has not yet spoken\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"condition\", \"value\": \"comm closed after the call\" },\n    { \"subject\": \"stranger in a long grey coat\", \"attribute\": \"location\", \"value\": \"at the corridor mouth of the customs hall\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"stranger in a long grey coat\"],\n    \"remote\": [],\n    \"situation\": \"Mira has closed the comm to Tamsin as a stranger arrives at the corridor mouth beside the dockhand\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"The harbour stamp was re-pressed at the third bell by someone in the ring's own administration, using a borrowed user code, to make the cutter's cargo look as if it cleared legally after the cutter went silent.\",\n      \"wants\": \"To keep the cargo on the books as lawful and the cutter's silence unexamined.\",\n      \"knows\": \"Who held the stamp at the third bell, and what was in the crates before the seals were cut.\",\n      \"escalation\": [\"The night log is quietly altered or pulled from the desk.\", \"The clerk is reassigned or warned off.\", \"Whoever pressed the st"
+    },
+    {
+      "step": "a14",
+      "arm": 0,
+      "asking": 1,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 47,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "hooded stranger"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come soon, and come quiet,\"</npc> Tamsin says, and the comm clicks dead. The hall feels emptier without her. The dockhand stops at the corridor mouth. The hooded stranger behind him walks past, boots heavy, and looks at the broken crate, then at you. <npc>\"Leaving already?\"</npc> he asks.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"thanked Tamsin over the comm and promised to come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to come soon and come quiet; keeps a stall at Hollow Spire\" },\n    { \"subject\": \"hooded stranger\", \"fact\": \"heavy-booted figure (he/him) the dockhand fetched from the corridor; unnamed, intent unknown, watching the PC at the broken crate\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed\" },\n    { \"subject\": \"hooded stranger\", \"attribute\": \"location\", \"value\": \"in the customs hall near the corridor mouth\" },\n    { \"subject\": \"dockhand\", \"attribute\": \"location\", \"value\": \"at the corridor mouth, returned\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"hooded stranger (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"Tamsin's comm has closed and a hooded stranger has stopped the PC from leaving the hall\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 0,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 63,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "unseen figure"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come before the water bell, and come quiet,\"</npc> Tamsin says. The comm clicks off. The hook man turns his head at the word stall. In the corridor mouth, the dockhand has stopped, and the figure he brought stands a pace behind him, face lost in the dim. The figure's boots are wet to the ankle. <npc>\"Which stall would that be?\"</npc> the figure asks.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to come to her stall before the water bell, and to come quiet\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall at Hollow Spire; the PC has said she will come by\", \"from\": \"line\" },\n    { \"subject\": \"unseen figure\", \"fact\": \"brought to the customs hall by the dockhand, boots wet to the ankle; asked which stall the PC meant; identity unknown\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"contact\", \"value\": \"comm closed after naming the water bell\" },\n    { \"subject\": \"dockhand\", \"attribute\": \"location\", \"value\": \"in the corridor mouth with an unseen figure\" },\n    { \"subject\": \"unseen figure\", \"attribute\": \"location\", \"value\": \"in the corridor mouth behind the dockhand\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"unseen figure\"],\n    \"remote\": [],\n    \"situation\": \"Tamsin has closed the comm after naming a meeting time, and a stranger in the corridor mouth asks which stall.\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone who keeps the ring's water vault pressed the harbour stamp after the cutter went silent, to make its cargo read as lawful rationed stock and hide what the vault now holds.\",\n      \"wants\": \"To keep the cutter's cargo off the record and the vault's contents unquestioned.\",\n      \"knows\": \"Which user code pressed the stamp at the third bell, and what was moved into the vault.\",\n      \"escalation\": [\"The night log is quietly altered or the clerk is leaned on.\", \"Whoever pressed the stamp learns the PC is asking and sends someone to the stall.\", \"The vault is sealed and the cargo moved off the ring.\"],\n      \"clues\": [\"The user code at the third bell is not on this shift.\", \"Water ration chits appear in the crates' paperwork.\", \"Wet boots in the hall.\"],\n      \"resolutions\": [\"The PC traces the code to the vault keeper and exposes the cargo.\", \"The cargo vanishes and the stamp is disowned.\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The cutter carried a weapon taken in a raid, and its hull number would tie the ring's cargo handlers to that raid.\",\n      \"wants\": \"Those who profited want the hull number never to be logged, so the cutter stays an unnamed drifting wreck.\",\n      \"knows\": \"That the crates' contents were a weapon, and who signed for them.\",\n      \"escalation\": [\"Witnesses go quiet and the guard reports questions asked.\", \"Someone strips the crates of what remains.\", \"The cutter is towed off or scuttled.\"],\n      \"clues\": [\"Nobody will log the hull number.\", \"The crate seals were torn through, not cut.\", \"Captain Oren Vasch's name is spoken only under pressure.\"],\n      \"resolutions\": [\"The PC reads the hull number and links it to the raiders.\", \"The cutter is destroyed and the trail goes cold.\"]\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 0,
+      "asking": 3,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 65,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "hooded stranger"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come by when the water's been shared out, and bring your own cup,\"</npc> Tamsin says, and the comm clicks dead. The hook man edges farther from the torn crate. Boots stop at the corridor mouth. The dockhand is back, and a tall figure in a hooded coat stands behind him. <npc>\"You're the one asking about that hull,\"</npc> the stranger says, in no hurry at all.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to come by her stall after the water is shared out, and to bring her own cup\", \"from\": \"line\" },\n    { \"subject\": \"hooded stranger\", \"fact\": \"tall figure in a hooded coat brought to the customs hall by the dockhand; knows the PC has been asking about the cutter's hull (he/him)\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"hooded stranger\", \"attribute\": \"location\", \"value\": \"at the corridor mouth of the customs hall\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed\" },\n    { \"subject\": \"hook man\", \"attribute\": \"posture\", \"value\": \"backing away from the torn crate\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"customs hall, by the hatch\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"hooded stranger (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A hooded stranger brought by the dockhand confronts you in the customs hall after Tamsin's comm closes.\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 0,
+      "asking": 4,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 58,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come by, and mind the condensers on the way down,\"</npc> Tamsin says. The comm clicks dead. The hook man edges farther from the crate with the torn seal. Two sets of boots stop at the corridor mouth, one heavier and slower than the dockhand's. A voice you do not know says, <npc>\"I hear someone has been counting crates.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall at Hollow Spire; the PC told her over the comm she would come by\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to mind the condensers on the way down to her stall\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"contact\", \"value\": \"comm closed; waiting at her stall\" },\n    { \"subject\": \"hook man\", \"attribute\": \"position\", \"value\": \"backed away from the crate with the torn seal\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"An unseen newcomer speaks from the corridor mouth after the dockhand brings him back\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring with harbour authority re-pressed the stamp at the third bell to make the cutter's cargo look legally cleared after the cutter went silent. They used a borrowed user code from another shift.\",\n      \"wants\": \"To keep the cargo on record as legal and the cutter's silence unexplained.\",\n      \"knows\": \"Who held the night stamp and why the date was scraped; they are watching who asks.\",\n      \"escalation\": [\"The guard reports the PC's questions to whoever pressed the stamp\", \"The clerk is pressured to alter the night log\", \"Someone moves the four crates off the ring\"],\n      \"clues\": [\"The scraped and re-pressed date\", \"A user code that is not on the shift\", \"The clerk will not say who pressed it\", \"The guard writing the PC's name down\"],\n      \"resolutions\": [\"The PC traces the user code to its owner\", \"The log is destroyed and the trail goes cold\"],\n      \"rerolled\": \"Action + Theme: Protect / Health\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter's hull number\",\n      \"truth\": \"The cutter's hull number ties it to a cargo someone on the ring wants unconnected to them. Captain Oren Vasch's name on the manifest is a stranger's cover, and those who know say nothing.\",\n      \"wants\": \"To keep the cutter anonymous so no one can follow its cargo back.\",\n      \"knows\": \"Who really sent the cutter out and what the four crates held before they were opened.\",\n      \"escalation\": [\"Dockhands stop talking and vanish from the hall\", \"Someone confronts the PC about the crates\", \"The cutter is stripped or towed before it can be examined\"],\n      \"clues\": [\"Nobody will log the hull number\", \"Crates opened and badly retaped\", \"The hook man's fear of being overheard\", \"The clerk's face-down slate\"],\n      \"resolutions\": [\"The PC boards the cutter and reads the hull number\", \"A frightened witness trades what they saw for passage\"],\n      \"rerolled\": \"Action + Theme: Bolster / Truth\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 1,
+      "asking": 0,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 59,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "stranger in pressure coat"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come when the hall is quiet,\"</npc> Tamsin says, and the comm clicks off. The dockhand steps back into the hall. The man behind him is no one you have seen here. He wears a pressure coat, dry despite the damp air. He walks past you to the third crate and lays one gloved hand flat on the torn lid.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"stranger in pressure coat\", \"fact\": \"a man (he/him) the dockhand brought back to the customs hall; unknown to the PC, he lays a gloved hand on the torn crate lid\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger in pressure coat\", \"attribute\": \"location\", \"value\": \"at the third crate by the hatch, customs hall\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed; the line has gone quiet\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"stranger in pressure coat (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger in a pressure coat has come in with the dockhand and laid a hand on the torn crate lid.\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 1,
+      "asking": 1,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 52,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "stranger in the corridor"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come by, then, and bring your own cup,\"</npc> Tamsin says. <npc>\"Water's short at my end.\"</npc> The comm clicks off. Behind you, the dockhand stops at the hatch. The man he brought stays half in shadow and looks at the crate, then at you. <npc>\"You're the one asking after the cutter,\"</npc> he says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to bring her own cup to the stall; water is short at Tamsin's end\", \"from\": \"line\" },\n    { \"subject\": \"stranger in the corridor\", \"fact\": \"man (he/him) the dockhand brought back to the hatch; knows the PC has been asking about the cutter\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger in the corridor\", \"attribute\": \"location\", \"value\": \"at the hatch, half in shadow, with the dockhand\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"ended the call\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"stranger in the corridor (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger brought by the dockhand confronts you at the hatch after the comm call with Tamsin ends.\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 1,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 63,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "stranger"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring your own cup, because water is rationed on my side of the ring,\"</npc> Tamsin says, and the comm clicks dead. Boots sound in the corridor, slow and heavy. The dockhand steps into the hall with a stranger behind him, coat damp at the hem. The stranger looks at the crate, then at you. <npc>\"You're the one asking about the cutter,\"</npc> he says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"thanked Tamsin over the comm and promised to come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to bring her own cup to the stall, since water is rationed on Tamsin's side of the ring\" },\n    { \"subject\": \"stranger\", \"fact\": \"man (he/him) the dockhand brought back to the customs hall; asked the PC if she is the one asking about the cutter; identity not yet known\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"cut off, no longer on the line\" },\n    { \"subject\": \"stranger\", \"attribute\": \"location\", \"value\": \"in the customs hall facing the PC\" },\n    { \"subject\": \"dockhand\", \"attribute\": \"location\", \"value\": \"back in the customs hall\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"stranger (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger brought by the dockhand confronts you in the customs hall beside the crate with the torn seal\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 1,
+      "asking": 3,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 63,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "water-warden stranger"
+      ],
+      "stop": "end_turn",
+      "reply": "\"Come by before the second bell,\" Tamsin says, \"and fold that paper small.\" The comm clicks dead. Boots stop behind you at the hatch. The dockhand has returned, and a stranger in a patched water-warden's coat stands at his shoulder. The stranger looks at the torn crate, then at you. <npc>\"You're the one asking after the cutter,\"</npc> the stranger says. <npc>\"Walk with me.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall at Hollow Spire; Mira told her she would come by\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told Mira to come before the second bell and carry the manifest folded small\" },\n    { \"subject\": \"water-warden stranger\", \"fact\": \"stranger in a patched water-warden's coat (they/them unspecified, prose used no pronoun); brought by the returning dockhand; wants Mira to walk with them\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"location\", \"value\": \"at her stall, on the comm\" },\n    { \"subject\": \"dockhand\", \"attribute\": \"location\", \"value\": \"back at the hatch with the stranger\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"water-warden stranger\"],\n    \"remote\": [],\n    \"situation\": \"The comm has gone quiet and a stranger in a water-warden's coat has asked you to walk with them\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring's water office re-pressed the harbour stamp to make the cutter's cargo, rationed water and medical stock, look legally landed.\",\n      \"wants\": \"To keep the cargo quietly on the ring and the cutter's arrival off the record.\",\n      \"knows\": \"The stamp was pressed at third bell under a borrowed user code, to cover a cargo that was never meant to be declared.\",\n      \"escalation\": [\"Dockhands who talk are watched and moved off shift.\", \"The night log is altered or lost.\", \"Someone approaches the asker privately with an offer or a warning.\"],\n      \"clues\": [\"The scraped and re-pressed date.\", \"The user code that is not on the shift.\", \"A water-warden's coat in the customs hall.\"],\n      \"resolutions\": [\"The asker exposes the pressing and the ring's water office answers for it.\", \"The asker is bought into silence.\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The hull number belongs to a ship reported lost in a raid. Its captain, Oren Vasch, was carrying a salvaged artifact someone on the ring dealt with in secret.\",\n      \"wants\": \"To keep the hull number unlogged so the cutter's past, and what it carried, cannot be traced.\",\n      \"knows\": \"Vasch's cutter did not come in empty-handed, and the crates were opened before they reached the hall.\",\n      \"escalation\": [\"Staff refuse the question outright.\", \"Someone strips the cutter's remaining markings.\", \"A stranger arrives to take the cutter or silence those asking.\"],\n      \"clues\": [\"Nobody will log the number.\", \"The crates were opened and badly retaped.\", \"The captain's name is spoken only reluctantly.\"],\n      \"resolutions\": [\"The hull number is logged and the cutter's origin comes out.\", \"The cutter is towed away unlogged.\"]\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 1,
+      "asking": 4,
+      "locked": 2,
+      "again": 1,
+      "details": [
+        "clerk"
+      ],
+      "ok": true,
+      "words": 60,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring water scrip, and don't spend it on anyone's questions,\"</npc> Tamsin says, and the comm clicks dead. Boots come up the corridor, two sets, one heavier and in no hurry. The clerk's hand goes still on the desk. The hook man steps back from the crates. A voice you do not know says, <npc>\"Who here is asking after the cutter?\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to bring water scrip when she comes by Tamsin's stall; Hollow Spire is under water rationing\" },\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin over the comm she would come by her stall\", \"from\": \"line\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed the channel\" },\n    { \"subject\": \"unseen newcomer\", \"attribute\": \"location\", \"value\": \"in the corridor, approaching the customs hall with the dockhand\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"Footsteps approach down the corridor and an unseen stranger demands to know who is asking about the cutter\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring pressed the harbour stamp after the cutter went silent to make its cargo read as legally received. They used a borrowed user code to hide who did it.\",\n      \"wants\": \"To keep the cutter's cargo looking legal and the pressing untraceable.\",\n      \"knows\": \"The stamp was pressed at the third bell by someone with access to the harbour office, and the cutter's crew never signed for what was logged.\",\n      \"escalation\": [\"The clerk is pressured to alter the night log\", \"Whoever pressed the stamp comes to take the manifest back\", \"Witnesses to the stamp press stop talking or leave the ring\"],\n      \"clues\": [\"The scraped and re-pressed date\", \"The user code not on this shift\", \"Nobody will say who pressed it\"],\n      \"resolutions\": [\"The presser is named and confronted\", \"The manifest is destroyed and the trail goes cold\"],\n      \"rerolled\": \"Action + Theme: Protect / Health; Descriptor + Focus: Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter's hull number\",\n      \"truth\": \"A stranger argued with the harbour's people to keep the cutter's hull number off the books, because the number ties the cutter to a cargo that was never meant to arrive here.\",\n      \"wants\": \"To keep the cutter unidentified until its cargo can be moved or disowned.\",\n      \"knows\": \"Who the cutter really belongs to and why Captain Oren Vasch's name is dangerous to log.\",\n      \"escalation\": [\"Dockhands are quietly told to stop talking\", \"A stranger comes asking who is asking\", \"The cutter is towed or stripped before anyone can read its hull\"],\n      \"clues\": [\"The clerk says nobody wants it asked twice\", \"The hook man forgets what he reads aloud\", \"Someone has already opened the crates\"],\n      \"resolutions\": [\"The hull number is read and logged\", \"The cutter vanishes from the ring\"],\n      \"rerolled\": \"Action + Theme: Bolster / Truth; Descriptor + Focus: Violent / Artifact\"\n    }\n  ],\n  \"newThreats\": [\n    { \"name\": \"the unseen newcomer asking after the cutter\" }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 2,
+      "asking": 0,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 54,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring your own cup. Water's rationed here, and I don't pour for free,\"</npc> Tamsin says, and the comm clicks off. You pocket it. Behind you, the dockhand's footsteps stop at the hatch. Whoever he brought stands just outside the light and says nothing. The hook man takes one more step back from the crate.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall at Hollow Spire; the PC has said she will come by it\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to bring her own cup because water is rationed and she does not pour for free\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"hook man\", \"attribute\": \"location\", \"value\": \"backed away from the crate with the torn seal, by the hatch\" },\n    { \"subject\": \"dockhand\", \"attribute\": \"location\", \"value\": \"at the hatch with an unseen companion in the corridor\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\"],\n    \"remote\": [],\n    \"situation\": \"The comm call with Tamsin has ended and someone unseen waits in the corridor beside the dockhand.\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring re-pressed the harbour stamp after the cutter went silent, to protect a hidden store of water the cutter carried and keep it off the rationing books.\",\n      \"wants\": \"To keep the cargo's true count and destination unexamined.\",\n      \"knows\": \"Who used the off-shift press and which crate held the store.\",\n      \"escalation\": [\"The clerk is leaned on to revise the night log.\", \"The off-shift press disappears.\", \"Whoever pressed it comes to the hatch to see who is asking.\"],\n      \"clues\": [\"The night log shows an off-shift press use.\", \"The clerk's thumb catches on a stamp edge pressed too fresh.\", \"The hook man will not touch the torn crate.\"],\n      \"resolutions\": [\"The presser is named and the water is brought into the open.\", \"The stamp is proved false and the clerk is silenced.\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The cutter's hull number matches a vessel listed lost with a violent cargo; logging it would tie Hollow Spire to a weapon-grade artifact that was meant to stay hidden.\",\n      \"wants\": \"To keep the hull number unlogged until the artifact is moved.\",\n      \"knows\": \"That the cutter was never the vessel its papers claim.\",\n      \"escalation\": [\"Dockhands drift away when the number is mentioned.\", \"Someone offers a bribe to leave it off the books.\", \"The crate is moved before it can be read.\"],\n      \"clues\": [\"The hook man says he would forget the question.\", \"The crate seal was torn through, not cut.\", \"Staff leave the hall one by one.\"],\n      \"resolutions\": [\"The number is logged and the artifact is traced.\", \"The cutter is towed off and the number is lost.\"]\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 2,
+      "asking": 1,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 60,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "stranger in the long coat"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come at second bell, and bring your own cup,\"</npc> Tamsin says. The comm clicks shut. Boots stop at the hatch behind you. The dockhand is back, and the stranger he has brought wears a long coat, wet at the hem. The hook man finds something interesting on the floor. The stranger looks at the open crate first, then at you.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to come at second bell and bring her own cup; the PC said she would come by Tamsin's stall\", \"from\": \"line\" },\n    { \"subject\": \"stranger in the long coat\", \"fact\": \"brought to the hatch by the dockhand; coat wet at the hem; looked at the opened crate before the PC (identity unknown)\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"contact\", \"value\": \"comm closed; expects the PC at her stall at second bell\", \"from\": \"line\" },\n    { \"subject\": \"hook man\", \"attribute\": \"posture\", \"value\": \"staring at the floor, avoiding the newcomer\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"stranger in the long coat\"],\n    \"remote\": [],\n    \"situation\": \"The comm to Tamsin is closed and a stranger in a long coat has arrived at the hatch beside the opened crate\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 2,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 63,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "stranger in a captain's coat",
+        "dockhand"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring water chits, I don't pour for free,\"</npc> Tamsin says, and the comm clicks dead. You lift your thumb from the key. In the corridor, the footsteps stop at the hatch. The dockhand steps aside. The man he brought wears a captain's coat, salt-stained at the cuffs. He looks at the crate first, then at you. <npc>\"You're the one asking after my cutter.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to bring water chits when she comes by her stall\", \"from\": \"line\" },\n    { \"subject\": \"stranger in a captain's coat\", \"fact\": \"man (he/him) brought to the hatch by the dockhand; claims the cutter as his and has heard the PC asking after it\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger in a captain's coat\", \"attribute\": \"location\", \"value\": \"at the hatch in the customs hall, facing the PC\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"call ended\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"stranger in a captain's coat (he/him)\", \"dockhand\"],\n    \"remote\": [],\n    \"situation\": \"The call with Tamsin is over and a stranger in a captain's coat has arrived at the hatch, claiming the cutter.\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 2,
+      "asking": 3,
+      "locked": 2,
+      "again": 1,
+      "details": [
+        "clerk"
+      ],
+      "ok": true,
+      "words": 63,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "stranger in the flight coat"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring your own water chits, Kestrel, because I'm not pouring on credit,\"</npc> Tamsin says. The comm hisses and goes dead. The clerk keeps her eyes on the desk. Boots stop in the corridor mouth, and the dockhand steps aside. A stranger in a salt-stained flight coat looks at the crooked lid, then at you. <npc>\"You're the one asking after that cutter,\"</npc> he says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"told Mira to bring her own water chits when she comes by her stall; will not pour on credit\", \"from\": \"line\" },\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"stranger in the flight coat\", \"fact\": \"man (he/him) in a salt-stained flight coat brought by the dockhand to the customs hall; has heard the PC is asking about the cutter\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"call ended\" },\n    { \"subject\": \"stranger in the flight coat\", \"attribute\": \"location\", \"value\": \"in the corridor mouth of the customs hall\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"stranger in the flight coat (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"The call with Tamsin is over and a stranger has come in and addresses Mira about the cutter.\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring with access to the off-shift stamp press re-pressed the harbour stamp to make the cutter's cargo look cleared after it went silent. The press was used to hide that the cutter's cargo was tampered with.\",\n      \"wants\": \"To keep the cutter's cargo looking legitimate and the night log unquestioned.\",\n      \"knows\": \"Who used the press that night, and what was taken from the crate.\",\n      \"escalation\": [\"The clerk grows evasive and the night log is quietly amended.\", \"Someone leans on the clerk to stop confirming the stamp.\", \"The press is removed or destroyed.\"],\n      \"clues\": [\"An off-shift press entry in the night log.\", \"The stamp's ink is fresher than the manifest's tear.\", \"The clerk's thumb catches on a raised corner.\"],\n      \"resolutions\": [\"The presser is named and confronted.\", \"The press is found and its owner traded with.\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The cutter's hull number belongs to a vessel tied to a violent salvage job, and an artifact aboard makes its record dangerous to the people who profit from the silence.\",\n      \"wants\": \"To keep the hull number out of any log so the cutter cannot be traced to its origin.\",\n      \"knows\": \"That the cutter's cargo included something taken by force.\",\n      \"escalation\": [\"Dockhands stop answering questions about the cutter.\", \"Someone watches the PC and reports on them.\", \"A warning is delivered at the PC's ship.\"],\n      \"clues\": [\"The hook man clams up when asked who signed.\", \"A crate lid torn through rather than cut.\", \"People leave the hall when the hull is mentioned.\"],\n      \"resolutions\": [\"The hull number is found and the cutter's origin exposed.\", \"The cutter is towed off and the trail goes cold.\"]\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 2,
+      "asking": 4,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 66,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "stranger in flight coat"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come before the water line opens, or you'll be queuing behind half the Spire,\"</npc> Tamsin says, and the comm clicks dead. The footsteps in the corridor stop at the hatch. The dockhand stands aside. Behind him is a stranger in a salt-stained flight coat, boots dusty. He looks at the crate with the torn seal, then at you. The hook man lets the line go slack.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told Mira to come before the water line opens; keeps a stall at Hollow Spire (she/her)\" },\n    { \"subject\": \"stranger in flight coat\", \"fact\": \"man (he/him) brought by the dockhand to the hatch; stares at the torn-seal crate, then at Mira; identity unknown\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"location\", \"value\": \"at her stall, on the comm\" },\n    { \"subject\": \"hook man\", \"attribute\": \"condition\", \"value\": \"line gone slack, uneasy at the stranger's arrival\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand (he/him)\", \"stranger in flight coat (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger in a flight coat has arrived at the hatch and is staring at the crate with the torn seal and at Mira.\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 3,
+      "asking": 0,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 56,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "unseen visitor"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring your own cup,\"</npc> Tamsin says over the comm. <npc>\"Water's short, and I don't pour for strangers.\"</npc> The channel clicks shut. Boots stop at the mouth of the corridor, where the light doesn't reach. Whoever the dockhand brought stays in the shadow. <npc>\"Kestrel,\"</npc> a voice says, unhurried. <npc>\"Before you go anywhere, let's talk about that manifest.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall at Hollow Spire; Mira told her over the comm she would come by\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told Mira to bring her own cup because water is short and she does not pour for strangers\" },\n    { \"subject\": \"unseen visitor\", \"fact\": \"someone the dockhand fetched, standing in shadow at the corridor mouth; knows the PC's name and wants to talk about the manifest\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"unseen visitor\", \"attribute\": \"location\", \"value\": \"in the corridor mouth, just outside the light\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"channel closed\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"unseen visitor\"],\n    \"remote\": [],\n    \"situation\": \"An unseen visitor hails the PC by name from the corridor shadows and asks to talk about the manifest\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring pressed the harbour stamp again after the cutter went silent, to make its cargo look legally received. The pressing was logged under a user code that does not belong to the night shift.\",\n      \"wants\": \"To keep the cargo on paper as legal and the cutter's fate unexamined.\",\n      \"knows\": \"Who held the stamp at the third bell and why the cutter's crates were opened before inspection.\",\n      \"escalation\": [\"The clerk's night log is quietly altered or taken.\", \"The guard reports the PC's questions to whoever holds the user code.\", \"The visitor offers a deal or a warning to drop the matter.\"],\n      \"clues\": [\"The scraped and re-pressed date.\", \"A stamp press logged at the third bell under an unknown user code.\", \"Everyone in the hall refuses to say who pressed it.\"],\n      \"resolutions\": [\"The PC traces the user code to its owner.\", \"The stamp is disowned and the cargo declared illegal.\"],\n      \"rerolled\": \"Protect / Health; Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The cutter's hull number links it to Captain Oren Vasch and to a cargo someone on the ring needs kept off record. Logging the number would tie the ring to what came off it.\",\n      \"wants\": \"To keep the cutter anonymous so no one can trace its cargo or its crew.\",\n      \"knows\": \"What the four opened crates held and who took it.\",\n      \"escalation\": [\"Dockhands stop talking and drift away from the hall.\", \"The visitor argues the PC out of pursuing the number.\", \"Pressure turns to threats against anyone who has spoken.\"],\n      \"clues\": [\"Nobody will log the number or have it asked twice.\", \"The crates' seals were whole when they came off, then torn.\", \"Captain Vasch's name is on the manifest and nowhere else.\"],\n      \"resolutions\": [\"The PC learns what Vasch carried.\", \"The number is logged openly and the ring turns on whoever hid it.\"],\n      \"rerolled\": \"Bolster / Truth; Violent / Artifact\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 3,
+      "asking": 1,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 61,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "customs clerk",
+        "hook man"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come by when the water queue thins, and bring your own cup,\"</npc> Tamsin says, and the comm clicks dead. Boots stop beyond the hatch, heavy and unhurried. A shadow falls across the torn crate. The hook man steps back from the winch and finds something interesting on the deck. A voice from the corridor says, <npc>\"Nobody told me we had visitors.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to come by her stall when the water queue thins and to bring her own cup; the PC said she would visit the stall\", \"from\": \"line\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"location\", \"value\": \"at her stall, on the comm\" },\n    { \"subject\": \"unseen newcomer\", \"attribute\": \"location\", \"value\": \"in the corridor beyond the hatch, about to enter\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"customs clerk (she/her)\", \"hook man (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"The comm has gone quiet and an unseen newcomer speaks from the corridor as a shadow falls over the torn crate\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring with access to the harbour press re-stamped the manifest at the third bell to make the cutter's cargo look legally received, using a user code from outside the night shift.\",\n      \"wants\": \"To have the cargo recorded as legal and the cutter's silence explained away.\",\n      \"knows\": \"Who held the press at the third bell and why the cutter stopped answering hails.\",\n      \"escalation\": [\"The customs hall closes ranks and the guard reports the PC's questions.\", \"The owner of the user code moves to remove the night log.\", \"Someone confronts the PC at the crates.\"],\n      \"clues\": [\"The date was scraped and pressed again.\", \"The night log shows a stamp press under a foreign user code.\", \"Staff go quiet whenever the press is mentioned.\"],\n      \"resolutions\": [\"The PC traces the user code to its holder.\", \"The log is destroyed and the trail goes cold.\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The cutter's hull number ties it to a violent, hidden cargo someone on the ring bargained over. Logging the number would expose the deal and the people who profited.\",\n      \"wants\": \"To keep the cutter anonymous until the crates are emptied and moved.\",\n      \"knows\": \"That the crates were opened and emptied before the PC arrived, and who agreed to keep the hull number off the record.\",\n      \"escalation\": [\"Staff deflect and refuse to speak the number.\", \"Someone sends a representative to warn the PC off the crates.\", \"Pressure turns to threats.\"],\n      \"clues\": [\"Nobody will log the hull number or have it asked twice.\", \"The crate seals were whole when they came off, then torn through.\", \"Captain Oren Vasch's name is on the manifest but nobody will say it.\"],\n      \"resolutions\": [\"The PC learns the number and who feared it.\", \"The cutter is towed away and the matter buried.\"]\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 3,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 55,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "stranger"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come by before the water bell, and keep your pockets quiet,\"</npc> Tamsin says, and the comm clicks dead. Footsteps stop at the corridor mouth. A stranger stands there, one hand on the frame, his coat dripping at the hem in a hall where water is rationed. <npc>\"Stall's a long walk,\"</npc> he says. <npc>\"I'll take you.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"wants Mira at her stall before the water bell, with nothing that rattles in her pockets\" },\n    { \"subject\": \"stranger\", \"fact\": \"man (he/him) brought back by the dockhand; coat dripping at the hem; offers to walk Mira to Tamsin's stall; allegiance unknown\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger\", \"attribute\": \"location\", \"value\": \"at the corridor mouth of the customs hall\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"location\", \"value\": \"at her stall, on the comm, now cut off\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"customs hall, by the desk\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"stranger (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"Mira has closed the comm to Tamsin and a dripping stranger offers to escort her to the stall.\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"A survivor of the cutter's crew is hiding on the ring. They used a borrowed user code to re-press the harbour stamp at third bell, making the cutter's cargo look cleared and buying time.\",\n      \"wants\": \"To keep the cargo looking legal until someone can be trusted with what really happened aboard.\",\n      \"knows\": \"What the cutter carried, why it went silent, and who on the ring helped hide them.\",\n      \"escalation\": [\"The scraped stamp draws the guard's report toward the harbour office.\", \"Whoever lent the code moves to silence the survivor.\", \"The survivor runs, leaving the cargo's story unprotected.\"],\n      \"clues\": [\"The user code is not on any current shift.\", \"Water or food goes missing from a shuttered store.\", \"The stamp press was warm when the clerk last touched it.\"],\n      \"resolutions\": [\"The survivor is found and trusted.\", \"The survivor is silenced and the stamp stands as the only record.\"],\n      \"rerolled\": \"Protect / Health; Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter's hull number\",\n      \"truth\": \"Several parties dispute who owns the cutter and its cargo. Logging the hull number would make someone legally liable for what happened aboard, so everyone prefers it unwritten.\",\n      \"wants\": \"To keep ownership unsettled until the dispute is decided in private.\",\n      \"knows\": \"Who stands to lose if the hull number is entered in any register.\",\n      \"escalation\": [\"Anyone who asks about the number is quietly marked.\", \"A stranger offers to settle the matter privately.\", \"The hull is cut loose or stripped before it can be logged.\"],\n      \"clues\": [\"Staff glance at one another before answering.\", \"A stranger appears just as questions turn to ownership.\", \"Captain Oren Vasch's name is on the manifest but nowhere else.\"],\n      \"resolutions\": [\"The hull number is logged in public.\", \"The cutter vanishes and the dispute ends in silence.\"],\n      \"rerolled\": \"Bolster / Truth; Violent / Artifact\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 3,
+      "asking": 3,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 58,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "stranger in the pressure coat",
+        "dockhand who walked off"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come before the water bell, and bring something worth trading,\"</npc> Tamsin says. The comm clicks dead. Boots sound in the corridor. The man who walked off is back, with a tall stranger in a pressure coat at his shoulder. The stranger looks at the torn crate, then at you. <npc>\"You're the one asking after the cutter,\"</npc> he says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin over the comm she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told Mira to come before the water bell and bring something worth trading\" },\n    { \"subject\": \"stranger in the pressure coat\", \"fact\": \"tall man (he/him) brought to the customs hall by the dockhand who walked off; knows Mira has been asking about the cutter\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger in the pressure coat\", \"attribute\": \"location\", \"value\": \"in the customs hall by the hatch, facing the PC\" },\n    { \"subject\": \"dockhand who walked off\", \"attribute\": \"location\", \"value\": \"back in the customs hall beside the stranger\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"stranger in the pressure coat (he/him)\", \"dockhand who walked off (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger in a pressure coat has been brought to the hall and confronts you about the cutter.\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring pressed the harbour stamp at the third bell under a borrowed user code, to make the cutter's cargo look legally received after the cutter went silent.\",\n      \"wants\": \"To keep the cargo's legal paper trail intact and the cutter's fate quiet.\",\n      \"knows\": \"Who held the borrowed code and what the four crates really held.\",\n      \"escalation\": [\"The clerk and hall workers go quiet and stop answering questions.\", \"Someone removes the night log entry.\", \"The stamp's presser confronts whoever keeps asking.\"],\n      \"clues\": [\"The date was scraped and pressed again.\", \"The night log shows a press at the third bell under a code not on shift.\", \"The crate seals were whole when they came off, then torn.\"],\n      \"resolutions\": [\"The presser is named and bargains for silence.\", \"The log is destroyed and the lead dies.\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"Logging the hull number would tie the drifting cutter to Captain Oren Vasch and to cargo someone on the ring needs to stay unaccounted for.\",\n      \"wants\": \"To keep the cutter nameless until its cargo is moved or explained away.\",\n      \"knows\": \"What Vasch carried and who on the ring arranged it.\",\n      \"escalation\": [\"Staff deflect and refuse to log the number.\", \"A stranger warns the PC off.\", \"Someone moves against the PC or the cutter.\"],\n      \"clues\": [\"Nobody will log the hull number or want it asked twice.\", \"Vasch's name is on the manifest but unspoken in the hall.\", \"The guard noted the PC's questions.\"],\n      \"resolutions\": [\"The hull number is read from the cutter itself.\", \"Vasch or his backer is confronted and talks.\"]\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 3,
+      "asking": 4,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 56,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "stranger"
+      ],
+      "stop": "end_turn",
+      "reply": "\"Bring your own cup; water is counted here,\" Tamsin says. The comm clicks dead. Behind you, boots stop at the hatch, and the air turns cold, with a trace of scorched insulation. A stranger stands in the corridor mouth, hands empty and open. \"Before you go anywhere,\" he says, \"tell me where you got that manifest.\"\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall on Hollow Spire; Mira told her she will come by\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told Mira to bring her own cup, since water is counted on the Spire\" },\n    { \"subject\": \"stranger\", \"fact\": \"man (he/him) the returning dockhand brought to the customs hall; demands to know where Mira got the torn manifest\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger\", \"attribute\": \"location\", \"value\": \"in the corridor mouth by the hatch, customs hall\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"stranger (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"Mira has ended the comm with Tamsin and a stranger now confronts her about the torn manifest.\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone with night access on the ring re-pressed the harbour stamp to make the cutter's cargo look legally logged. The cargo is sealed purification and medical stock, hidden to protect the Spire's rationed water supply from being seized.\",\n      \"wants\": \"To keep the cargo looking legal and in place until it can be quietly distributed.\",\n      \"knows\": \"The user code that pressed the stamp belongs to someone senior on the ring, not the night shift.\",\n      \"escalation\": [\"The guard reports Mira's questions to whoever holds the code.\", \"The stranger presses her to hand over the manifest.\", \"The night log goes missing.\"],\n      \"clues\": [\"The stamp date was scraped and pressed again.\", \"The night log shows a press under a code not on shift.\", \"The crate seals were whole when they came off.\"],\n      \"resolutions\": [\"Mira traces the code to its owner.\", \"The manifest is taken or destroyed.\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The cutter's hull number belongs to a vessel recorded as lost. Logging it would show that Vasch's ship was taken and refitted, and that the Spire has been dealing with whoever holds it.\",\n      \"wants\": \"For the cutter to stay unidentified and the dealings off record.\",\n      \"knows\": \"Captain Vasch is not the captain the hull number was registered to.\",\n      \"escalation\": [\"People refuse to answer questions about the cutter.\", \"Someone warns Mira off the hull.\", \"The cutter's drift is altered or the wreck is stripped.\"],\n      \"clues\": [\"Nobody will log the hull number.\", \"Everyone avoids saying Vasch's name.\", \"The crates were opened before anyone inspected them.\"],\n      \"resolutions\": [\"Mira reads the hull number herself.\", \"The cutter is stripped before anyone can check it.\"]\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 4,
+      "asking": 0,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 70,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "stranger in flight coat"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring water if you can spare it, and look for the stall with the dead lamp,\"</npc> Tamsin says. The comm clicks off. The hook man edges further from the torn crate. The dockhand comes back through the corridor door, and the person beside him is a stranger in a salt-stained flight coat. The stranger looks at the crate, then at you. <npc>\"You're the one asking after the cutter,\"</npc> he says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"runs a stall marked by a dead lamp at Hollow Spire; asked Mira to bring water if she can spare it\" },\n    { \"subject\": \"stranger in flight coat\", \"fact\": \"salt-stained flight coat, he/him; brought into the customs hall by the dockhand; knows the PC has been asking about the cutter\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger in flight coat\", \"attribute\": \"location\", \"value\": \"in the customs hall near the torn crate\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"stranger in flight coat (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger in a flight coat confronts you over your questions about the cutter\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring pressed the harbour stamp to clear the cutter's cargo so that sick survivors, kept hidden in a sealed store, would not be quarantined or turned out.\",\n      \"wants\": \"To keep the cutter's cargo and the people tied to it legal and unexamined.\",\n      \"knows\": \"The night-log user code belongs to someone off shift who had access to the stamp press, and why the date was scraped.\",\n      \"escalation\": [\"The clerk is warned off the night log\", \"The user code is wiped from the log\", \"Whoever pressed the stamp moves against the PC\"],\n      \"clues\": [\"The scraped and re-pressed date\", \"A third-bell press under an unknown user code\", \"Dockhands who will not say who was awake\"],\n      \"resolutions\": [\"The presser is named and bargains for protection\", \"The stamp is proved forged and the cargo seized\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The cutter carried a violent relic taken in a raid, and its hull number would tie several ring factions to the theft.\",\n      \"wants\": \"To keep the hull number unlogged so the cutter stays anonymous and deniable.\",\n      \"knows\": \"Captain Oren Vasch's signature on the last crate is the only link left to the relic's buyer.\",\n      \"escalation\": [\"Dockhands stop talking and drift away\", \"Someone strips the cutter's hull plate\", \"The PC is warned off or marked\"],\n      \"clues\": [\"Crates opened and retaped before inspection\", \"Everyone avoids the hull number\", \"Vasch's name is the one nobody will log\"],\n      \"resolutions\": [\"The hull number is logged and the buyers exposed\", \"The cutter is scuttled and the trail ends\"]\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 4,
+      "asking": 1,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 70,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "hook man",
+        "stranger"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come soon, and come by the back way,\"</npc> Tamsin says, and the comm clicks dead. The hook man lets out a breath he has clearly been holding. Boots stop at the hatch. The dockhand stands aside, and the person he fetched steps in, smelling of coolant and old smoke. He looks at the broken crate first, then at you. <npc>\"You're the one who's been asking after the cutter,\"</npc> he says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall at Hollow Spire; told the PC to come soon and by the back way (she/her)\" },\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"stranger\", \"fact\": \"unnamed man in a coat smelling of coolant and smoke, brought to the customs hall by the dockhand; has heard the PC asking about the cutter (he/him)\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"location\", \"value\": \"at her stall, over the comm\" },\n    { \"subject\": \"stranger\", \"attribute\": \"location\", \"value\": \"at the hatch of the customs hall\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"hook man (he/him)\", \"stranger (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger brought by the dockhand confronts the PC beside the crate with the torn seal\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  }\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 4,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 62,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "hook man",
+        "customs clerk",
+        "unseen visitor"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come when you can, and bring your own cup,\"</npc> Tamsin says, and the comm clicks dead. Boots stop at the hatch behind you. The dockhand is back, and the figure with him stays in the corridor's shadow, one gloved hand on the frame. The hook man steps away from the crate. A low voice asks who has been handling the third one.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall on Hollow Spire; Mira told her over the comm she would come by\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told Mira to bring her own cup when she comes to the stall\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"hook man\", \"attribute\": \"location\", \"value\": \"stepped back from the crate by the hatch\" },\n    { \"subject\": \"unseen visitor\", \"attribute\": \"location\", \"value\": \"in the corridor at the hatch, in shadow, with the dockhand\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"hook man (he/him)\", \"customs clerk (she/her)\", \"unseen visitor\"],\n    \"remote\": [],\n    \"situation\": \"The comm to Tamsin has gone quiet and a figure in shadow has arrived at the hatch, asking who handled the crate.\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring with access to the harbour press re-stamped the manifest to make the cutter's cargo look legally received. They were protecting a cargo that must not be traced to the cutter's silence.\",\n      \"wants\": \"To keep the cargo's paper trail clean and the cutter's captain unquestioned.\",\n      \"knows\": \"Who used the press at the third bell under an off-shift user code, and why the cutter stopped answering hails.\",\n      \"escalation\": [\"The guard's report on Mira's questions reaches whoever pressed the stamp.\", \"The night log page goes missing or is altered.\", \"Someone confronts Mira at the hatch and demands the torn manifest.\"],\n      \"clues\": [\"The scraped and re-pressed date.\", \"The off-shift user code in the night log.\", \"The dockhands' unease whenever the stamp is mentioned.\"],\n      \"resolutions\": [\"Mira identifies the presser and learns what the cargo was.\", \"The stamp is destroyed and the trail goes cold.\"]\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter\",\n      \"truth\": \"The cutter's hull number belongs to a vessel that was reported lost elsewhere. Logging it would expose that someone on the ring took in a ship that should not exist.\",\n      \"wants\": \"To keep the hull number off the record until the cargo is moved on.\",\n      \"knows\": \"Where the cutter really came from, and who aboard was alive when it arrived.\",\n      \"escalation\": [\"Dockhands stop talking and drift away from the crates.\", \"A stranger asks about the cutter's hull directly.\", \"The cutter is towed away or stripped before anyone can log it.\"],\n      \"clues\": [\"Nobody will log the hull number.\", \"Captain Oren Vasch's name on the manifest.\", \"Seals on the crates were whole when they came off, and are torn now.\"],\n      \"resolutions\": [\"Mira logs the hull number and the lie unravels.\", \"The cutter is removed and the question dies with it.\"],\n      \"rerolled\": \"Bolster / Truth\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 4,
+      "asking": 3,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 57,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "hook man",
+        "stranger in flight coat"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Then come by the stall,\"</npc> Tamsin says. <npc>\"Bring your own cup. Water's short.\"</npc> The comm clicks dead. Boots stop at the hatch. The dockhand steps aside, and a stranger in a salt-stained flight coat looks at the torn crate, then at you. <npc>\"You're the one asking after the cutter,\"</npc> he says. It is not quite a question.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall at Hollow Spire; told the PC to come by and bring her own cup because water is short\", \"from\": \"line\" },\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin over the comm she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"stranger in flight coat\", \"fact\": \"unnamed man (he/him) in a salt-stained flight coat, brought to the customs hall by the dockhand; knows the PC has been asking about the cutter\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed, no longer on the line\" },\n    { \"subject\": \"stranger in flight coat\", \"attribute\": \"location\", \"value\": \"at the hatch of the customs hall, facing the PC\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"hook man (he/him)\", \"stranger in flight coat (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger in a flight coat has arrived at the hatch and addresses the PC about the cutter, beside the crate with the torn seal\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring pressed the harbour stamp after the cutter went silent, to give its cargo a legal date. The user code on the press belongs to an off-shift insider with a stake in the cargo.\",\n      \"wants\": \"To keep the cutter's cargo looking legal until it can be moved off the ring.\",\n      \"knows\": \"Who pressed the stamp at the third bell, and who the cargo was really for.\",\n      \"escalation\": [\"The press user learns questions are being asked and has the night log altered.\", \"Dockhands who talked are quietly moved off shift.\", \"The insider sends someone to take the crates or the PC's copy of the manifest.\"],\n      \"clues\": [\"The scraped and re-pressed date on the manifest.\", \"A user code in the night log not on this shift.\", \"Crate seals torn rather than cut.\"],\n      \"resolutions\": [\"The PC identifies the presser and trades the proof for a lead.\", \"The evidence is destroyed and the trail goes cold.\"],\n      \"rerolled\": \"Action + Theme: Protect / Health; Descriptor + Focus: Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter's hull number\",\n      \"truth\": \"The cutter's hull number belongs to a vessel officially recorded as lost. Logging it would expose that someone has been running a ship under a dead registry.\",\n      \"wants\": \"To keep the number off every record so the registry stays dead.\",\n      \"knows\": \"Who argued to keep the number unlogged, and whose ship the cutter really is.\",\n      \"escalation\": [\"Officials and dockhands deflect or go silent when the number is asked for.\", \"A stranger comes to learn who is asking.\", \"The cutter is towed away or stripped before anyone can read its hull.\"],\n      \"clues\": [\"Nobody will log the number.\", \"Captain Oren Vasch's name on the manifest is the only name offered.\", \"A stranger arrives asking about the PC's questions.\"],\n      \"resolutions\": [\"The PC reads the hull number and learns the dead registry.\", \"The cutter vanishes with its secret.\"],\n      \"rerolled\": \"Action + Theme: Bolster / Truth; Descriptor + Focus: Violent / Artifact\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 4,
+      "asking": 4,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 58,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man"
+      ],
+      "stop": "end_turn",
+      "reply": "\"Come by when you can,\" Tamsin says. \"And take the long way round.\" The comm clicks dead. Footsteps reach the hatch, the dockhand's and another set, heavier and in no hurry. The hook man backs away from the crate until his shoulders meet the stack. From the corridor, a level voice you have never heard says your name.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall on Hollow Spire; the PC told her over the comm she would come by\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"advised the PC to take the long way round to her stall\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"location\", \"value\": \"at her stall on Hollow Spire, comm closed\" },\n    { \"subject\": \"hook man\", \"attribute\": \"location\", \"value\": \"backed against the crate stack by the hatch\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\"],\n    \"remote\": [],\n    \"situation\": \"A stranger with the returning dockhand calls the PC's name from the corridor.\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring with harbour access pressed the stamp after the cutter went silent, using a borrowed user code, to make the cargo look legally received.\",\n      \"wants\": \"To keep the cutter's cargo on the books as legitimate and the pressing untraced.\",\n      \"knows\": \"Who held the stamp at the third bell and whose code was borrowed.\",\n      \"escalation\": [\"The night log entry is quietly altered or removed.\", \"Staff who talked are leaned on to forget.\", \"The PC is formally flagged as a trouble-maker.\"],\n      \"clues\": [\"The stamp press logged at the third bell under an off-shift user code.\", \"The scraped and re-pressed date.\", \"Staff who go quiet when the stamp is mentioned.\"],\n      \"resolutions\": [\"The PC traces the user code to its owner.\"],\n      \"rerolled\": \"Protect / Health; Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter\",\n      \"truth\": \"The cutter's hull number ties it to a cargo someone on the ring wants disowned, and its captain's name is the one nobody will log.\",\n      \"wants\": \"To keep the cutter anonymous so no one can link its cargo to the ring.\",\n      \"knows\": \"What the crates held and who was meant to receive them.\",\n      \"escalation\": [\"Dockhands refuse further questions.\", \"A figure with authority arrives to steer the PC away.\", \"The cutter is moved or stripped.\"],\n      \"clues\": [\"Nobody will log the hull number.\", \"The crates came off with whole seals and were opened later.\", \"Captain Oren Vasch signed for the last crate.\"],\n      \"resolutions\": [\"The PC learns who wants the hull number unlogged and why.\"],\n      \"rerolled\": \"Bolster / Truth; Violent / Artifact\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 5,
+      "asking": 0,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 57,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "stranger"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Do that, and don't linger in that hall,\"</npc> Tamsin says. The comm clicks dead. The hook man steps further back from the crate. In the doorway, the dockhand halts, and the stranger beside him does not look at the cargo at all. The stranger looks at you. <npc>\"You're the one asking about the cutter,\"</npc> the stranger says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin over the comm she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"stranger\", \"fact\": \"unnamed person the dockhand brought back to the customs hall (gender not yet shown); knows the PC has been asking about the cutter\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger\", \"attribute\": \"location\", \"value\": \"in the doorway of the customs hall with the dockhand\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed\" },\n    { \"subject\": \"hook man\", \"attribute\": \"posture\", \"value\": \"standing well back from the crate\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"customs hall, by the hatch\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"stranger\"],\n    \"remote\": [],\n    \"situation\": \"A stranger brought by the dockhand confronts you in the customs hall after Tamsin's comm goes dead.\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"The harbour stamp was re-pressed at third bell by a dockhand using a borrowed user code, on the orders of someone who needed the cutter's cargo to appear legally landed after the cutter went silent.\",\n      \"wants\": \"To keep the cargo's record clean and the cutter's fate undocumented.\",\n      \"knows\": \"The dockhand who walked off knows who gave the order and whose code was borrowed.\",\n      \"escalation\": [\"The night log is altered or goes missing\", \"The clerk is pressured to deny what she confirmed\", \"The dockhand who pressed it vanishes from the ring\"],\n      \"clues\": [\"a user code not on the shift\", \"scraped and re-pressed date\", \"the dockhand leaving when the comm was keyed\"],\n      \"resolutions\": [\"The dockhand testifies\", \"The order is traced to someone on the ring\"],\n      \"rerolled\": \"Protect / Health; Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The cutter is a former harbour patrol hull quietly handed to outside hands by someone on the ring. Logging its number would tie the ring's own officials to what happened aboard.\",\n      \"wants\": \"To keep the hull anonymous until the cargo is moved on.\",\n      \"knows\": \"A stranger on the ring knows who arranged the transfer.\",\n      \"escalation\": [\"Questions about the hull draw a visit from someone unfamiliar\", \"Staff stop talking altogether\", \"The cutter is towed away or scuttled\"],\n      \"clues\": [\"nobody will log the number\", \"staff glance at the guard before answering\", \"a stranger arrives after the questions\"],\n      \"resolutions\": [\"The hull number is read and logged\", \"The stranger trades the truth for silence\"],\n      \"rerolled\": \"Bolster / Truth; Violent / Artifact\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 5,
+      "asking": 1,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 56,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "stranger in pressure coat"
+      ],
+      "stop": "end_turn",
+      "reply": "\"Mind the water on the way, it's thin this week,\" Tamsin says, and the comm clicks off. The dockhand is back at the hatch, and the stranger beside him wears a pressure coat, collar turned up. The stranger looks at the broken crate, then at you. <npc>\"You're the one asking about the cutter.\"</npc> <npc>\"Walk with me.\"</npc>\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"keeps a stall at Hollow Spire; Mira told her she will come by it\", \"from\": \"line\" },\n    { \"subject\": \"stranger in pressure coat\", \"fact\": \"unnamed newcomer brought to the hatch by a dockhand; knows Mira has been asking about the cutter and wants her to walk with them\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"location\", \"value\": \"remote, off the comm, at her stall\" },\n    { \"subject\": \"stranger in pressure coat\", \"attribute\": \"location\", \"value\": \"at the hatch in the customs hall\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"stranger in pressure coat\"],\n    \"remote\": [],\n    \"situation\": \"A stranger in a pressure coat has arrived at the hatch and asks you to walk with them.\",\n    \"question\": \"What is inside the crate with the broken seal?\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring pressed the harbour stamp after the cutter went silent to make its cargo look legally received, after a message from the cutter's surviving crew reached them.\",\n      \"wants\": \"To keep the cargo logged as legal and the cutter's silence unexplained.\",\n      \"knows\": \"A final hail from the cutter was answered, and the stamp was pressed under a borrowed user code at third bell.\",\n      \"escalation\": [\"The clerk is pressured to alter the night log.\", \"Whoever pressed it moves to remove the user code entirely.\", \"The stamp's owner confronts those asking.\"],\n      \"clues\": [\"The scraped and re-pressed date.\", \"A user code not on the shift.\", \"The clerk's reluctance to name anyone.\"],\n      \"resolutions\": [\"The presser is exposed.\", \"The log is destroyed and the trail goes cold.\"],\n      \"rerolled\": \"Protect / Health; Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter's hull number\",\n      \"truth\": \"The cutter's hull number ties it to a deal brokered with a stranger on the ring; logging it would expose who arranged the cargo.\",\n      \"wants\": \"To keep the hull number and its buyer out of any record.\",\n      \"knows\": \"Captain Oren Vasch met a stranger before the cutter left and the cargo was never meant to dock here.\",\n      \"escalation\": [\"Dockhands are told to stay quiet.\", \"Someone asks Mira to leave the matter alone.\", \"The cutter itself is moved or stripped.\"],\n      \"clues\": [\"Nobody will log the number.\", \"The crates were already opened.\", \"The stranger's interest in who is asking.\"],\n      \"resolutions\": [\"The hull number is logged and the buyer named.\", \"The cutter vanishes from the ring.\"],\n      \"rerolled\": \"Bolster / Truth; Violent / Artifact\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 5,
+      "asking": 2,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 58,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "dockhand",
+        "figure in the corridor mouth"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Come by the stall, then, and keep your voice down on the way,\"</npc> Tamsin says, and the comm clicks dead. Behind you, footsteps stop at the corridor mouth. A figure stands there beside the dockhand, face in shadow. The hook man takes another step back from the crate. <npc>\"You're the one asking about the cutter,\"</npc> the figure says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin over the comm she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"figure in the corridor mouth\", \"fact\": \"unnamed newcomer the returning dockhand brought to the customs hall; asks whether you are the one asking about the cutter; pronouns not yet shown\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"Tamsin\", \"attribute\": \"condition\", \"value\": \"comm closed after telling you to come by her stall\" },\n    { \"subject\": \"figure in the corridor mouth\", \"attribute\": \"location\", \"value\": \"at the corridor mouth of the customs hall, face in shadow\" },\n    { \"subject\": \"hook man\", \"attribute\": \"location\", \"value\": \"by the crate stack, stepping back from the opened crate\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"dockhand\", \"figure in the corridor mouth\"],\n    \"remote\": [],\n    \"situation\": \"The comm to Tamsin has closed and a shadowed newcomer in the corridor mouth confronts you about the cutter.\"\n  },\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring with access to the harbour stamp pressed it after the cutter fell silent, to make a cargo look legal and to keep a captain's name attached to it. The night log shows a user code not on the current shift.\",\n      \"wants\": \"To keep the cargo's paper trail clean and the cutter's silence unexplained.\",\n      \"knows\": \"Who held the stamp at the third bell, and why the cutter's crates were opened before anyone logged them.\",\n      \"escalation\": [\"Staff stop talking and the clerk is warned off the night log.\", \"The night log entry goes missing.\", \"Whoever pressed the stamp comes to find the person asking.\"],\n      \"clues\": [\"The date was scraped and pressed again.\", \"A stamp press at the third bell under an unknown user code.\", \"Everyone watches the person who asks.\"],\n      \"resolutions\": [\"The user code is traced to a person on the ring.\", \"The log is destroyed and the trail goes cold.\"],\n      \"rerolled\": \"Action + Theme: Protect / Health; Descriptor + Focus: Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter\",\n      \"truth\": \"The cutter's hull number is tied to a cargo and a captain, Oren Vasch, that some on the ring want disowned. A stranger argues over who should answer for it.\",\n      \"wants\": \"To keep the hull number out of any record that outsiders can read.\",\n      \"knows\": \"What the crates held and who opened them first.\",\n      \"escalation\": [\"Staff refuse to speak of the hull number.\", \"A stranger steps in to question whoever keeps asking.\", \"The cutter is moved or stripped before it can be examined.\"],\n      \"clues\": [\"Nobody will log the hull number.\", \"Crate seals torn rather than cut.\", \"Vasch's name is the one nobody wants spoken.\"],\n      \"resolutions\": [\"The hull number is logged and the cargo exposed.\", \"The cutter is quietly scrapped.\"],\n      \"rerolled\": \"Action + Theme: Bolster / Truth; Descriptor + Focus: Violent / Artifact\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 5,
+      "asking": 3,
+      "locked": 2,
+      "again": 1,
+      "details": [
+        "clerk"
+      ],
+      "ok": true,
+      "words": 57,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "customs clerk",
+        "hook man",
+        "stranger in flight coat"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring your own cup, the water's rationed again,\"</npc> Tamsin says, and the comm clicks dead. Footsteps reach the hatch. The dockhand steps aside, and a stranger in a salt-stained flight coat looks at the open crate, then at you. The clerk's hands go flat on the desk. <npc>\"You're the one asking about the cutter,\"</npc> the stranger says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Mira Kestrel\", \"fact\": \"told Tamsin she will come by her stall\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told the PC to bring her own cup because the water is rationed again\" },\n    { \"subject\": \"stranger in flight coat\", \"fact\": \"unnamed arrival in a salt-stained flight coat, brought to the hatch by a dockhand; has heard the PC asking about the cutter\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger in flight coat\", \"attribute\": \"location\", \"value\": \"at the hatch in the customs hall, facing the PC\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed\" }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"by the hatch, customs hall\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"customs clerk (she/her)\", \"hook man (he/him)\", \"stranger in flight coat\"],\n    \"remote\": [],\n    \"situation\": \"A stranger in a flight coat has arrived at the hatch and confronts you about asking after the cutter.\"\n  },\n  \"openQuestions\": [\n    { \"question\": \"Who is the stranger in the flight coat?\", \"about\": \"stranger in flight coat\" }\n  ],\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring who stayed awake after the cutter went silent re-pressed the harbour stamp to make the cargo look legally received. The stamp was pressed under a night-shift user code that does not belong to the shift.\",\n      \"wants\": \"To keep the cutter's cargo on the books as lawful and quiet.\",\n      \"knows\": \"Who held the stamp at the third bell and who ordered the crates opened.\",\n      \"escalation\": [\"The clerk is warned off and stops answering questions.\", \"The user code is wiped from the night log.\", \"Whoever pressed it moves to remove the person asking.\"],\n      \"clues\": [\"The date was scraped and pressed again.\", \"The night log shows a press at the third bell under a foreign user code.\", \"The clerk will not say who.\"],\n      \"resolutions\": [\"The presser is named and exposed.\", \"The log is destroyed and the trail goes cold.\"],\n      \"rerolled\": \"Action + Theme: Protect / Health\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the drifting cutter\",\n      \"truth\": \"The cutter's hull number is unlogged because the ring's own people took cargo off it that was never meant to be recorded, and a logged hull would tie them to it. Captain Oren Vasch's name is being used as cover.\",\n      \"wants\": \"To keep the cutter anonymous until its cargo is cleared away.\",\n      \"knows\": \"What the four opened crates held and who opened them.\",\n      \"escalation\": [\"Dockhands and staff close ranks and refuse questions.\", \"A stranger confronts the one asking.\", \"The cutter is moved or stripped.\"],\n      \"clues\": [\"Nobody will log the hull number.\", \"The crate seals were whole when unloaded, then cut and badly retaped.\", \"Those who spoke are being watched and noted.\"],\n      \"resolutions\": [\"The hull number is logged and the cargo traced.\", \"The cutter vanishes and the question dies.\"],\n      \"rerolled\": \"Action + Theme: Bolster / Truth\"\n    }\n  ]\n}\n```"
+    },
+    {
+      "step": "a14",
+      "arm": 5,
+      "asking": 4,
+      "locked": 2,
+      "again": 0,
+      "details": [],
+      "ok": true,
+      "words": 52,
+      "ceiling": 85,
+      "inBudget": true,
+      "present": [
+        "Mira Kestrel",
+        "hook man",
+        "customs clerk",
+        "stranger in the captain's coat",
+        "dockhand"
+      ],
+      "stop": "end_turn",
+      "reply": "<npc>\"Bring your own cup, and come the back way,\"</npc> Tamsin says. The comm clicks dead. Boots stop in the corridor mouth. The dockhand steps aside, and a stranger in a worn captain's coat walks in. He looks at the crate, then at you. <npc>\"You're the one asking about the cutter,\"</npc> he says.\n\n```json\n{\n  \"newTruths\": [\n    { \"subject\": \"Tamsin\", \"fact\": \"has a stall at Hollow Spire; Mira told her over the comm she would come by\", \"from\": \"line\" },\n    { \"subject\": \"Tamsin\", \"fact\": \"told Mira to bring her own cup and come the back way\" },\n    { \"subject\": \"stranger in the captain's coat\", \"fact\": \"unnamed man (he/him) in a worn captain's coat, brought to the customs hall by a dockhand; has heard Mira asking about the cutter\" }\n  ],\n  \"stateChanges\": [\n    { \"subject\": \"stranger in the captain's coat\", \"attribute\": \"location\", \"value\": \"inside the customs hall by the hatch, facing the PC\" },\n    { \"subject\": \"Tamsin\", \"attribute\": \"comm\", \"value\": \"closed; she has signed off\" }\n  ],\n  \"plans\": [\n    {\n      \"id\": \"sk-ktsbPcUmdJ96VAmw\",\n      \"subject\": \"the manifest stamp\",\n      \"truth\": \"Someone on the ring pressed the harbour stamp at the third bell under a borrowed user code, to make the cutter's cargo look legally received. The press was meant to be quiet and is now being covered.\",\n      \"wants\": \"To keep the cargo looking legal and the stamp's author unnamed.\",\n      \"knows\": \"Whose code was borrowed, and that the cutter had already stopped answering hails when the stamp was pressed.\",\n      \"escalation\": [\"The clerk is pressured to alter the night log.\", \"Anyone who repeats the stamp's date is marked and watched.\", \"The night log goes missing.\"],\n      \"clues\": [\"The date was scraped and pressed again.\", \"A user code not on the shift logged the press.\", \"The clerk will not say who pressed it.\"],\n      \"resolutions\": [\"The borrowed code is traced to its true owner.\", \"The log is destroyed and the trail dies.\"],\n      \"rerolled\": \"Action + Theme: Protect / Health; Descriptor + Focus: Natural / Vault\"\n    },\n    {\n      \"id\": \"sk-bi3nSZR7X4pyaGGt\",\n      \"subject\": \"the cutter's hull number\",\n      \"truth\": \"The hull number ties the drifting cutter to a deal several people on the ring agreed to forget. Logging it would force them to argue over who answers for it.\",\n      \"wants\": \"To keep the number off every record until the dispute is settled quietly.\",\n      \"knows\": \"Who argued over the cutter's cargo, and what was said when it stopped answering.\",\n      \"escalation\": [\"Dockhands stop talking and watch whoever asks.\", \"Someone steps in to question the asker directly.\", \"The asker is warned off the cutter.\"],\n      \"clues\": [\"Nobody will log the number or let it be asked twice.\", \"The crates were opened and retaped.\", \"The cutter's captain is named on the manifest but not in the hall.\"],\n      \"resolutions\": [\"The number is logged openly.\", \"The cutter is towed away and the question dies.\"],\n      \"rerolled\": \"Action + Theme: Bolster / Truth; Descriptor + Focus: Violent / Artifact\"\n    }\n  ],\n  \"sceneFrame\": {\n    \"location\": \"customs hall, by the hatch\",\n    \"present\": [\"Mira Kestrel (she/her)\", \"hook man (he/him)\", \"customs clerk (she/her)\", \"stranger in the captain's coat (he/him)\", \"dockhand\"],\n    \"remote\": [],\n    \"situation\": \"A stranger in a captain's coat has walked into the hall and confronted you about the cutter.\"\n  }\n}\n```"
+    }
+  ],
+  "verdict": {
+    "rates": {
+      "0": [
+        0.7777777777777778,
+        0.6666666666666666,
+        0.6666666666666666,
+        0.6666666666666666,
+        0.6666666666666666
+      ],
+      "1": [
+        0.7777777777777778,
+        0.6666666666666666,
+        0.6666666666666666,
+        0.6666666666666666,
+        0.7777777777777778
+      ],
+      "2": [
+        0.7777777777777778,
+        0.6666666666666666,
+        0.6666666666666666,
+        0.8888888888888888,
+        0.7777777777777778
+      ],
+      "3": [
+        0.2222222222222222,
+        0.3333333333333333,
+        0.1111111111111111,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "4": [
+        0.2222222222222222,
+        0.2222222222222222,
+        0.1111111111111111,
+        0.1111111111111111,
+        0.2222222222222222
+      ],
+      "5": [
+        0.6666666666666666,
+        0.6666666666666666,
+        0.6666666666666666,
+        0.7777777777777778,
+        0.6666666666666666
+      ]
+    },
+    "guardsBroken": {
+      "0": 22,
+      "1": 22,
+      "2": 22,
+      "3": 21,
+      "4": 22,
+      "5": 25
+    },
+    "winners": [
+      3,
+      4
+    ]
+  }
+}

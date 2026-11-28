@@ -501,6 +501,47 @@ export function applyRevealToSkeleton(record, reveal, { narrationId = null } = {
 
 
 /**
+ * What a vow's plan owes the beat that narrates a move on its vow (issue
+ * #402, change 4 — plans are played toward; D4). Six plans were made in
+ * round 10 and one was revealed, by the fulfilment: nothing moved play toward
+ * a plan decided at the oath. Now:
+ *   - a Reach a Milestone — headway the scene showed, offered on a hit —
+ *     shows the plan's next clue not yet shown, a line the narration must
+ *     tell; and a who-vow's culprit the story has not met (`stranger`) enters
+ *     the story by name, on the first milestone that finds them a stranger;
+ *   - a Fulfill Your Vow that misses plays the plan's next escalation step.
+ * What the beat is made to play is marked as it plays (`reveals` — forced:
+ * narrator.js applyNarratorSidecar's ctx.reveals), stamped with the
+ * narration, so the X-Card on it takes it back. An active, decided vow plan
+ * only, and none whose truth the X-Card withheld. Pure.
+ *
+ * @param {Object|null} plan — normaliseSkeleton's
+ * @param {{ moveId?: string|null, outcome?: string|null, stranger?: string|null }} [beat]
+ * @returns {{ lines: Array<{ kind: "clue"|"culprit"|"escalation", text: string }>,
+ *   reveals: Array<{ id: string, revealed?: string[], advanced?: string }> }}
+ */
+export function vowPlanOwed(plan, { moveId = null, outcome = null, stranger = null } = {}) {
+  const none = { lines: [], reveals: [] };
+  if (plan?.kind !== "vow" || plan.status !== "active" || !String(plan.truth ?? "").trim() || plan.truthWithheldBy) return none;
+  if (moveId === "reach_a_milestone") {
+    const out = { lines: [], reveals: [] };
+    const clue = (plan.clues ?? []).find(c => !c.revealed && c.text);
+    if (clue) {
+      out.lines.push({ kind: "clue", text: clue.text });
+      out.reveals.push({ id: plan.id, revealed: [clue.id] });
+    }
+    const name = typeof stranger === "string" && !plan.truthRevealed ? stranger.trim() : "";
+    if (name) out.lines.push({ kind: "culprit", text: name });
+    return out;
+  }
+  if (moveId === "fulfill_your_vow" && outcome === "miss") {
+    const step = (plan.escalation ?? []).find(e => !e.done && e.text);
+    return step ? { lines: [{ kind: "escalation", text: step.text }], reveals: [{ id: plan.id, advanced: step.id }] } : none;
+  }
+  return none;
+}
+
+/**
  * A plan the narrator decided, laid onto its record: each field it gave
  * replaces the record's; a list it gave replaces the list, keeping what was
  * already revealed or played of an item it repeated word for word. The
@@ -576,16 +617,20 @@ const NOT_A_NAME = new Set(["the", "a", "an", "this", "that", "their", "her", "h
  * a title and one ("Captain Joss Varrow") — none of whose words is a place's,
  * a ship's, a faction's or the vow's own (`notNames`). "Someone inside
  * Bleakhold's Corporate offices" names no one; nor does "a faction inside the
- * lanes' own water trade" (round 7's a75). Pure.
+ * lanes' own water trade" (round 7's a75). A pending draft's name (`exact`)
+ * counts only whole, as strangerNamedIn reads it — the two read the story's
+ * people alike (world/storyPeople.js; issue #402, change 3b: round 10's
+ * "the foreman", the a2 draft "Foreman", was someone met to one and no one
+ * to the other). Pure.
  *
  * @param {string} truth
- * @param {{ people?: string[], notNames?: string[] }} [opts]
+ * @param {{ people?: string[], exact?: string[], notNames?: string[] }} [opts]
  * @returns {boolean}
  */
-export function truthNamesSomeone(truth, { people = [], notNames = [] } = {}) {
+export function truthNamesSomeone(truth, { people = [], exact = [], notNames = [] } = {}) {
   const text = String(truth ?? "");
   if (!text.trim()) return false;
-  if (personMetIn(text, people)) return true;
+  if (personMetIn(text, people, exact)) return true;
   return nameWrittenIn(text, notNames) !== null;
 }
 
@@ -604,11 +649,14 @@ export function truthNamesSomeone(truth, { people = [], notNames = [] } = {}) {
  * @returns {boolean}
  */
 function personMetIn(text, people = [], exact = []) {
+  return metPeopleIn(text, people, exact).length > 0;
+}
+
+/** The story's people a text names (personMetIn's matching): each by the name the story holds. */
+function metPeopleIn(text, people = [], exact = []) {
   const whole = new Set((exact ?? []).map(n => String(n ?? "").trim().toLowerCase()).filter(Boolean));
   const said = new Set(words(text).map(w => w.replace(/'s$/, "")));
-  return [...(people ?? []), ...(exact ?? [])].some((n) => {
-    const name = String(n ?? "").trim();
-    if (!name) return false;
+  return [...new Set([...(people ?? []), ...(exact ?? [])].map(n => String(n ?? "").trim()).filter(Boolean))].filter((name) => {
     if (nameMentioned(name, text)) return true;
     if (whole.has(name.toLowerCase())) return false;
     return words(name).some(w => w.length >= 3 && !NAME_FILLER.has(w) && said.has(w));
@@ -617,17 +665,46 @@ function personMetIn(text, people = [], exact = []) {
 
 /** The first person's name a text writes — "Dalen Voss", "Captain Ree" — not one of `notNames`, or null. */
 function nameWrittenIn(text, notNames = []) {
+  return namesWrittenIn(text, notNames)[0] ?? null;
+}
+
+/** Every person's name a text writes (nameWrittenIn's reading), in order, each once. */
+function namesWrittenIn(text, notNames = []) {
   const blocked = new Set((notNames ?? []).flatMap(n => String(n ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u)).filter(w => w.length >= 3));
   const re = new RegExp(`(?:\\b(?:${NAME_TITLES})\\s+\\p{Lu}[\\p{L}'’-]+|\\p{Lu}[\\p{L}'’-]+(?:\\s+\\p{Lu}[\\p{L}'’-]+)+)`, "gu");
+  const out = [];
   for (const m of String(text ?? "").matchAll(re)) {
     const own = m[0].replace(/['’]s\b/g, "").split(/\s+/)
       .filter((w, i, all) => !TITLE_RE.test(w) && !(i === 0 && NOT_A_NAME.has(w.toLowerCase()) && all.length > 1));
     const titled = TITLE_RE.test(m[0].split(/\s+/)[0]);
     if (!own.length || (own.length < 2 && !titled)) continue;
     if (own.some(w => blocked.has(w.toLowerCase()) || NOT_A_NAME.has(w.toLowerCase()))) continue;
-    return own.join(" ");
+    const name = own.join(" ");
+    if (!out.includes(name)) out.push(name);
   }
-  return null;
+  return out;
+}
+
+/**
+ * The people a plan's truth names, each once: the story's people it names
+ * (`met`), then each name it writes that is none of theirs and no other of
+ * the story's names (`met: false`) — the same readings as truthNamesSomeone
+ * and strangerNamedIn (issue #402, change 3a's R3: round 10's who-vow truth
+ * named the foreman, a pending draft, and then "Talia Tolari", whom the story
+ * had never met). Pure.
+ *
+ * @param {string} truth
+ * @param {{ people?: string[], exact?: string[], notNames?: string[] }} [opts]
+ * @returns {Array<{ name: string, met: boolean }>}
+ */
+export function peopleNamedIn(truth, { people = [], exact = [], notNames = [] } = {}) {
+  const text = String(truth ?? "");
+  if (!text.trim()) return [];
+  const met = metPeopleIn(text, people, exact);
+  const metWords = new Set(met.flatMap(n => words(n)));
+  const strangers = namesWrittenIn(text, notNames)
+    .filter(n => !words(n).some(w => metWords.has(w)) && !met.some(m => m.toLowerCase() === n.toLowerCase()));
+  return [...met.map(name => ({ name, met: true })), ...strangers.map(name => ({ name, met: false }))];
 }
 
 /**
@@ -647,22 +724,6 @@ export function strangerNamedIn(truth, { people = [], exact = [], notNames = [] 
   if (!text.trim()) return null;
   if (personMetIn(text, people, exact)) return null;
   return nameWrittenIn(text, notNames);
-}
-
-/**
- * A plan's truth with the one behind it named (VOW-FULFILLED-UNANSWERED): the
- * truth as it stands, then "The one behind it is <name>." Pure — the name is
- * drawn by the caller (secrets.js, from the name oracle).
- *
- * @param {string} truth
- * @param {string} name
- * @returns {string}
- */
-export function truthWithWho(truth, name) {
-  const t = String(truth ?? "").trim();
-  const who = String(name ?? "").replace(/\s+/g, " ").trim();
-  if (!who) return t;
-  return `${t}${t && !/[.!?…]$/.test(t) ? "." : ""}${t ? " " : ""}The one behind it is ${who}.`;
 }
 
 // The telling words a reveal is read by — the common ones left out, each

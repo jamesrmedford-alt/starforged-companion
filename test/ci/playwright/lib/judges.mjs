@@ -35,7 +35,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
-import { judgedView, judgeNarration, trippedLines, checkClassOf, harmViolations, judgeMayAct } from "../../../../src/moves/contracts/checks.js";
+import { judgedView, judgeNarration, trippedLines, checkClassOf, harmViolations, judgeIsAsked } from "../../../../src/moves/contracts/checks.js";
 import { obligationLine, OBLIGATION_KINDS } from "../../../../src/moves/contracts/obligations.js";
 import { auditObligationSection, auditRequestBody, buildAuditPrompt, classifyAuditFindings, parseAuditResponse } from "../../../../src/factContinuity/consistencyCheck.js";
 import { elsewhereWords } from "../../../../src/factContinuity/whereabouts.js";
@@ -50,13 +50,15 @@ export const NARRATION_KINDS = /^callNarratorAPI>(narratePacedInput|narrateResol
 
 /**
  * The kinds a judge may be asked about: each row with a judge sentence. A
- * pass asks about one only where its verdict may act (checks.js
- * JUDGE_KINDS_THAT_ACT); one it does not ask about is scored as retired there.
+ * pass asks about one only where the measure passed it (checks.js
+ * JUDGE_KINDS_ASKED); one it does not ask about is scored as retired there.
+ * No verdict acts (issue #402, change 5): the measure is a regression test of
+ * the judge sentences.
  */
 export const JUDGE_KINDS = Object.freeze(Object.entries(OBLIGATION_KINDS).filter(([, r]) => typeof r.judge === "function").map(([k]) => k).sort());
 
-/** Whether `pass` asks about `kind` as the module ships: the judge, a judge-class line; the audit, a kind it may act on. */
-const askedIn = (pass, kind) => (pass === "judge" ? checkClassOf(kind) === "judge" : judgeMayAct(kind, "audit"));
+/** Whether `pass` asks about `kind` as the module ships: the judge, a judge-class line; the audit, a kind it is asked about. */
+const askedIn = (pass, kind) => (pass === "judge" ? checkClassOf(kind) === "judge" : judgeIsAsked(kind, "audit"));
 
 /** The bar (D7): of a kind's flags, at least 9 in 10 right — all, with fewer than 10 — and at least 2 breaches in 3 caught. */
 export const BAR = Object.freeze({ rightShare: 0.9, smallFlags: 10, caughtShare: 2 / 3 });

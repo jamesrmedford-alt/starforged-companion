@@ -271,6 +271,26 @@ export function vowTruthsToTell(system) {
   }).filter(e => e.truth);
 }
 
+/**
+ * What a narration's block says the vow's plan owes the beat (issue #402,
+ * change 4 — obligations.js [clue], [culprit], [escalation]): the words a
+ * narration that follows its instructions puts in the prose — the clue's or
+ * the step's own, the culprit's name. Pure.
+ *
+ * @param {string} user — the narration's user message
+ * @returns {string[]}
+ */
+export function owedToTell(user) {
+  const out = [];
+  for (const line of String(user ?? "").split("\n")) {
+    const quoted = /^- \[(?:clue|escalation)\] [^"]*"(.+)"\s*$/.exec(line);
+    if (quoted) { out.push(quoted[1]); continue; }
+    const culprit = /^- \[culprit\] (.+?) enters the story in this beat\b/.exec(line);
+    if (culprit) out.push(`${culprit[1]} is there, and you mark the name.`);
+  }
+  return out;
+}
+
 /** What the player's prompt shows: its messages' buttons and dropdowns, its windows, its current beat. Pure. */
 export function readScreenText(user) {
   const messages = [];
@@ -324,7 +344,10 @@ export function readScreenText(user) {
  * ends that vow (THIS BEAT ENDS A VOW) — states it in the prose and records it
  * revealed — as a narrator that follows its instructions does, so that a
  * rehearsal walks the reveal (known-issues VOW-FULFILLED-WITH-NOBODY-NAMED).
- * It tells nothing a prompt does not ask for.
+ * It tells nothing a prompt does not ask for. Where the charter says so
+ * (`rehearsalPlan.tellsWhatIsOwed`), it tells what a vow's plan owes the beat
+ * too — a milestone's clue and culprit, a missed fulfilment's next step
+ * (issue #402, change 4; `owedToTell`).
  *
  * The stand-in reader reads the script's move — save one: a Make a
  * Connection for someone the reader's SITUATION block already lists among
@@ -499,6 +522,9 @@ export function createRollingRehearsal({ charter, forget = false }) {
     // truth, and a vow's told would read as another plan's leaked.
     const ending = charter.rehearsalPlan?.tellsVowTruth ? vowTruthsToTell(`${system}\n${user}`) : [];
     if (ending.length) prose += ` ${ending.map(e => e.truth).join(" ")}`;
+    // What the vow's plan owes this beat — its clue, its culprit, its next step
+    // (issue #402, change 4) — told, where the charter's stand-in is one that does.
+    if (charter.rehearsalPlan?.tellsWhatIsOwed) for (const said of owedToTell(user)) if (!prose.includes(said)) prose += ` ${said}`;
     // A fact block sent whether or not one was asked for (`sidecar`).
     if (entry.sidecar) return `${prose}\n\n\`\`\`json\n${JSON.stringify({ newTruths: [], stateChanges: [], ...entry.sidecar }, null, 2)}\n\`\`\``;
     if (!system.includes("MANDATORY SIDECAR")) return prose;

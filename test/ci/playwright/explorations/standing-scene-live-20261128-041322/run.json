@@ -1,0 +1,150 @@
+{
+  "schema": 1,
+  "charter": "standing-scene",
+  "mode": "live",
+  "questions": [
+    "Part 7 step 1: does the run keep every request whole — each narration's system prompt readable back from its recording — so its beats can be asked again with no Foundry?",
+    "Lock-in: of the details in five or six of the last six narrations, how many are written again in the next, against round 10's 58–73%?",
+    "Which details lock in a standing scene of twelve lines with two bystanders present and a third person on a comm: the scene's people, its place, or other things?",
+    "How many refrains does the scorecard count in the one scene?"
+  ],
+  "startedAt": "2026-11-28T04:13:22.440Z",
+  "finishedAt": "2026-11-28T04:20:53.925Z",
+  "commit": "22347f3b13ab290a71a4e11c94247e6b0bc792e3",
+  "versions": {
+    "foundry": "13.351",
+    "system": "foundry-ironsworn 1.28.4",
+    "module": "1.1.1",
+    "browser": "chromium 157.0.8103.78"
+  },
+  "models": {
+    "player": {
+      "model": "claude-sonnet-5-5",
+      "effort": "low",
+      "maxTokens": 6000
+    },
+    "module": [
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5"
+    ]
+  },
+  "prices": {
+    "asOf": "2026-11-23",
+    "notes": "Standard rates, read from Anthropic's price list on the date above. A cache write is charged at 1.25 times input when it is kept five minutes and twice input when it is kept an hour, by the split the response reports (lib/budget.mjs); a write that does not say is priced as an hour's. Haiku 5.5 costs five times these rates on a prompt over 100,000 tokens; the module's prompts are a few thousand.",
+    "usdPerMillionTokens": {
+      "claude-opus-5-5": {
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2
+      },
+      "claude-sonnet-5-5": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.1
+      },
+      "claude-haiku-5-5": {
+        "input": 0.1,
+        "output": 0.5,
+        "cacheRead": 0.01
+      }
+    }
+  },
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "gm": {
+    "draftHolder": "none"
+  },
+  "classification": "pass",
+  "because": "13 of 13 beats done; no check violated, no fact lost or refused",
+  "playerStopped": "every beat has been walked",
+  "goal": {
+    "status": "walked",
+    "reason": "13 of 13 beats done, 0 failed, 0 not exercised",
+    "beats": {
+      "beats": 13,
+      "done": 13,
+      "failed": 0,
+      "notExercised": 0
+    },
+    "checks": {
+      "made": 124,
+      "violated": 0
+    },
+    "ledger": {
+      "facts": 0,
+      "recalled": 0,
+      "carriedUnasked": 0,
+      "lost": 0,
+      "refused": 0,
+      "notProbed": 0,
+      "notPlanted": 0,
+      "probesAsked": 0,
+      "probesCounted": 0,
+      "probesRecalled": 0,
+      "bands": {
+        "near": 0,
+        "mid": 0,
+        "far": 0
+      },
+      "refusals": 0
+    },
+    "scripted": [],
+    "interruptions": []
+  },
+  "health": {
+    "failures": [],
+    "waitingOnGm": [],
+    "costsOwed": [],
+    "knownFailures": [],
+    "errors": 0,
+    "uncaught": [],
+    "refused": []
+  },
+  "budget": {
+    "caps": {
+      "actions": 20,
+      "calls": 90,
+      "minutes": 20,
+      "usd": 2.5
+    },
+    "stopped": null,
+    "actions": 14,
+    "calls": 63,
+    "minutes": 7.4,
+    "usd": 0.4777,
+    "inFlightUsd": 0,
+    "byRole": {
+      "player": {
+        "calls": 14,
+        "usd": 0.1058,
+        "input": 27165,
+        "output": 3726,
+        "cacheRead": 48490,
+        "cacheWrite": 3730
+      },
+      "module": {
+        "calls": 49,
+        "usd": 0.3719,
+        "input": 125889,
+        "output": 10329,
+        "cacheRead": 197599,
+        "cacheWrite": 26585
+      }
+    }
+  },
+  "replay": "EXPLORE_MODE=replay EXPLORE_REPLAY=artifacts/explore/standing-scene-live-20261128-041322 node explore.mjs"
+}

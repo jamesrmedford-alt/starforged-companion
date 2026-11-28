@@ -574,20 +574,52 @@ about a subject that already has a plan, the same vow sworn again, files no
 second one, issue #362 AC14). A vow that asks who (`tellingWords.vowAsksWho` —
 "Find who…", "whose", "unmask", "identify") is won by a name
 (VOW-FULFILLED-UNANSWERED, five live rounds running): DECIDE NOW tells its plan
-"Its truth names the one behind it", and a decided plan whose truth names no
-one (`truthNamesSomeone` — a story's person, or a name the truth gives that is
-no place's, ship's, faction's or the vow's own) is given one from the name
-oracle as it is filed (`secrets.namedIfAWhoVow`, Given Name + Family Name, "The
-one behind it is …", the deciding narration's version), so THIS BEAT ENDS A VOW
-has a name to tell. Since round 8, the name is someone the story has met where one
-fits (VOW-WON-BY-A-STRANGER, the maintainer's call):
-- DECIDE NOW lists the story's people (`narrator.js storyPeopleOf`, its
-  connection cards, then the pending drafts, at most eight) and asks for one of
-  them.
-- A new name is shown in play before the truth is revealed.
+"Its truth names the one behind it". An oath whose reply decides a plan that
+names no one (`truthNamesSomeone` — a story's person, or a name the truth gives
+that is no place's, ship's, faction's or the vow's own) is asked once more,
+with the people the story has met (`narrator.js whoPlanNamingAsk`, issue #402
+change 4): a reply that names someone stands; still no one, the first reply
+stands as decided, and the fulfilment tells what was done and what is not
+known. Nothing draws a name any more — `secrets.namedIfAWhoVow`'s name from the
+name oracle won round 10's vow with "Talia Tolari", whom the table never saw.
+Since round 8, the name is someone the story has met where one fits
+(VOW-WON-BY-A-STRANGER, the maintainer's call):
+- Who the story has met is one reader's (`world/storyPeople.js storyPeople`:
+  its connection cards, the pending drafts — a draft matched only by its whole
+  name — and the names that are no person's; issue #402, change 3b). DECIDE NOW
+  lists its people (at most eight) and asks for one of them; the oath's re-ask
+  and the stranger check read the same lists. Round 10's a75 was the readers
+  disagreeing: the oath chose "the foreman", the a2 draft, and
+  `namedIfAWhoVow`, reading no drafts, appended "Talia Tolari", whom the
+  stranger check then took for met.
+- A fulfilment's plan is checked before it is handed over (issue #402, change
+  3a's R3: `blockCheck.js revealFault`, `narrator.js noteRevealFaults`): one
+  that names no one, more than one person, or someone the story has not met is
+  reported to the GM on a GM-only ◈ Narrative Review card (kind `plan`,
+  `consistencyCheck.js postPlanRevealNote`), once a plan; the narration tells
+  the plan as written (D3).
+- A new name is shown in play before the truth is revealed: a Reach a
+  Milestone on the vow, while the plan's culprit is a stranger, tells
+  "<name> enters the story in this beat, by name" ([culprit], TELL — issue
+  #402 change 4, `skeletons.vowPlanOwed`).
+- **The plan is played toward (issue #402, change 4; D4).** Each Reach a
+  Milestone on a vow with a decided plan carries a TELL line with the plan's
+  next clue not yet shown ([clue]), and a Fulfill Your Vow that misses one with
+  its next escalation step not yet played ([escalation], beside [recommit]).
+  `narrator.js vowPlanOwedFor` finds the vow as the move's handler does
+  (`selectMilestoneVow` over the roller's vows, `selectFulfilVow` over every
+  PC's; a milestone that names no vow, with a background vow open beside the
+  quest's, takes the one open vow with a plan) and its plan by the vow's
+  stable id or name; the plan is pinned in play
+  (`planIds`), its lines ride on the resolution (`planOwed` →
+  `obligations.js resultObligations`), and what they play is marked by the
+  narration as a forced reveal (`ctx.reveals` → `applyPlanSideData`:
+  `revealedBy` / `playedBy`, which the X-Card takes back). The three are
+  floors, logged when the prose shows none of it (`checks.js FLOOR_CHECKS`),
+  never re-asked. On the canonical GM.
 - A decided plan whose truth names someone not yet met is told "Not yet in play:
   X …" (`skeletons.strangerNamedIn`, `extras.strangers`). A pending draft is met
-  only by its whole name (`exact`, from `pendingPeopleOf`); a recorded person by
+  only by its whole name (`exact`, `storyPeople`'s `drafts`); a recorded person by
   a word of their name that is no filler (`skeletons.personMetIn`, which
   `truthNamesSomeone` shares). The line rides with the plan both where it is
   written out and where the world snapshot holds it (IN PLAY FOR THIS
@@ -639,7 +671,15 @@ plan's truth as revealed). Three parts:
   (`secrets.withoutUntoldTruths` → `skeletons.proseTellsTruth`, in
   `applyNarratorSidecar`): "truth" comes off the reveal, which still ends the
   plan's story; the truth is no scene fact and no lore, its rolls stay hidden,
-  and a GM can Reveal now from the Secrets panel.
+  and a GM can Reveal now from the Secrets panel;
+- **a reveal files what the narration told** (issue #402, change 1b): the
+  beat's facts are its own fact block's, and the plan's truth is no scene
+  fact of the reveal's — it is filed as Lore pending the GM's confirmation
+  (`secrets.onTruthRevealed`, narrator-asserted and unconfirmed; ESTABLISHED
+  LORE reads confirmed Lore alone), so the session record holds no
+  "established (the GM)" plan for the recap to retell. Round 10's a75 told a
+  name and "one hand behind all of it"; the plan's whole text had been filed
+  as the GM's. A GM's Reveal now files it confirmed.
 
 ## 4. Fulfilment
 

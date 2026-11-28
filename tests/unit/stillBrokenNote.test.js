@@ -111,7 +111,7 @@ describe('N16 — the GM is told of a narration still broken after its re-ask', 
     expect(reviewCards().map(c => c.flags[MODULE_ID].reviewOf)).toEqual(['nar-kept']);
   });
 
-  it('the audit posts no second card for a kind the note names', async () => {
+  it('the audit posts no second card for a kind the note names — nor a first: an obligation finding is logged alone (issue #402, change 5)', async () => {
     game.settings._store.set(`${MODULE_ID}.factContinuity.consistencyCheck`, true);
     const st = { ...game.settings.get(MODULE_ID, 'campaignState'),
       sceneTruths: [{ id: 'tr-1', subject: { kind: 'text', text: 'the hatch' }, fact: 'is welded shut', basis: 'player', retracted: false, sessionId: 'sess-2' }] };
@@ -122,6 +122,6 @@ describe('N16 — the GM is told of a narration still broken after its re-ask', 
       notedKinds: new Set(['cost']),
     });
     expect(out.dispatched).toBe(false);
-    expect(out.contradictions[0]).toMatchObject({ obligationKind: 'cost', action: 'already posted' });
+    expect(out.contradictions[0]).toMatchObject({ obligationKind: 'cost', action: 'held' });
   });
 });

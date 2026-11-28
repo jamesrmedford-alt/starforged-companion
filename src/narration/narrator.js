@@ -39,16 +39,18 @@ import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlig
 import { recentImages, pickBeatShape, beatShapeAfter, BEAT_SHAPES, IMAGE_SOURCE_CARDS, wornDetails, linesAlreadySaid } from './proseVariety.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { markSeedsUsed, rolledWordsOf } from '../session/sceneSeeds.js';
-import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
-import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
+import { applySidecar, applySceneFrame, retractNarrations, newNarrationId, fileDiceFact, resolveSubject } from '../factContinuity/ledgers.js';
+import { normalisePronounList, pronounsIn, pronounBreaks } from '../factContinuity/pronouns.js';
+import { readRecentOracleResults, dropOracleResultsFor, yesNoAnswerOfCard } from '../oracles/oracleMemory.js';
 import { logNarratorUsage, logConsistencyDecision } from '../pacing/telemetry.js';
 import { narrateKeepingObligations } from '../moves/contracts/checks.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition, formatShipPositionLine }  from '../factContinuity/shipPosition.js';
 import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, framedAtThePlace } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
-import { runConsistencyCheck, postStillBrokenNote } from '../factContinuity/consistencyCheck.js';
-import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, rolledMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
+import { runConsistencyCheck, postStillBrokenNote, postPlanRevealNote } from '../factContinuity/consistencyCheck.js';
+import { revealFault, SPEND_EFFECTS } from '../moves/contracts/blockCheck.js';
+import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
 import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
 import { contractFor } from '../moves/contracts/table.js';
 import { vowAsksWho } from '../world/tellingWords.js';
@@ -90,18 +92,20 @@ import { sessionCardTarget, sessionCardOf, sessionCardMessage } from '../record/
 import { writeRecordView } from '../record/store.js';
 import { recordSettled } from '../record/record.js';
 import { renderSessionLog } from '../record/sessionLogView.js';
-import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
+import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor, readVows } from '../character/actorBridge.js';
+import { selectMilestoneVow, selectFulfilVow } from '../moves/milestone.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRolls, settlePriceChoice } from '../moves/resolver.js';
 import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { withoutUntoldTruths } from '../world/secrets.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, quietestPlan } from '../world/skeletons.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, peopleNamedIn, quietestPlan, vowPlanOwed, truthNamesSomeone, sameSubjectName } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { readRecord } from '../record/read.js';
 import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf, pendingPeopleOf, placeAtTime } from '../factContinuity/whereabouts.js';
+import { storyPeople } from '../world/storyPeople.js';
 import { withoutMeterClaims } from '../factContinuity/sheetClaims.js';
 import { withoutPlaceClaims } from '../factContinuity/placeClaims.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
@@ -150,7 +154,8 @@ const diceWords = (s) => String(s ?? '').toLowerCase().replace(/['’]s\b/g, '')
  * LINE-CLAIM-OVER-THE-DICE; decisions.md: players can't overrule dice). Every
  * session's record (record/read.js readRecord, in the names the table uses
  * now — a correction's old name is read as the new one), its truths of the
- * dice (basis "dice": a rolled move's result), whose subject the line names:
+ * dice (basis "dice": a rolled move's delivered stakes line or an oracle's
+ * answer, filed by the code — issue #402, D1), whose subject the line names:
  * by a word of its name, or of what one of the record's name changes says it
  * is — "raider cutter" for the Cinder Wren, the sixth live long haul's "the
  * cutter's wreck" — or the name of what a change says the subject is. The
@@ -655,6 +660,9 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // where the record last had them with the characters, else where they came
   // into the story — so the fact block names them so, and where they are is kept.
   extras.pendingPeople = PENDING_PEOPLE_MODES.has(mode) ? pendingPeopleTold(sceneState ?? campaignState) : [];
+  // The recorded people's pronouns, from their cards: THE SCENE gives each
+  // person present theirs, and a card's win over the frame's (issue #402, change 2).
+  extras.cardPronouns = cardPronounsOf(campaignState);
 
   // The vow this scene serves (issue #353 R3): a linked track's vow, the
   // session's quest focus, or the only vow in play, with its progress — the
@@ -837,9 +845,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // Who a who-vow's culprit may be (VOW-WON-BY-A-STRANGER, round 8: the vow
   // was won by "Dalen Voss", whom the player never met): the people the story
   // has met, for DECIDE NOW to prefer — and each decided who-plan whose truth
-  // names only a stranger, to be shown in play before it is revealed.
-  extras.storyPeople = storyPeopleOf(campaignState);
-  extras.strangers = strangersOfWhoPlans(extras.unrevealed, extras.storyPeople, campaignState);
+  // names only a stranger, to be shown in play before it is revealed. One
+  // reader says who that is (world/storyPeople.js; issue #402, change 3b).
+  const story = storyPeople(campaignState);
+  extras.storyPeople = [...story.people, ...story.drafts].slice(0, STORY_PEOPLE_LISTED);
+  extras.strangers = strangersOfWhoPlans(extras.unrevealed, story);
+  // A who-vow's plan this beat reveals, checked before it is handed over
+  // (issue #402, change 3a's R3): one culprit, someone the story has met —
+  // else the GM is told, once a plan (D3: reported; the check cannot choose).
+  noteRevealFaults(extras.unrevealed, extras.endingTrackIds, story, campaignState);
 
   // Established lore, picked for what this turn is about (issue #286 C2):
   // the player's text, the scene frame and the entities now in play. It was
@@ -1577,6 +1591,11 @@ export async function narrateResolution(resolution, campaignState, options = {},
   // The tracks and vows this move ends: their plans are in play to reveal
   // their end, resolved or not (issue #362 D4).
   const endingTrackIds = Array.isArray(resolution.endingTrackIds) ? resolution.endingTrackIds : [];
+  // What the vow's hidden plan owes this beat (issue #402, change 4): a
+  // milestone's next clue and a stranger culprit's first showing, a missed
+  // fulfilment's next escalation — lines the narration must tell, the plan in
+  // play, and what they play marked with this narration.
+  const planOwed = vowPlanOwedFor(resolution, { actorId: character?.actorId ?? null, moveTarget: options?.moveTarget ?? null, campaignState });
   const extras = await buildNarratorExtras('move_resolution', campaignState, {
     playerNarration: resolution.playerNarration ?? '',
     character,
@@ -1584,7 +1603,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
     oracleSeeds:     resolution.oracleSeeds ?? null,
     planRequests,
     // The plans already filed for this move, put to its narration by id.
-    planIds:         owed.planIds,
+    // The vow's plan is in play for the beat it owes a line to — only then.
+    planIds:         planOwed.lines.length ? [...(owed.planIds ?? []), planOwed.plan.id] : owed.planIds,
     endingTrackIds,
     beatClaim,
     // A hit on Set a Course or Finish an Expedition: the characters have arrived ([arrival]).
@@ -1606,7 +1626,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
   const madeLine = resolution.inputMethod === 'button';
   // A blow in the open fight is held to it: only Take Decisive Action ends a fight ([foe]).
   const fightStanding = await fightStandingOf(resolution, character?.actorId ?? null);
-  const moveObligations = [...obligationsFor({ mode: 'move', resolution: fightStanding ? { ...resolution, fightStanding } : resolution, situation: touched.situation,
+  // …and what the vow's plan owes it (change 4), on its lines.
+  const told = { ...resolution, ...(fightStanding ? { fightStanding } : {}), ...(planOwed.lines.length ? { planOwed: planOwed.lines } : {}) };
+  const moveObligations = [...obligationsFor({ mode: 'move', resolution: told, situation: touched.situation,
     line: resolution.playerNarration ?? '', cast: touched.cast, speaker: character?.name ?? null, chosenSince, madeLine,
     dice: madeLine ? [] : diceFactsOf(resolution.playerNarration ?? '', { own: meterOwnersOf(campaignState), sceneId: campaignState?.currentSceneId ?? null }),
     whereabouts: extras.elsewhere ?? null,
@@ -1641,8 +1663,9 @@ export async function narrateResolution(resolution, campaignState, options = {},
   let sideDataApplied = false;
   // What its fact block is checked against: the line the player wrote — a
   // burn's or an improve's re-narration has none (overhaul 2 §5.2, §7.2).
-  const ground = groundOf({ line: writtenLine(resolution), decided: decidedOfMove(resolution, { moveTarget: options?.moveTarget ?? null }),
-    rolled: rolledMove(resolution) });
+  const ground = groundOf({ line: writtenLine(resolution) });
+  // What its dice decided, which the code files with it (issue #402, D1).
+  const decidedFacts = moveDiceFacts(resolution, { moveTarget: options?.moveTarget ?? null });
 
   try {
     // Checked against its obligations before it posts (overhaul 4, slice 4 —
@@ -1681,6 +1704,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
       endingTrackIds,
       mode:             'move_resolution',
       ground,
+      decidedFacts,
+      reveals:          planOwed.reveals,
     });
 
     if (!narration?.trim()) {
@@ -1732,6 +1757,8 @@ export async function narrateResolution(resolution, campaignState, options = {},
           endingTrackIds,
           mode:             'move_resolution',
           ground,
+          decidedFacts,
+          reveals:          planOwed.reveals,
         });
         if (narration?.trim()) {
           sideDataApplied = true;
@@ -2191,9 +2218,9 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       }
       const narration = applyNarratorSidecar(raw, campaignState, { obligations: roundObligations,
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests,
-        endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text),
-          decided: entries.flatMap(e => (e.input?.kind === 'move' ? decidedOfMove(e.input) : [])),
-          rolled: entries.some(e => e.input?.kind === 'move' && rolledMove(e.input)) }),
+        endingTrackIds, mode: 'round_resolution', ground: groundOf({ lines: entries.map(e => e.text) }),
+        // What each entry's dice decided, filed with the round's narration (issue #402, D1).
+        decidedFacts: entries.flatMap(e => (e.input?.kind === 'move' ? moveDiceFacts(e.input) : [])),
       });
       if (!narration?.trim()) {
         failure = EMPTY_REPLY_REASON;
@@ -4459,6 +4486,9 @@ function sceneAnswerText(raw, campaignState, { matchedEntityIds = [], narrationI
       matchedEntityIds:  Array.isArray(matchedEntityIds) ? matchedEntityIds : [],
       currentLocationId: campaignState.currentLocationId ?? null,
       narrationId:       typeof narrationId === 'string' ? narrationId : null,
+      // An answer may look back at where the story began: not held to where
+      // the characters are now (issue #402, change 5 — round 10's a49).
+      narrationKind:     'scene-answer',
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );
@@ -4607,7 +4637,7 @@ export async function narrateOracleFollowup({
   try {
     const raw = (await narrateKeepingObligations(ask, oracleObligations, checking)).raw;
     if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-    const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
+    const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question }), oracleCardId });
 
     if (!text?.trim()) {
       fileUnansweredPlanRequests(extras.planRequests, campaignState);
@@ -4630,7 +4660,7 @@ export async function narrateOracleFollowup({
         // Checked as the first try is.
         const raw = (await narrateKeepingObligations(ask, oracleObligations, checking)).raw;
         if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
-        const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question, decided: [question, rolledLine] }) });
+        const text = applyNarratorSidecar(raw, campaignState, { obligations: oracleObligations, moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, reveals: stepReveals, forcedFor, mode: 'oracle_followup', ground: groundOf({ line: question }), oracleCardId });
         if (text?.trim()) {
           sideDataApplied = true;
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -4900,6 +4930,24 @@ const STORY_PEOPLE_LISTED = 8;
 const PENDING_PEOPLE_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution', 'oracle_followup', 'scene_interrogation']);
 
 /**
+ * The recorded people's pronouns, by name, from their cards
+ * (listConnections — the card's Pronouns field over the record's): what wins
+ * over the set a scene's frame was given (issue #402, change 2). [] when none
+ * is recorded or the cards cannot be read.
+ *
+ * @param {Object|null} campaignState
+ * @returns {Array<{ name: string, pronouns: string }>}
+ */
+function cardPronounsOf(campaignState) {
+  try {
+    return normalisePronounList((listConnections(campaignState ?? {}) ?? []).map(c => ({ name: c?.name, pronouns: c?.pronouns })));
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: the recorded people's pronouns were not read:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
  * The people met whom the table has not yet confirmed (whereabouts.js
  * pendingPeopleOf), as THE SCENE tells them: each one's draft name and
  * description, and where the record last had them with the characters —
@@ -4930,28 +4978,46 @@ function pendingPeopleTold(campaignState) {
   }
 }
 
+
+/** The plans whose reveal has been reported to the GM, by id: each told once (noteRevealFaults). */
+const revealFaultsNoted = new Set();
+
 /**
- * The people the story has met, by name — its connection cards (people
- * recorded by Confirm or Make a Connection), then the people a narration
- * drafted that the table has neither confirmed nor dismissed (tracked as
- * real until it does — whereabouts.js pendingPeopleOf), the player
- * characters apart — for a who-vow's DECIDE NOW to choose from
- * (VOW-WON-BY-A-STRANGER). Never throws.
+ * The block check's R3 (issue #402, change 3a; blockCheck.js revealFault):
+ * each decided plan of a vow that asks who, which this beat's move fulfils
+ * (`endingTrackIds`), is read before its truth is handed over — it names one
+ * culprit, someone the story has met (world/storyPeople.js). One that names
+ * no one, more than one, or a stranger is reported to the GM on a GM-only ◈
+ * Narrative Review card (consistencyCheck.js postPlanRevealNote), once a plan;
+ * the narration tells the plan as written (D3). On the canonical GM. Never
+ * throws.
  *
+ * @param {Object[]} plans — the plans in play
+ * @param {string[]} endingTrackIds — the tracks this beat's move ends
+ * @param {{ people: string[], drafts: string[], notNames: string[] }} story
  * @param {Object|null} campaignState
- * @returns {string[]}
+ * @returns {Array<{ id: string, fault: Object }>} what was found, posted or not
  */
-function storyPeopleOf(campaignState) {
+function noteRevealFaults(plans, endingTrackIds, story, campaignState) {
+  const found = [];
   try {
-    const entities = collectAllEntities(campaignState ?? {});
-    const names = entities.filter(e => e?.entityType === 'connection' && typeof e.name === 'string' && e.name.trim())
-      .map(e => e.name.trim());
-    names.push(...pendingPeopleOf(campaignState ?? {}, { entities }).map(p => p.name));
-    return [...new Set(names)].slice(0, STORY_PEOPLE_LISTED);
+    const ending = new Set(Array.isArray(endingTrackIds) ? endingTrackIds : []);
+    if (!ending.size) return found;
+    for (const r of Array.isArray(plans) ? plans : []) {
+      if (r?.kind !== 'vow' || !r.subject?.id || !ending.has(r.subject.id) || !vowAsksWho(r.subject?.name)) continue;
+      if (typeof r.truth !== 'string' || !r.truth.trim() || r.truthRevealed) continue;
+      const fault = revealFault(peopleNamedIn(r.truth, { people: story?.people ?? [], exact: story?.drafts ?? [],
+        notNames: [...(story?.notNames ?? []), String(r.subject.name ?? '')] }));
+      if (!fault) continue;
+      found.push({ id: r.id, fault });
+      if (revealFaultsNoted.has(r.id) || !isCanonicalGM()) continue;
+      revealFaultsNoted.add(r.id);
+      void postPlanRevealNote(fault, r, campaignState);
+    }
   } catch (err) {
-    console.debug?.(`${MODULE_ID} | the story's people were not read for a who-vow's plan:`, err?.message ?? err);
-    return [];
+    console.debug?.(`${MODULE_ID} | a revealed plan was not checked:`, err?.message ?? err);
   }
+  return found;
 }
 
 /**
@@ -4960,21 +5026,19 @@ function storyPeopleOf(campaignState) {
  * play before its truth is revealed (formatUnrevealedBlock). Places, ships and
  * the PCs are no names. A pending draft's name — often a description, "The
  * Man From the Berth" — is matched whole, as everywhere a draft is (issue
- * #397, Code fix 1). Never throws.
+ * #397, Code fix 1). Who the story has met is world/storyPeople.js's, the one
+ * reader every caller asks (issue #402, change 3b). Never throws.
  *
  * @param {Object[]} plans — the plans in play
- * @param {string[]} people — storyPeopleOf
- * @param {Object|null} campaignState
+ * @param {{ people: string[], drafts: string[], notNames: string[] }} story — storyPeople
  * @returns {Object<string, string>}
  */
-function strangersOfWhoPlans(plans, people, campaignState) {
+function strangersOfWhoPlans(plans, story) {
   const out = {};
   try {
-    const notNames = storyNamesOf(campaignState);
-    const exact = pendingPeopleOf(campaignState ?? {}).map(p => p.name);
     for (const r of Array.isArray(plans) ? plans : []) {
       if (r?.kind !== 'vow' || !vowAsksWho(r.subject?.name) || typeof r.truth !== 'string' || !r.truth.trim()) continue;
-      const stranger = strangerNamedIn(r.truth, { people, exact, notNames: notNames.filter(n => !(people ?? []).includes(n)) });
+      const stranger = strangerNamedIn(r.truth, { people: story?.people ?? [], exact: story?.drafts ?? [], notNames: story?.notNames ?? [] });
       if (stranger) out[r.id] = stranger;
     }
   } catch (err) {
@@ -5079,9 +5143,12 @@ function meterOwnersOf(campaignState) {
  *   so it runs at interaction — discovery when it introduces someone
  * @param {boolean} [args.detect] — its capture runs the detection pass too,
  *   as a clock vignette's does (the spotlight's — detection follows latitude)
+ * @param {Object|null} [args.carry] — the opening's: the people the last
+ *   session stopped with, and where (galleyVignette.js composeOpeningScene) —
+ *   its scene starts with them when it opens there (issue #402 D2)
  * @returns {Promise<string|null>}
  */
-export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null, seeds = null, narratorClass = null, detect = false }) {
+export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null, seeds = null, narratorClass = null, detect = false, carry = null }) {
   if (!sessionVignetteWillRun(campaignState)) return null;
   const settings = getNarratorSettings();
   const xCard = watchXCard(campaignState);
@@ -5095,6 +5162,9 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   await ensureCurrentScene(campaignState, {
     mode: 'session_vignette', reason: 'session_vignette',
     cause: cutaway ? 'cutaway' : 'session',
+    // The opening's scene starts with the people the last session stopped
+    // with, at that place (issue #402 D2; galleyVignette.js sessionCarry).
+    carry: cutaway ? null : carry,
   });
 
   // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
@@ -5281,7 +5351,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
       const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
       if (xCard.interrupted('narrateClockAdvancement')) return null;
       if (!(await triggerStands())) return null;
-      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
+      const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({}) });
       if (!text?.trim()) return null;
       // The developments of the recorded NPCs it names → their cards, as a
       // session vignette's (#286 D4) — every post site goes through here
@@ -5301,7 +5371,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
           const raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
           if (xCard.interrupted('narrateClockAdvancement')) return null;
           if (!(await triggerStands())) return null;
-          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({ decided: clock.triggered ? [clock.name] : [] }) });
+          const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, reveals: pacedReveals, forcedFor, mode: 'clock_advance', ground: groundOf({}) });
           if (!text?.trim()) return null;
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
           narrated = true;
@@ -5423,8 +5493,21 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
   }));
 
   const call = async () => {
-    const raw  = (await narrateKeepingObligations(ask, obligations, checking)).raw;
+    let raw = (await narrateKeepingObligations(ask, obligations, checking)).raw;
     if (xCard.interrupted('narrateVowSwearing')) return null;
+    // A who-vow's plan that names no one is asked for once more, here at the
+    // oath (issue #402, change 4): a code check on the reply, by the one
+    // reader of who the story has met. Still no one, the first reply stands —
+    // no name is drawn for it; the vow ends on what was done and what is not
+    // known.
+    const naming = whoPlanNamingAsk(raw, vow, extras.planRequests, campaignState);
+    if (naming) {
+      const again = (await narrateKeepingObligations((addendum) => ask([naming, addendum].filter(Boolean).join('\n\n')), obligations, checking)).raw;
+      if (xCard.interrupted('narrateVowSwearing')) return null;
+      const narrated = typeof again === 'string' && String(extractSidecar(again).prose ?? '').trim() !== '';
+      if (narrated && !whoPlanNamingAsk(again, vow, extras.planRequests, campaignState)) raw = again;
+      else console.info(`${MODULE_ID} | the vow "${vow?.name ?? ''}" asks who, and its plan names no one after a second asking — it stands as decided.`);
+    }
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests, mode: 'vow_swearing', ground: groundOf({ line: vow?.name ?? '' }) });
     return (text && text.trim()) ? text : null;
   };
@@ -5438,6 +5521,42 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
     }
     console.error(`${MODULE_ID} | narrateVowSwearing failed:`, err);
     return null;
+  }
+}
+
+/**
+ * The re-ask an oath's reply gets when its vow asks who and the plan it
+ * decided for the vow names no one (issue #402, change 4), or '' — the vow
+ * asks no who, the oath was asked to decide no plan for it, or the reply's
+ * plan names someone: a person by name, a titled one, or someone the story
+ * has met (skeletons.js truthNamesSomeone over world/storyPeople.js, the one
+ * reader). A reply that gives the plan no truth names no one either. It
+ * replaces namedIfAWhoVow's name drawn from the name oracle, which won round
+ * 10's vow with "Talia Tolari" — a name the table never saw. Never throws.
+ *
+ * @param {string|null} raw — the oath's reply
+ * @param {{ name?: string }|null} vow
+ * @param {Array<Object>} planRequests — the oath's (vowPlanRequest's)
+ * @param {Object|null} campaignState
+ * @returns {string}
+ */
+function whoPlanNamingAsk(raw, vow, planRequests, campaignState) {
+  try {
+    const name = String(vow?.name ?? '').trim();
+    if (!name || !vowAsksWho(name)) return '';
+    const request = (Array.isArray(planRequests) ? planRequests : []).find(q => q?.kind === 'vow' && q.ref) ?? null;
+    if (!request) return '';
+    const plan = (extractSidecar(String(raw ?? '')).sidecar?.plans ?? []).find(p => p?.id === request.ref) ?? null;
+    const story = storyPeople(campaignState);
+    const truth = String(plan?.truth ?? '').trim();
+    if (truth && truthNamesSomeone(truth, { people: story.people, exact: story.drafts, notNames: [...story.notNames, name] })) return '';
+    const met = [...story.people, ...story.drafts].slice(0, STORY_PEOPLE_LISTED);
+    return `THE VOW ASKS WHO, AND THE PLAN YOU DECIDED FOR IT (id ${request.ref}) NAMES NO ONE. Write this narration again, with `
+      + 'its fact block, and give that plan a truth that names the one behind it — a person, by name: '
+      + (met.length ? `one of the people the story has met if one fits (${met.join(', ')}), else a new name.` : 'someone the story has met, or a new name.');
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | an oath's plan was not read for a name:`, err?.message ?? err);
+    return '';
   }
 }
 
@@ -6933,7 +7052,7 @@ async function postFallbackCard(resolution, campaignState = null, reason = claud
  * @returns {Promise<{ cause: string, what: string }|null>} the turn, when the scene turned
  */
 async function ensureCurrentScene(campaignState, {
-  mode = null, reason = 'unknown', cause = 'first', line = '', moveId = null, moveIds = [], endingTrackIds = [],
+  mode = null, reason = 'unknown', cause = 'first', line = '', moveId = null, moveIds = [], endingTrackIds = [], carry = null,
 } = {}) {
   if (!campaignState || !factContinuityEnabled()) return null;
   // A scene boundary is a world write (campaignState, WJ Lore pages, entity
@@ -6944,7 +7063,7 @@ async function ensureCurrentScene(campaignState, {
     console.debug?.(`${MODULE_ID} | ensureCurrentScene (${reason}): not the canonical GM — the scene is left to the GM.`);
     return null;
   }
-  if (!campaignState.currentSceneId) await startScene(campaignState, { reason, cause });
+  if (!campaignState.currentSceneId) await startScene(campaignState, { reason, cause, carry });
   // Only a beat of play turns a scene (overhaul 2 §4.3): a move's, a paced
   // line's, a round's, an oracle follow-up's narration — the beat sites,
   // provenance.js QUESTION_MODES. A bookend, a clock vignette, the oath scene,
@@ -7092,6 +7211,49 @@ function logObligationVerdict(mode, v, campaignState, narrationId) {
     })?.catch?.(() => {});
   } catch (err) {
     console.warn(`${MODULE_ID} | obligations: the verdict could not be logged:`, err?.message ?? err);
+  }
+}
+
+/**
+ * The pronoun-change check (issue #402, change 2): a narration that gives a
+ * person on record — a recorded person's card's set, else the first set the
+ * scene was given for them — another pronoun (factContinuity/pronouns.js
+ * pronounBreaks). Round 10's customs clerk was "her" from a26 to a43 and "he"
+ * at a53; round 9's survivor was "it", then "he". Logged only — to the console
+ * and the Consistency Check log, action "logged" — until it is measured on
+ * the kept runs (decisions.md, issue #402 change 2): it asks nothing again.
+ * Read from the frame as the narration's own block left it; the player
+ * characters and the scene's other people are the names a sentence must not
+ * hold. Never throws.
+ *
+ * @param {string} prose
+ * @param {Object} campaignState — as the narration's fact block left it
+ * @param {{ narrationId?: string|null, mode?: string|null }} [ctx]
+ * @returns {Array<Object>} the breaks found
+ */
+function notePronounBreaks(prose, campaignState, { narrationId = null, mode = null } = {}) {
+  try {
+    const frame = campaignState?.sceneFrame && typeof campaignState.sceneFrame === 'object' ? campaignState.sceneFrame : null;
+    const people = [...(Array.isArray(frame?.present) ? frame.present : []), ...(Array.isArray(frame?.remote) ? frame.remote : [])]
+      .filter(n => typeof n === 'string' && n.trim());
+    if (!people.length) return [];
+    const cards = cardPronounsOf(campaignState);
+    const onRecord = normalisePronounList(people.map(name => ({ name, pronouns: pronounsIn(cards, name) || pronounsIn(frame?.pronouns, name) })));
+    if (!onRecord.length) return [];
+    const recorded = new Set(onRecord.map(p => p.name.toLowerCase()));
+    const others = [...people.filter(n => !recorded.has(n.trim().toLowerCase())), ...playerNamesOf()];
+    const breaks = pronounBreaks(prose, onRecord, { others });
+    if (!breaks.length) return [];
+    console.info(`${MODULE_ID} | pronouns: ${breaks.map(b => `${b.name} (${b.pronouns}) written "${b.found}"`).join('; ')} — logged only.`);
+    void logConsistencyDecision({
+      sceneId: campaignState?.currentSceneId ?? '', sessionId: campaignState?.currentSessionId ?? null,
+      sessionNumber: campaignState?.sessionNumber ?? null, prose: `[pronouns ${mode ?? ''}${narrationId ? ` ${narrationId}` : ''}]`,
+      contradictions: breaks.map(b => ({ kind: 'pronoun', action: 'logged', ...b })), dispatched: false,
+    })?.catch?.(() => {});
+    return breaks;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | pronouns: the narration's pronouns were not checked:`, err?.message ?? err);
+    return [];
   }
 }
 
@@ -7308,11 +7470,22 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     console.debug?.(`${MODULE_ID} | factContinuity: the narrator's reply had no prose — its fact block is not recorded.`);
   }
   const applySidecarHere = isCanonicalGM();
-  if (sidecar && campaignState && narrated && !applySidecarHere) {
-    relayNarratorSidecar(sidecar, campaignState, ctx);
+  // What the dice decided is filed by the code whatever the fact block holds
+  // (issue #402 — change 1a's answered yes/no question, D1's delivered stakes
+  // line): with none, an empty one carries it. A move is narrated on the
+  // canonical GM alone (the pipeline), so its dice facts are never relayed.
+  const decides = (typeof ctx.oracleCardId === 'string' && ctx.oracleCardId !== '')
+    || (Array.isArray(ctx.decidedFacts) && ctx.decidedFacts.length > 0);
+  const applied = sidecar ?? (narrated && decides ? normaliseSidecar({}) : null);
+  if (applied && campaignState && narrated && !applySidecarHere) {
+    relayNarratorSidecar(applied, campaignState, ctx);
   }
-  if (sidecar && campaignState && narrated && applySidecarHere) {
-    applySidecarSideData(sidecar, campaignState, ctx);
+  if (applied && campaignState && narrated && applySidecarHere) {
+    applySidecarSideData(applied, campaignState, ctx);
+  }
+  // Another pronoun for a person on record (issue #402, change 2): logged only.
+  if (campaignState && narrated && applySidecarHere && ctx.cutaway !== true) {
+    notePronounBreaks(prose, campaignState, { narrationId: typeof ctx.narrationId === 'string' ? ctx.narrationId : null, mode: ctx.mode ?? null });
   }
 
   // Phase E — optional Haiku audit of the prose against the active-scene
@@ -7372,6 +7545,8 @@ function relayNarratorSidecar(sidecar, campaignState, ctx) {
       narrationId:      typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       // The plans the narration was asked to decide (issue #353): the GM files them.
       planRequests:     Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
+      // The oracle card it narrates: the GM files a yes/no answer from the card (issue #402, change 1a).
+      ...(typeof ctx.oracleCardId === 'string' && ctx.oracleCardId ? { oracleCardId: ctx.oracleCardId } : {}),
       // A session vignette's frame is a bookend's (applySidecarSideData).
       ...(ctx.bookend === true ? { bookend: true } : {}),
       // The narration's mode and the player's words it answered: the scene's
@@ -7446,11 +7621,12 @@ const RELAYED_SIDECAR_MAX_ENTRIES = 20;
  * with its vignette written (issue #362 AC08).
  *
  * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null, narrationId?: string|null,
- *   planRequests?: Object[], forced?: { reveals: Object[], clockId?: string, complication?: Object }|null }} payload
- * @param {Object} [_ctx]
+ *   planRequests?: Object[], forced?: { reveals: Object[], clockId?: string, complication?: Object }|null,
+ *   oracleCardId?: string }} payload
+ * @param {{ requesterId?: string|null, requesterIsGM?: boolean }} [relay] — gmRelay.js's ctx
  * @returns {Promise<void>}
  */
-export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
+export async function applyRelayedNarratorSidecar(payload = {}, relay = {}) {
   // Re-normalised and bounded: it crossed the socket from a client.
   const sidecar = normaliseSidecar(payload?.sidecar);
   if (!sidecar) return;
@@ -7498,7 +7674,108 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
     // Re-normalised: they crossed the socket (overhaul 2 §5.4).
     mode: typeof payload.mode === 'string' && QUESTION_MODES.has(payload.mode) ? payload.mode : null,
     ground: normaliseGround(payload.ground),
+    // The oracle card it narrates — its answer read from the card here, and
+    // only from a card its requester posted (or a GM's relay): issue #402, change 1a.
+    ...(typeof payload.oracleCardId === 'string' && /^[\w-]{1,64}$/.test(payload.oracleCardId)
+      ? { oracleCardId: payload.oracleCardId, requesterId: relay?.requesterId ?? null, requesterIsGM: relay?.requesterIsGM === true } : {}),
   });
+}
+
+/**
+ * What a rolled move's dice decided, for the code to file with its narration
+ * (issue #402, D1): the stakes line its outcome delivered (provenance.js
+ * decidedOfMove), about the move's target when it has one. A hit whose effect
+ * waits on the player's spend decides nothing yet (blockCheck.js
+ * SPEND_EFFECTS — a Repair's points, R2). Pure.
+ *
+ * @param {Object|null} resolution — a move's (or a round entry's input)
+ * @param {{ moveTarget?: string|null }} [opts]
+ * @returns {Array<{ about: string|null, fact: string, moveId: string|null }>}
+ */
+function moveDiceFacts(resolution, { moveTarget = null } = {}) {
+  const facts = decidedOfMove(resolution);
+  if (!facts.length) return [];
+  const hit = resolution?.outcome === 'strong_hit' || resolution?.outcome === 'weak_hit';
+  if (hit && SPEND_EFFECTS[resolution?.moveId]) return [];
+  const about = String(moveTarget ?? resolution?.moveTarget ?? '').replace(/\s+/g, ' ').trim() || null;
+  const moveId = typeof resolution?.moveId === 'string' && resolution.moveId ? resolution.moveId : null;
+  return facts.map(fact => ({ about, fact, moveId }));
+}
+
+/**
+ * What the vow a move marks or misses owes its narration from its hidden plan
+ * (issue #402, change 4 — skeletons.js vowPlanOwed): the plan, the lines the
+ * narration must tell and the reveals they force. The vow is found as the
+ * move's own handler finds it — a milestone's by milestone.js
+ * selectMilestoneVow over the roller's vows, a fulfilment's by
+ * selectFulfilVow over every PC's — and its plan by the vow's stable id (the
+ * plan's subject) or its name. A who-vow's culprit is a stranger by the one
+ * reader of who the story has met (strangersOfWhoPlans). The canonical GM's:
+ * a player's client reads no plan. Never throws: nothing is owed then.
+ *
+ * @param {Object|null} resolution
+ * @param {{ actorId?: string|null, moveTarget?: string|null, campaignState?: Object|null }} [opts]
+ * @returns {{ plan: Object|null, lines: Array<{ kind: string, text: string }>, reveals: Array<Object> }}
+ */
+function vowPlanOwedFor(resolution, { actorId = null, moveTarget = null, campaignState = null } = {}) {
+  const none = { plan: null, lines: [], reveals: [] };
+  try {
+    const moveId = resolution?.moveId ?? null;
+    const missed = moveId === 'fulfill_your_vow' && resolution?.outcome === 'miss';
+    if ((moveId !== 'reach_a_milestone' && !missed) || !skeletonsEnabled() || !isCanonicalGM()) return none;
+    const target = moveTarget ?? resolution?.moveTarget ?? null;
+    const plans = listSkeletons().filter(r => r?.kind === 'vow' && r.status === 'active');
+    const planOf = (v) => plans.find(r => (v.vowId && r.subject?.id === v.vowId) || sameSubjectName(r.subject?.name, v.name)) ?? null;
+    let vow = null;
+    if (moveId === 'reach_a_milestone') {
+      const actor = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+      const vows = actor ? readVows(actor) : [];
+      // A milestone pressed from a card names no vow, and with a background
+      // vow open beside the quest's the move's picker asks after this
+      // narration (round 10's a72; the vow scenario's rehearsal): the one open
+      // vow with a plan is the one it serves.
+      const planned = vows.filter(v => !v.completed && planOf(v));
+      vow = selectMilestoneVow(vows, target) ?? (planned.length === 1 ? planned[0] : null);
+    } else {
+      const vows = (getPlayerActors() ?? []).flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
+      vow = selectFulfilVow(vows, target, { rollerActorId: actorId }).vow ?? null;
+    }
+    if (!vow) return none;
+    const plan = planOf(vow);
+    if (!plan) return none;
+    const stranger = strangersOfWhoPlans([plan], storyPeople(campaignState))[plan.id] ?? null;
+    return { plan, ...vowPlanOwed(plan, { moveId, outcome: resolution?.outcome ?? null, stranger }) };
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: what the vow's plan owes this beat was not read:`, err?.message ?? err);
+    return none;
+  }
+}
+
+/**
+ * The yes/no question a narration answers, from its oracle card on this GM
+ * (issue #402, change 1a): `ctx.oracleCardId`, the card its follow-up
+ * narrates. A relayed narration's card must be its requester's own — the
+ * player who asked narrates on their key — or the relay a GM's. Null for any
+ * other card, a table oracle's or a price's, or a yes/no card asked with no
+ * question.
+ *
+ * @param {{ oracleCardId?: string, relayed?: boolean, requesterId?: string|null, requesterIsGM?: boolean }} ctx
+ * @returns {{ question: string, answer: string }|null}
+ */
+function oracleAnswerOf(ctx) {
+  const id = typeof ctx?.oracleCardId === 'string' && ctx.oracleCardId ? ctx.oracleCardId : null;
+  if (!id) return null;
+  const card = globalThis.game?.messages?.get?.(id) ?? null;
+  const answered = yesNoAnswerOfCard(card);
+  if (!answered) return null;
+  if (ctx.relayed === true && ctx.requesterIsGM !== true) {
+    const author = card?.author?.id ?? card?.user?.id ?? card?.author ?? null;
+    if (!author || author !== ctx.requesterId) {
+      console.debug?.(`${MODULE_ID} | factContinuity: oracle card ${id} is not the relaying player's — its answer is not filed from the relay.`);
+      return null;
+    }
+  }
+  return answered;
 }
 
 /**
@@ -7729,28 +8006,12 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       otherChanges.push(c);
     }
   }
-  // A plan's truth this beat revealed becomes a stated fact (issue #353
-  // Phase 2): a truth of the narration's own, stamped with its id, so the
-  // X-Card retracts it with the reveal.
-  // The tracks and vows the beat ends: a plan their end resolved is still
-  // this narration's to reveal (issue #362 D4).
-  const endingSubjectIds = Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [];
-  // A revealed truth is marked with its plan's id (`revealOf`): its reveal
-  // files it as Lore, and the scene's end archives it no second time (issue
-  // #362 AC37). The marker is the code's: one the model's own truths carry
-  // is dropped. The revealed ones go first, so a model truth stating the same
-  // fact is the duplicate the ledger skips, not the marked one.
-  const ownTruths = (sidecar.newTruths ?? []).map(t => {
-    if (!t || typeof t !== 'object' || !('revealOf' in t)) return t;
-    const rest = { ...t };
-    delete rest.revealOf;
-    return rest;
-  });
-  const filteredSidecar = {
-    ...sidecar,
-    stateChanges: otherChanges,
-    newTruths:    [...revealedTruthsOf(sidecar, { endingSubjectIds }), ...ownTruths],
-  };
+  // A reveal files what the narration told (issue #402, change 1b): the
+  // facts of its own block, each resting on what it says. The plan's hidden
+  // text is no fact of the beat's — round 10's a75 told a name and "one hand
+  // behind all of it", and the plan's whole truth (who runs the raids, why,
+  // what he holds, a second name) was filed as the GM's and told by the recap.
+  const filteredSidecar = { ...sidecar, stateChanges: otherChanges };
 
   try {
     // Narrator-memory A2 — resolve sidecar subjects against the full
@@ -7773,7 +8034,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
     // decided — a name no evidence. The inciting incident's block is the
     // premise whole (`setup`); a mode with no ground writes colour only.
     const noEvidence = namesNoEvidence(campaignState);
-    const ground = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '', decided: '' };
+    const ground = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '' };
     const basisOf = ctx.mode === 'inciting_incident'
       ? () => 'setup'
       : ({ from, text, subject }) => factBasis(from, text, ground, { about: [subject, ...noEvidence].filter(Boolean) });
@@ -7792,6 +8053,22 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       // (issue #345 AA04 — W05's live read, for the write half).
       storedLedger: liveSceneLedger(campaignState),
     });
+    // What the dice decided, filed by the code (issue #402): the yes/no
+    // question this narration answers (change 1a) — read from its card on
+    // this GM, never from the narration or a relay's word for it — and the
+    // stakes line a rolled move's outcome delivered (D1: a `result` tag binds
+    // nothing; factBasis).
+    const filedAt = { narrationId, sessionId: campaignState.currentSessionId ?? null, sceneId: campaignState.currentSceneId ?? null };
+    const answered = oracleAnswerOf(ctx);
+    if (answered) {
+      fileDiceFact(campaignState, { subject: { kind: 'text', text: answered.question }, fact: `the oracle answered ${answered.answer}`,
+        source: 'oracle_answer' }, filedAt);
+    }
+    for (const d of Array.isArray(ctx.decidedFacts) ? ctx.decidedFacts : []) {
+      const about = typeof d?.about === 'string' ? d.about.trim() : '';
+      const subject = about ? resolveSubject(about, campaignState, entities) : { kind: 'scene', sceneId: campaignState.currentSceneId ?? null };
+      fileDiceFact(campaignState, { subject, fact: d?.fact, source: 'move_result' }, { ...filedAt, moveId: d?.moveId ?? ctx.moveId ?? null });
+    }
 
     // Narrator-memory A4 — merge the scene-frame snapshot (full
     // replacement; omitted frame keeps the previous one). Gated on its
@@ -7863,7 +8140,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // colour never moves the ship — the fifth live long haul's a25 moved her "at
   // the source of the distress call, in a drift of frozen asteroids" on no tag
   // at all, and its a26 restated the expedition's arrival as colour.
-  const shipGround = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '', decided: '' };
+  const shipGround = ctx.ground && typeof ctx.ground === 'object' ? ctx.ground : { line: '' };
   const shipBinds = (c) => ctx.mode === 'inciting_incident'
     || factBinds({ basis: factBasis(c?.from ?? null, String(c?.value ?? ''), shipGround, { about: ['ship'] }) });
   // A journey's arrival is its move's own (the walk rule's, above): a line
@@ -7899,7 +8176,9 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       narrationId:  typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
       moveId:       ctx.moveId ?? null,
       planRequests: Array.isArray(ctx.planRequests) ? ctx.planRequests : [],
-      endingSubjectIds,
+      // The tracks and vows the beat ends: a plan their end resolved is still
+      // this narration's to reveal (issue #362 D4).
+      endingSubjectIds: Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [],
       // A relayed block names no plan by id (applyRelayedNarratorSidecar).
       relayed:      ctx.relayed === true,
     });

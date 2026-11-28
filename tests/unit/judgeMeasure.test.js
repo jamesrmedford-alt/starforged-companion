@@ -35,7 +35,7 @@ vi.mock('../../src/api-proxy.js', () => ({
 }));
 
 import { buildSet, judgePass, auditPass, scorePass, codeScore, poolScores, requestHash, JUDGE_KINDS } from '../../test/ci/playwright/lib/judges.mjs';
-import { judgeMayAct, checkClassOf } from '../../src/moves/contracts/checks.js';
+import { judgeMayAct, judgeIsAsked, checkClassOf } from '../../src/moves/contracts/checks.js';
 
 const PLAYWRIGHT = path.resolve(__dirname, '../../test/ci/playwright');
 const SET = JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, 'judges', 'set.json'), 'utf8'));
@@ -101,21 +101,23 @@ describe(`the kept measure (${LATEST})`, () => {
     for (const r of POOL.runs) expect(fs.existsSync(path.join(RUNS, r, 'results.json')), r).toBe(true);
   });
 
-  it('authority follows the measure (D7): a kind acts in a pass only where the pooled runs pass it there', () => {
+  it('a pass is asked about a kind only where the pooled runs pass it there (D7, D10) — and no kind acts (issue #402, change 5)', () => {
     for (const pass of ['judge', 'audit']) {
       for (const kind of JUDGE_KINDS) {
-        if (judgeMayAct(kind, pass)) expect(POOLED[pass][kind]?.passed, `${pass} [${kind}]`).toBe(true);
+        if (judgeIsAsked(kind, pass)) expect(POOLED[pass][kind]?.passed, `${pass} [${kind}]`).toBe(true);
+        // Its verdicts are logged: none re-asks, none posts a card, until live verdicts read in a review earn it back.
+        expect(judgeMayAct(kind, pass), `${pass} [${kind}] acts`).toBe(false);
       }
     }
   });
 
-  it('a pass is asked about no kind it may not act on (D10): the kept run asked the judge and the audit only those', () => {
+  it('a pass is asked about no other kind (D10): the kept run asked the judge and the audit only those', () => {
     for (const kind of JUDGE_KINDS) {
-      expect(RESULTS.score.judge[kind]?.asked ?? false, `judge [${kind}]`).toBe(judgeMayAct(kind, 'judge'));
-      expect(checkClassOf(kind) === 'judge', `judge-class [${kind}]`).toBe(judgeMayAct(kind, 'judge'));
-      expect(RESULTS.score.audit[kind]?.asked ?? false, `audit [${kind}]`).toBe(judgeMayAct(kind, 'audit'));
+      expect(RESULTS.score.judge[kind]?.asked ?? false, `judge [${kind}]`).toBe(judgeIsAsked(kind, 'judge'));
+      expect(checkClassOf(kind) === 'judge', `judge-class [${kind}]`).toBe(judgeIsAsked(kind, 'judge'));
+      expect(RESULTS.score.audit[kind]?.asked ?? false, `audit [${kind}]`).toBe(judgeIsAsked(kind, 'audit'));
       // Not asked, never flagged.
-      for (const pass of ['judge', 'audit']) if (!judgeMayAct(kind, pass)) expect(RESULTS.score[pass][kind]?.flags ?? 0, `${pass} [${kind}]`).toBe(0);
+      for (const pass of ['judge', 'audit']) if (!judgeIsAsked(kind, pass)) expect(RESULTS.score[pass][kind]?.flags ?? 0, `${pass} [${kind}]`).toBe(0);
     }
   });
 

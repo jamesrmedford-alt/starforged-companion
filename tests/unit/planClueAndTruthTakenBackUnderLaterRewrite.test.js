@@ -42,9 +42,11 @@ const plain = () => ({ prose: 'Silence.', sidecar: { newTruths: [], stateChanges
 const lastNarrationId = () => table.cards(f => f.narratorCard === true && f.narrationId).at(-1).flags[MODULE_ID].narrationId;
 const sceneFact = () => (stored().sceneTruths ?? []).find(t => t.fact === TRUTH);
 
+// The reveal's Lore entry: pending the GM since issue #402's change 1b, so
+// read confirmed or pending — a retracted one is neither.
 async function confirmedLore() {
-  const { getConfirmedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
-  return gmOf(table).run(() => getConfirmedLore(null)).filter(e => e.text === TRUTH);
+  const { getConfirmedLore, getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+  return gmOf(table).run(() => [...getConfirmedLore(null), ...getNarratorAssertedLore(null)]).filter(e => e.text === TRUTH);
 }
 
 /** A decided plan in this scene, filed as the canonical GM files one. */
@@ -109,10 +111,12 @@ describe('issue #364 PLAN-CLUE-TRUTH-NO-MARK — a clue and a truth go back with
     expect(record.narrationId, 'the plan is still the later narration\'s version').toBe(later);
   }, 60_000);
 
-  it('a truth revealed by a superseded narration, under a later narration\'s version: unrevealed, its rolls unshown, its scene fact gone', async () => {
+  it('a truth revealed by a superseded narration, under a later narration\'s version: unrevealed, its rolls unshown, its Lore gone', async () => {
     const plan = await seedPlan();
     const revealer = await narrationReveals(plan, { revealed: ['truth'] });
-    expect(sceneFact()?.narrationId).toBe(revealer);
+    // A reveal states no scene fact of its own (issue #402, change 1b): its Lore entry is the mirror.
+    expect(sceneFact(), 'no scene fact of its own').toBeUndefined();
+    expect(await confirmedLore()).toHaveLength(1);
     const later = await narrationReveals(plan, { advanced: 'e1' });
 
     await supersede(revealer);
@@ -122,7 +126,7 @@ describe('issue #364 PLAN-CLUE-TRUTH-NO-MARK — a clue and a truth go back with
     expect(record.rollsShownBy ?? null).toBeNull();
     expect(record.truth, 'the plan keeps its truth, hidden again').toBe(TRUTH);
     expect(record.escalation[0], 'the later narration\'s step stands').toMatchObject({ done: true, playedBy: later });
-    expect(sceneFact()?.retracted, 'the stated fact binds no later narration').toBe(true);
+    expect(await confirmedLore(), 'its Lore binds no later narration').toHaveLength(0);
 
     // The next narration is told the truth is unrevealed again.
     await narrateMoveOn(table, moveResolution());
@@ -141,7 +145,7 @@ describe('issue #364 PLAN-CLUE-TRUTH-NO-MARK — a clue and a truth go back with
     expect(planOf(control.id)).toMatchObject(expected);
     expect(planOf(control.id).clues[1].revealed).toBe(false);
     expect(await confirmedLore()).toHaveLength(0);
-    expect(sceneFact()?.retracted).toBe(true);
+    expect(sceneFact()).toBeUndefined();
   }, 60_000);
 
   it('…and with the edit: the same, under the GM\'s version', async () => {
@@ -158,7 +162,7 @@ describe('issue #364 PLAN-CLUE-TRUTH-NO-MARK — a clue and a truth go back with
     expect(record.clues[1].revealed).toBe(false);
     expect(record.wants, 'the GM\'s edit stands').toBe('Every name aboard.');
     expect(await confirmedLore(), 'its Lore entry is retracted, by the narration\'s stamp').toHaveLength(0);
-    expect(sceneFact()?.retracted, 'and its scene fact').toBe(true);
+    expect(sceneFact(), 'and it stated no scene fact').toBeUndefined();
   }, 60_000);
 
   it('the X-Card on the later narration afterwards does not bring the clue back shown', async () => {

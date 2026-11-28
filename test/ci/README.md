@@ -407,6 +407,15 @@ the record of where everyone is without a re-ask. What a player feels now is
 the story: a vow won by a stranger, and a fight told past its end (its findings
 are in #396 and `docs/known-issues.md`, LONG-HAUL-ROUND-8).
 
+**The tenth live round** (2026-11-27, $2.98, one run) was issue #399's last
+measure, the judge and the audit reworked. It is kept, reviewed in full, at
+`playwright/explorations/long-haul-live-20261127-202557/`: all 27 beats, with
+no check violated. One fact was scored lost for a right answer under the
+connection's new name, a miss of the charter's. The passes acted twice in 86
+calls, and both acts were wrong. What a player feels is still the story's
+seams: a culprit first named at the fulfilment, and a clerk whose pronoun
+changed (its findings are in `docs/known-issues.md`, LONG-HAUL-ROUND-10).
+
 **The readers on plain lines** (`./scripts/cloud.sh readers`). The two model
 calls that read every line of play — is it a move, and which — tried on about
 sixty-five in-fiction lines that name no move (but one that names its move on

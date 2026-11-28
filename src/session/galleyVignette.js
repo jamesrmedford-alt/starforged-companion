@@ -48,6 +48,7 @@ import { earlierVignettes, formatEarlierVignettes } from "./vignetteHistory.js";
 import { lastSessionToTell } from "./lifecycle.js";
 import { drawDie, rollOpeningSeeds, formatMaterial, seedsForFlags, factBlockWritten } from "./sceneSeeds.js";
 import { resolveNarrationPerspective, sessionPerspectiveOf } from "../narration/narratorPrompt.js";
+import { normalisePronouns, normalisePronounList, pronounsIn, pronounsFor, withPronouns } from "../factContinuity/pronouns.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -346,8 +347,8 @@ const STOP_BASIS = Object.freeze({ player: "the player", dice: "the dice", gm: "
  *
  * @param {string|null} sessionId — null: the newest earlier session the record says a table began
  * @param {Object|null} campaignState
- * @returns {Promise<{ place: string, ship: string, present: string[], binds: Array<{ subject: string, fact: string, basis: string }>,
- *   open: string, letGo: string[], number: number|null }|null>}
+ * @returns {Promise<{ place: string, ship: string, present: string[], remote: string[], pronouns: Array<{ name: string, pronouns: string }>,
+ *   binds: Array<{ subject: string, fact: string, basis: string }>, open: string, letGo: string[], number: number|null }|null>}
  */
 async function recordedStop(sessionId, campaignState) {
   try {
@@ -377,6 +378,10 @@ async function recordedStop(sessionId, campaignState) {
     const pcs = new Set((() => { try { return getPlayerActors() ?? []; } catch { return []; } })()
       .map(a => oneLine(a?.name).toLowerCase()).filter(Boolean));
     const present = (Array.isArray(where?.present) ? where.present : []).map(oneLine).filter(n => n && !pcs.has(n.toLowerCase()));
+    // …and who was over a comm: each person in the frame, named or not (issue #402, change 2).
+    const remote = (Array.isArray(where?.remote) ? where.remote : []).map(oneLine).filter(n => n && !pcs.has(n.toLowerCase()));
+    // Each one's pronouns as the scene was given them — a recorded person's card wins.
+    const pronouns = await stopPronouns([...present, ...remote], where?.pronouns, campaignState);
     const inScene = (b) => !b.removed && (!scene?.sceneId || b.scene === scene.sceneId);
     const binds = (Array.isArray(session.beats) ? session.beats : []).filter(inScene).flatMap(b => b.established ?? [])
       .map(t => ({ subject: oneLine(t.subject?.text ?? t.subject?.name ?? ""), fact: oneLine(t.fact), basis: t.basis }))
@@ -385,12 +390,54 @@ async function recordedStop(sessionId, campaignState) {
     const letGo = (Array.isArray(session.letGo) ? session.letGo : []).map(oneLine).filter(Boolean);
     const shipLine = oneLine(sceneForReading(campaignState).ship);
     const ship = /^not yet established\b/i.test(shipLine) ? "" : shipLine;
-    if (!place && !present.length && !binds.length && !open && !letGo.length) return null;
-    return { place, ship, present, binds, open, letGo, number: Number.isFinite(session.number) ? session.number : null };
+    if (!place && !present.length && !remote.length && !binds.length && !open && !letGo.length) return null;
+    return { place, ship, present, remote, pronouns, binds, open, letGo, number: Number.isFinite(session.number) ? session.number : null };
   } catch (err) {
     console.warn(`${MODULE_ID} | opening scene: the last session's record could not be read:`, err?.message ?? err);
     return null;
   }
+}
+
+/**
+ * The pronouns of the people with them at the end (issue #402, change 2):
+ * a recorded person's card's, when it has them — the GM's card wins — else
+ * the set the scene was given for them, on the record's last frame. Never
+ * throws.
+ *
+ * @param {string[]} names
+ * @param {*} framed — the frame event's `pronouns`
+ * @param {Object|null} campaignState
+ * @returns {Promise<Array<{ name: string, pronouns: string }>>}
+ */
+async function stopPronouns(names, framed, campaignState) {
+  if (!names.length) return [];
+  let cards = [];
+  try {
+    const { listConnections } = await import("../entities/connection.js");
+    cards = listConnections(campaignState ?? {}) ?? [];
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | opening scene: the recorded people's pronouns were not read:`, err?.message ?? err);
+  }
+  const cardOf = (name) => cards.find(c => oneLine(c?.name).toLowerCase() === name.toLowerCase())?.pronouns ?? "";
+  return normalisePronounList(names.map(name => ({ name, pronouns: normalisePronouns(cardOf(name)) || pronounsIn(framed, name) })));
+}
+
+/**
+ * The people where the last session stopped, for its next session's first
+ * scene (issue #402 D2: an unnamed person is carried through the next
+ * session's first scene at that place): who was with them at the end, with
+ * their pronouns, and the place — the scene start gives them to the new
+ * scene's frame only when it opens there (sceneLifecycle.js carriedFrame).
+ * None when the table gave its own word on where the session picks up: that
+ * outranks the record. Pure.
+ *
+ * @param {Object|null} record — recordedStop's
+ * @param {{ outranked?: boolean }} [opts]
+ * @returns {{ present: string[], pronouns: Array<{ name: string, pronouns: string }>, place: string }|null}
+ */
+function sessionCarry(record, { outranked = false } = {}) {
+  if (!record || outranked || !record.place || !record.present?.length) return null;
+  return { present: [...record.present], pronouns: pronounsFor(record.pronouns, record.present), place: record.place };
 }
 
 /**
@@ -413,7 +460,10 @@ function recordedStopLines(record, sessionNumber) {
   if (record.place || record.ship) {
     lines.push(`  Place: ${record.place || "not recorded"}${record.ship ? ` — ${record.ship}` : ""}.`);
   }
-  if (record.present.length) lines.push(`  With them at the end: ${record.present.join(", ")}.`);
+  // Each with their pronouns, as the scene was given them (issue #402, change 2).
+  const named = (n) => withPronouns(n, { frame: record.pronouns });
+  if (record.present.length) lines.push(`  With them at the end: ${record.present.map(named).join(", ")}.`);
+  if (record.remote?.length) lines.push(`  Over a comm at the end, not there in person: ${record.remote.map(named).join(", ")}.`);
   if (record.binds.length) {
     lines.push(`  What binds: ${record.binds.map(t => `${t.subject ? `${t.subject} — ` : ""}${t.fact} (${STOP_BASIS[t.basis]})`).join("; ")}.`);
   }
@@ -521,7 +571,8 @@ function cleanLine(text) {
  * @param {{ pickUp?: string, draw?: (faces: number) => number }} [opts] —
  *   `pickUp`: the table's own word (Begin a Session's dialog); `draw`: the die
  *   (sceneSeeds.js drawDie; a test's script)
- * @returns {Promise<{ userMessage: string, seeds: Object[] }>}
+ * @returns {Promise<{ userMessage: string, seeds: Object[], carry: Object|null }>} `carry`: the people
+ *   the last session stopped with, for the session's first scene (narrator.js narrateSessionVignette)
  */
 export async function composeOpeningScene(participants, campaignState, { pickUp = "", draw = drawDie } = {}) {
   const lastSession = await whereLastSessionStopped(campaignState);
@@ -536,7 +587,9 @@ export async function composeOpeningScene(participants, campaignState, { pickUp 
   const userMessage = buildGalleyVignetteUserMessage(participants, campaignState, {
     lastSession, seeds, pickUp: picked, account: factBlockWritten(),
   });
-  return { userMessage, seeds };
+  // Who the session's first scene opens with, at the place the last stopped (issue #402 D2).
+  const carry = sessionCarry(lastSession?.record ?? null, { outranked: !!picked });
+  return { userMessage, seeds, carry };
 }
 
 /**

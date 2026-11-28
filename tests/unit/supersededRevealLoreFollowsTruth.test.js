@@ -3,12 +3,13 @@
  * tests/unit/supersededRevealLoreFollowsTruth.test.js
  *
  * Issue #364 SUPERSEDED-REVEAL-LORE-STANDS. A narration that reveals a hidden
- * plan's truth files it as confirmed Lore ("Threat: the escort" — secrets.js
- * onTruthRevealed): the plan's truth, mirrored into the journal players read
- * and the narrator is given as established. A Burn Momentum / Improve Result
- * that supersedes that narration un-reveals the truth and retracts its scene
- * fact (resultUpgrade.js undoSupersededPlans), and the Lore entry stayed
- * confirmed: the Secrets journal said "hidden", the Lore journal stated it.
+ * plan's truth files it as Lore ("Threat: the escort" — secrets.js
+ * onTruthRevealed): the plan's truth, mirrored into the journal players read —
+ * pending the GM's confirmation since issue #402's change 1b, confirmed
+ * before it, and the narrator given it as established. A Burn Momentum /
+ * Improve Result that supersedes that narration un-reveals the truth
+ * (resultUpgrade.js undoSupersededPlans), and the Lore entry stayed: the
+ * Secrets journal said "hidden", the Lore journal stated it.
  *
  * The Lore entry a reveal files now names its plan (`revealOf`), and the
  * supersede takes it back with the truth it mirrors: the page the reveal made
@@ -102,6 +103,13 @@ async function confirmedLore() {
   return gmOf(table).run(() => getConfirmedLore(null)).filter(e => e.text === TRUTH || e.fact === TRUTH);
 }
 
+/** The Lore that states the truth, confirmed or pending the GM — a retracted entry is neither. */
+async function loreStatingIt() {
+  const { getConfirmedLore, getNarratorAssertedLore } = await gmOf(table).import('../../src/world/worldJournal.js');
+  return gmOf(table).run(() => [...getConfirmedLore(null), ...getNarratorAssertedLore(null)])
+    .filter(e => e.text === TRUTH || e.fact === TRUTH);
+}
+
 /** A decided plan in this scene, filed as the canonical GM files one. */
 async function seedPlan() {
   const secrets = await gmOf(table).import('../../src/world/secrets.js');
@@ -152,8 +160,9 @@ describe('issue #364 SUPERSEDED-REVEAL-LORE-STANDS — the real pipeline: the mi
     const card = await kiraFacesDangerAndMisses();
     const revealer = lastNarrationId();
     expect(planOf(plan.id)).toMatchObject({ truthRevealed: true, truthRevealedBy: revealer });
-    expect(await confirmedLore(), 'the reveal is confirmed lore').toHaveLength(1);
-    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: true, narrationId: revealer });
+    expect(await loreStatingIt(), 'the reveal is Lore').toHaveLength(1);
+    expect(await confirmedLore(), 'pending the GM: not canon').toEqual([]);
+    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: false, narratorAsserted: true, narrationId: revealer });
 
     table.replies = plain;   // the weak hit's narration reveals nothing
     await kiraBurns(card);
@@ -163,19 +172,19 @@ describe('issue #364 SUPERSEDED-REVEAL-LORE-STANDS — the real pipeline: the mi
     expect(await confirmedLore(), 'and the narrator is given no established lore that states it').toEqual([]);
     expect(loreTitled(LORE_TITLE), 'the Lore journal players read holds no page of it').toEqual([]);
 
-    // A later narration reveals the same truth: one confirmed entry, the new
-    // reveal's. (Before the fix there was one entry here too — the page is
-    // found by its title — but it was the superseded reveal's, never
-    // withdrawn, re-stamped with that reveal's version kept under it.)
+    // A later narration reveals the same truth: one entry, the new reveal's.
+    // (Before the fix there was one entry here too — the page is found by its
+    // title — but it was the superseded reveal's, never withdrawn,
+    // re-stamped with that reveal's version kept under it.)
     const again = await narrationRevealsTruth(plan);
     expect(planOf(plan.id).truthRevealed).toBe(true);
-    expect(await confirmedLore()).toHaveLength(1);
+    expect(await loreStatingIt()).toHaveLength(1);
     expect(loreTitled(LORE_TITLE)).toHaveLength(1);
-    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: true, retracted: false, narrationId: again, revealOf: plan.id });
+    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: false, narratorAsserted: true, retracted: false, narrationId: again, revealOf: plan.id });
     expect(loreTitled(LORE_TITLE)[0].previous ?? null, 'a new entry: nothing of the superseded reveal is kept under it').toBeNull();
   }, 120_000);
 
-  it('the burn\'s own re-narration reveals the truth again: one confirmed entry, the re-narration\'s', async () => {
+  it('the burn\'s own re-narration reveals the truth again: one entry, the re-narration\'s', async () => {
     const plan = await seedPlan();
     table.replies = revealing(plan);
     const card = await kiraFacesDangerAndMisses();
@@ -185,9 +194,9 @@ describe('issue #364 SUPERSEDED-REVEAL-LORE-STANDS — the real pipeline: the mi
     const renarration = lastNarrationId();
     expect(renarration).not.toBe(revealer);
     expect(planOf(plan.id)).toMatchObject({ truthRevealed: true, truthRevealedBy: renarration });
-    expect(await confirmedLore()).toHaveLength(1);
+    expect(await loreStatingIt()).toHaveLength(1);
     expect(loreTitled(LORE_TITLE)).toHaveLength(1);
-    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: true, narrationId: renarration, revealOf: plan.id });
+    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: false, narrationId: renarration, revealOf: plan.id });
   }, 120_000);
 });
 
@@ -205,14 +214,27 @@ describe('issue #364 SUPERSEDED-REVEAL-LORE-STANDS — what the supersede takes,
 
   it('an entry of the same title from before the reveal is put back as it was', async () => {
     const plan = await seedPlan();
-    await fileLore(LORE_TITLE, { text: 'They say the escort answers to no one.', category: 'other' });   // a GM's rumour
+    // As the detection pass files what a narration said: the narrator's, pending.
+    await fileLore(LORE_TITLE, { text: 'They say the escort answers to no one.', category: 'other', narratorAsserted: true });
     const revealer = await narrationRevealsTruth(plan);
-    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: true, text: TRUTH, revealOf: plan.id });
+    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: false, text: TRUTH, revealOf: plan.id });
 
     await supersede(revealer);
     expect(loreTitled(LORE_TITLE)).toHaveLength(1);
     expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: false, text: 'They say the escort answers to no one.', narrationId: null, revealOf: null });
-    expect(await confirmedLore()).toEqual([]);
+    expect(await loreStatingIt()).toEqual([]);
+  }, 60_000);
+
+  it('a GM\'s rumour of the same title stands through the reveal: the narration\'s word does not overturn the GM\'s ruling (issue #330 D9)', async () => {
+    const plan = await seedPlan();
+    await fileLore(LORE_TITLE, { text: 'They say the escort answers to no one.', category: 'other' });   // a GM's rumour
+    const revealer = await narrationRevealsTruth(plan);
+    expect(planOf(plan.id).truthRevealed, 'the plan is revealed').toBe(true);
+    expect(loreTitled(LORE_TITLE)).toHaveLength(1);
+    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ confirmed: false, narratorAsserted: false, text: 'They say the escort answers to no one.', revealOf: null });
+
+    await supersede(revealer);
+    expect(loreTitled(LORE_TITLE)[0]).toMatchObject({ text: 'They say the escort answers to no one.', revealOf: null });
   }, 60_000);
 
   it('a GM\'s own Reveal now since: the truth stays revealed, and its Lore entry — the GM\'s now — stands', async () => {
@@ -223,7 +245,7 @@ describe('issue #364 SUPERSEDED-REVEAL-LORE-STANDS — what the supersede takes,
 
     await supersede(revealer);
     expect(planOf(plan.id).truthRevealed).toBe(true);
-    expect(await confirmedLore()).toHaveLength(1);
+    expect(await confirmedLore(), 'canon: the GM revealed it').toHaveLength(1);
   }, 60_000);
 
   it('a reveal filed before the entry named its plan carries no mark: it stands, as before', async () => {
@@ -236,7 +258,7 @@ describe('issue #364 SUPERSEDED-REVEAL-LORE-STANDS — what the supersede takes,
     });
 
     await supersede(revealer);
-    expect(await confirmedLore()).toHaveLength(1);
+    expect(await loreStatingIt()).toHaveLength(1);
   }, 60_000);
 
   it('control: a narration taken back that revealed nothing leaves the revealed truth\'s Lore alone', async () => {
@@ -245,7 +267,7 @@ describe('issue #364 SUPERSEDED-REVEAL-LORE-STANDS — what the supersede takes,
     await narrateMoveOn(table, moveResolution());
     await supersede(lastNarrationId());
     expect(planOf(plan.id).truthRevealed).toBe(true);
-    expect(await confirmedLore()).toHaveLength(1);
+    expect(await loreStatingIt()).toHaveLength(1);
   }, 60_000);
 
   it('control: the X-Card on a reveal still retracts its Lore entry — kept, out of canon', async () => {

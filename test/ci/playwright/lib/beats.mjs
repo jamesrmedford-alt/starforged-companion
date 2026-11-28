@@ -530,6 +530,16 @@ export const BEAT_CHECKS = {
   },
 
   /** One oracle card. */
+  /**
+   * A Repair's points were spent from its card — late, after a line of play
+   * (issue #402, change 6: scenario-repair; EFFECT-TOLD-BEFORE-APPLIED).
+   */
+  repairSpent(v) {
+    const cards = v.allCards.filter(k => k.repair);
+    if (!cards.length) return notYet("no Repair card is on the table");
+    return cards.some(k => k.repair.spent) ? done("the Repair's points were spent from its card") : notYet("the Repair's points are not spent yet");
+  },
+
   oracleAsked(v) {
     const cards = v.allCards.filter(k => k.oracle && v.inWindow(k));
     if (!cards.length) return notYet("the oracle has not been asked");
@@ -801,6 +811,11 @@ export const BEAT_CHECKS = {
  * @param {Array<{ id: string, n: number, session: number, title: string, tell?: string, check: object,
  *   needs?: string[], requires?: object[], stall?: number, interruption?: string }>} beats
  */
+/** A beat's `forced` label — why the charter forces it — or null. */
+export function forcedOf(beat) {
+  return typeof beat?.forced === "string" && beat.forced.trim() ? beat.forced.trim() : null;
+}
+
 export function createPointer(beats) {
   // `lines` / `linesAtProgress`: the lines of play typed on the beat, and how
   // many of them had been typed when it last moved — the difference is the
@@ -815,7 +830,8 @@ export function createPointer(beats) {
   // how many lines had been typed when the last resort was last told, and
   // `lastResortSpent` the steps of the named lines that spent it. `waiting`:
   // the cards on the table that wait on the player (cardsWaiting).
-  const state = beats.map(b => ({ id: b.id, n: b.n, session: b.session, title: b.title, status: "pending", actions: 0, steps: [], enteredAt: null, doneAt: null, detail: "", progress: 0, sinceProgress: 0, lines: 0, linesAtProgress: 0, lastResort: false, lastResortGivenAt: null, lastResortSpent: [], named: [], waits: 0, rolled: [], rolledAtProgress: 0, waiting: [] }));
+  // A beat the charter forces is labelled so (`forced`, issue #402 change 6): what follows from it is the charter's pace.
+  const state = beats.map(b => ({ id: b.id, n: b.n, session: b.session, title: b.title, forced: forcedOf(b), status: "pending", actions: 0, steps: [], enteredAt: null, doneAt: null, detail: "", progress: 0, sinceProgress: 0, lines: 0, linesAtProgress: 0, lastResort: false, lastResortGivenAt: null, lastResortSpent: [], named: [], waits: 0, rolled: [], rolledAtProgress: 0, waiting: [] }));
   let at = 0;
   const byId = (id) => state.find(s => s.id === id);
 

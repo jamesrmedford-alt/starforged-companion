@@ -19,6 +19,7 @@ import { lengthPhrase, sentenceRule } from './proseVariety.js';
 import { obligationsFor, formatObligationsBlock } from '../moves/contracts/obligations.js';
 import { connectionStanding } from '../moves/situation.js';
 import { vowAsksWho } from '../world/tellingWords.js';
+import { pronounsIn } from '../factContinuity/pronouns.js';
 
 /**
  * The scene's own lines for a beat's obligations block (overhaul 2 §10.3 —
@@ -96,7 +97,7 @@ export function appendSidecarInstruction(options = {}) {
     '    ```json',
     '    {',
     '      "newTruths": [',
-    '        { "subject": "Vance", "fact": "agreed to fly the crate to the docks", "from": "result" },',
+    '        { "subject": "Vance", "fact": "holds the crate the PC handed him", "from": "line" },',
     '        { "subject": "Vance", "fact": "Walks with a slight limp" }',
     '      ],',
     '      "stateChanges": [',
@@ -108,7 +109,7 @@ export function appendSidecarInstruction(options = {}) {
     exampleLines.push(
       '      "sceneFrame": {',
       '        "location":  "Lyra\'s orbital graveyard",',
-      '        "present":   ["Venri Quint"],',
+      '        "present":   ["Venri Quint (she/her)"],',
       '        "remote":    ["Vance"],',
       '        "situation": "Hailing Vance\'s shuttle across the debris field",',
       '        "question":  "Will Vance let them board?"',
@@ -137,13 +138,16 @@ export function appendSidecarInstruction(options = {}) {
     // narration wrote bound later narration and was filed as canon at its
     // scene's end. A fact says where it comes from; code checks the claim
     // against the beat's own words (factContinuity/provenance.js factBasis).
+    // Issue #402, D1: "result" is no tag — what the dice decided (the stakes
+    // line a rolled move's outcome delivered, an oracle's answer) the table
+    // files itself (narrator.js moveDiceFacts, ledgers.js fileDiceFact).
     '- A "newTruth" records a fact your prose establishes. Say where it comes',
     '  from: "from": "line" when the player\'s line says it — what their',
-    '  character does, says, gives, carries, where they go; "from": "result"',
-    '  when the move\'s outcome or the oracle\'s answer decides it. Leave "from"',
-    '  out when it is your own description. Only "line" and "result" facts bind',
-    '  later narration; your own descriptions are kept for this scene as',
-    '  colour and then let go.',
+    '  character does, says, gives, carries, where they go. Leave "from" out',
+    '  when it is your own description, or the outcome of the move or the',
+    '  oracle\'s answer told in your words: what the dice decided, the table',
+    '  records itself. Only "line" facts bind later narration; the rest are',
+    '  kept for this scene as colour and then let go.',
     '- A "stateChange" is what is true right now. Use it for posture, mood,',
     '  visible state, door positions, lighting, weather. These supersede',
     '  prior state for the same subject + attribute. Say where it comes from',
@@ -256,7 +260,11 @@ export function appendSidecarInstruction(options = {}) {
       '  unnamed figure by a short handle, the same words the fact block\'s',
       '  stateChanges use for them, kept the same from beat to beat; "remote": a',
       '  named character heard or seen over a comm, a screen or a call — never in',
-      '  "present"; "situation": the',
+      // Issue #402, change 2: an unnamed person's pronoun had nowhere to live
+      // but a card — round 10's clerk was "her", then "he" after the break.
+      '  "present". An entry may end with its person\'s pronouns as your prose',
+      '  gives them — "customs clerk (she/her)"; the first set given is kept for',
+      '  them. "situation": the',
       '  situation in one sentence. Include it on EVERY response — it replaces',
       '  the previous snapshot. Keep names exactly as established. When the',
       '  player\'s line has moved the scene within the characters\' place, write',
@@ -551,7 +559,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // are told the scene by one renderer, from one read.
   const read = sceneForReading(campaignState, {
     sceneBeats: options?.sceneBeats, sceneFrameEnabled, nameChanges: options?.nameChanges ?? null,
-    underway: options?.underway ?? '',
+    underway: options?.underway ?? '', cardPronouns: options?.cardPronouns ?? null,
   });
   const what = read.began?.what ?? '';
   const beats = read.began?.beats ?? null;
@@ -732,7 +740,7 @@ export function buildLedgerBlock(campaignState, options = {}) {
  * @returns {{ began: { cause: string, what: string, beats: number|null }|null, place: { id: string, name: string }|null,
  *   ship: string, where: string, present: string[], now: string, question: string, letGo: string[] }}
  */
-export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null, underway = '' } = {}) {
+export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEnabled = true, nameChanges = null, underway = '', cardPronouns = null } = {}) {
   const anchor = campaignState?.sceneBegan && typeof campaignState.sceneBegan === 'object'
     && campaignState.sceneBegan.sceneId && campaignState.sceneBegan.sceneId === (campaignState.currentSceneId ?? null)
     ? campaignState.sceneBegan : null;
@@ -755,14 +763,21 @@ export function sceneForReading(campaignState, { sceneBeats = null, sceneFrameEn
     return t && changes.length ? writeNewNames(t, changes, { otherNames: others }) : t;
   };
   const question = typeof frame?.question === 'string' ? frame.question.trim() : '';
+  // Each person with their pronouns (issue #402, change 2): a recorded
+  // person's card's, else the first set the scene was given for them.
+  const named = (p) => {
+    const name = fresh(p);
+    const set = pronounsIn(cardPronouns, name) || pronounsIn(cardPronouns, p) || pronounsIn(frame?.pronouns, p);
+    return set ? `${name} (${set})` : name;
+  };
   return {
     began,
     place,
     between,
     ship,
     where: fresh(frame?.location),
-    present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
-    remote: (Array.isArray(frame?.remote) ? frame.remote : []).filter(p => typeof p === 'string' && p.trim()).map(fresh),
+    present: (Array.isArray(frame?.present) ? frame.present : []).filter(p => typeof p === 'string' && p.trim()).map(named),
+    remote: (Array.isArray(frame?.remote) ? frame.remote : []).filter(p => typeof p === 'string' && p.trim()).map(named),
     now: fresh(frame?.situation),
     question: fresh(question),
     letGo: frame ? normaliseLetGo(frame.letGo).map(e => e.text) : [],
@@ -2034,7 +2049,7 @@ function formatEntityCardsBlock(entityCards) {
  */
 function formatLedgerSection(campaignState, settings = {}, {
   matchedEntityIds = [], entityNamesById = null, shipPositionOnly = false, askSceneQuestion = '', sceneNarrations = null, playerLine = '',
-  nameChanges = null, progressTracks = [], elsewhere = null, pendingPeople = [],
+  nameChanges = null, progressTracks = [], elsewhere = null, pendingPeople = [], cardPronouns = [],
 } = {}) {
   const {
     factContinuityEnabled         = true,
@@ -2059,6 +2074,7 @@ function formatLedgerSection(campaignState, settings = {}, {
     underway: expeditionUnderway(progressTracks),
     elsewhere,
     pendingPeople,
+    cardPronouns,
   });
   return shipPositionOnly ? block.shipPosition : block.combined;
 }
@@ -2733,6 +2749,8 @@ export function buildNarratorSystemBlocks(
     elsewhere: extras?.elsewhere ?? null,
     // The people met whom the table has not yet confirmed (whereabouts.js pendingPeopleOf).
     pendingPeople: Array.isArray(extras?.pendingPeople) ? extras.pendingPeople : [],
+    // The recorded people's pronouns, from their cards: they win over the frame's (issue #402, change 2).
+    cardPronouns: Array.isArray(extras?.cardPronouns) ? extras.cardPronouns : [],
   });
   if (ledgerBlock) parts.push(ledgerBlock);
 
@@ -3204,8 +3222,9 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSub
     );
     const rerollOf = (x) => (typeof x?.reroll === 'string' && x.reroll ? ` Re-roll: ${x.reroll}.` : '');
     // A vow that asks who is won by a name (VOW-FULFILLED-UNANSWERED): its
-    // truth names the one behind it — and one that names no one is given a
-    // name from the name oracle when it is filed (secrets.js namedIfAWhoVow).
+    // truth names the one behind it — and an oath whose plan names no one is
+    // asked for it once more (narrator.js whoPlanNamingAsk; issue #402,
+    // change 4, which deleted the name drawn from the name oracle).
     // The one behind it is one of the story's people where one fits (the
     // maintainer's call after round 8, VOW-WON-BY-A-STRANGER), and a new one is
     // shown in play before the truth comes out.

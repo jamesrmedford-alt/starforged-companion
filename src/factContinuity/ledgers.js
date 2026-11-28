@@ -20,6 +20,7 @@
 
 import { resolveEntityName } from '../context/relevanceResolver.js';
 import { normaliseLetGo, entryBasis, raisedBasis, saidBy } from './provenance.js';
+import { keptPronouns } from './pronouns.js';
 
 /**
  * Apply a parsed sidecar to the active-scene ledgers. Mutates campaignState
@@ -111,14 +112,9 @@ export function applySidecar(sidecar, ctx) {
     // here — a scene travels, and that strike is that place's
     // (ACTIVE-SCENE-STRIKE-PLACE-BLIND, AA28's in-scene half).
     const here = { place: sceneLocation };
-    // A hidden plan's truth the narration revealed (`revealOf`, the code's
-    // marker — secrets.js revealedTruthsOf) is the table's, decided when its
-    // plan was made: it binds as the GM's, never as the narrator's colour.
-    // Held as colour, the fifth live long haul's revealed vow truth was then
-    // filed to Lore at its scene's end — the run's one violation (issue #388
-    // #6, REVEALED-PLAN-TRUTH-AS-COLOUR).
-    const revealed = typeof t.revealOf === 'string' && /^[\w-]{1,64}$/.test(t.revealOf);
-    const basis = revealed ? 'gm' : basisOf(t.from, fact, subjectRef);
+    // A reveal adds no fact of its own (issue #402, change 1b): what the
+    // narration told of a plan is in its own block, and rests on what it says.
+    const basis = basisOf(t.from, fact, subjectRef);
     const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact, here)
       ?? findEquivalentTruth(storedTruths, subject, fact, here);
     if (dupe) {
@@ -181,11 +177,6 @@ export function applySidecar(sidecar, ctx) {
       // said it, the newest first (the colour window, §5.3).
       basis,
       ...(stamp.narrationId ? { said: [stamp.narrationId] } : {}),
-      // A hidden plan's truth the narration revealed carries the plan's id
-      // (secrets.js revealedTruthsOf; the sidecar apply strips the key from
-      // the model's own truths): its reveal filed it as Lore, and the scene's
-      // end does not archive it again (issue #362 AC37).
-      ...(typeof t.revealOf === 'string' && /^[\w-]{1,64}$/.test(t.revealOf) ? { revealOf: t.revealOf } : {}),
       ...stamp,
     });
     truthIds.push(id);
@@ -548,7 +539,7 @@ export function isReplacedOriginal(t, byId) {
  * campaignState in place; persistence is the caller's responsibility (same
  * contract as applySidecar).
  *
- * @param {Object|null} frame — { location, present[], situation, question?, questionAnswered? } or null
+ * @param {Object|null} frame — { location, present[], remote?[], pronouns?[], situation, question?, questionAnswered? } or null
  * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {string|null} [opts.narrationId] — the narration that wrote it,
@@ -579,11 +570,15 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
   // snapshot writes or drops it; the frame's `previous` chain carries it, so
   // an X-Card on the beat that let a question go puts that question back.
   const letGo = samePrior ? normaliseLetGo(prior.letGo) : [];
+  // Each person's pronouns, the first given kept for the scene (issue #402,
+  // change 2): a later frame that gives another set, or none, keeps the first.
+  const pronouns = keptPronouns(samePrior ? prior.pronouns : null, frame.pronouns);
   campaignState.sceneFrame = {
     location,
     present,
     situation,
     ...(remote.length ? { remote } : {}),
+    ...(pronouns.length ? { pronouns } : {}),
     ...question,
     ...(letGo.length ? { letGo } : {}),
     sceneId,
@@ -979,6 +974,61 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   campaignState.sceneTruths.push(entry);
   if (strike) strike.correctedTo = entry.id;
   if (kept) dropSessionStrike(campaignState, kept);
+  return entry;
+}
+
+/**
+ * A fact the dice decided, filed by the code (issue #402 — D1 and change 1a):
+ * a rolled move's stakes line its outcome delivered (provenance.js
+ * decidedOfMove), and an answered yes/no oracle question — the question its
+ * subject, "the oracle answered YES" its fact — in those words, basis `dice`,
+ * with no tag and no word test. Round 10's a43 asked "Is anyone left alive
+ * aboard the Cinder Wren?" and the oracle answered YES; the narration's own
+ * fact ("at least one crew member survived…") shared no telling word with the
+ * question and was refused, and the survivor was gone after the break. And a
+ * narrator's `result` tag on a rolled move bound its own inventions as the
+ * dice's 111 times in 155 over rounds 5 to 10. Stamped with the narration
+ * that told it, as the narration's own facts are: the X-Card on it takes this
+ * with them (retractNarrations), and the record's removal of it too. Mutates
+ * campaignState; the caller persists. Nothing is filed twice — nor again once
+ * struck or removed.
+ *
+ * @param {Object} campaignState
+ * @param {{ subject: Object, fact: string, source: "move_result"|"oracle_answer" }} decided —
+ *   `subject` resolved (resolveSubject's shape)
+ * @param {{ narrationId?: string|null, sessionId?: string|null, sceneId?: string|null }} [ctx]
+ * @returns {Object|null} the entry filed
+ */
+export function fileDiceFact(campaignState, decided, ctx = {}) {
+  if (!campaignState) return null;
+  const fact = String(decided?.fact ?? '').replace(/\s+/g, ' ').trim();
+  const subject = decided?.subject && typeof decided.subject === 'object' ? decided.subject : null;
+  if (!fact || !subject) return null;
+  ensureLedgerShape(campaignState);
+  const place = assertedLocation(campaignState);
+  if (findEquivalentTruth(campaignState.sceneTruths, subject, fact, { place })) return null;
+  const narrationId = typeof ctx.narrationId === 'string' && ctx.narrationId ? ctx.narrationId : null;
+  const entry = {
+    id:          newTruthId(),
+    subject,
+    fact,
+    sessionId:   ctx.sessionId ?? campaignState.currentSessionId ?? null,
+    sessionNum:  sessionNumberOf(campaignState),
+    sceneId:     ctx.sceneId   ?? campaignState.currentSceneId   ?? null,
+    moveId:      ctx.moveId    ?? null,
+    source:      decided.source === 'oracle_answer' ? 'oracle_answer' : 'move_result',
+    asserter:    'narrator',
+    basis:       'dice',
+    createdAt:   Date.now(),
+    retracted:   false,
+    retractedBy: null,
+    retractedAt: null,
+    correctedTo: null,
+    migratedTo:  null,
+    sceneLocation: place,
+    ...(narrationId ? { narrationId } : {}),
+  };
+  campaignState.sceneTruths.push(entry);
   return entry;
 }
 
