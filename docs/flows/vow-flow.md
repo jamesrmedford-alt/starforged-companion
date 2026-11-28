@@ -581,13 +581,24 @@ oracle as it is filed (`secrets.namedIfAWhoVow`, Given Name + Family Name, "The
 one behind it is …", the deciding narration's version), so THIS BEAT ENDS A VOW
 has a name to tell. Since round 8, the name is someone the story has met where one
 fits (VOW-WON-BY-A-STRANGER, the maintainer's call):
-- DECIDE NOW lists the story's people (`narrator.js storyPeopleOf`, its
-  connection cards, then the pending drafts, at most eight) and asks for one of
-  them.
+- Who the story has met is one reader's (`world/storyPeople.js storyPeople`:
+  its connection cards, the pending drafts — a draft matched only by its whole
+  name — and the names that are no person's; issue #402, change 3b). DECIDE NOW
+  lists its people (at most eight) and asks for one of them; `namedIfAWhoVow`
+  (handed the story by `applyPlanSideData`'s `story`) and the stranger check
+  read the same lists. Round 10's a75 was the readers disagreeing: the oath
+  chose "the foreman", the a2 draft, and `namedIfAWhoVow`, reading no drafts,
+  appended "Talia Tolari", whom the stranger check then took for met.
+- A fulfilment's plan is checked before it is handed over (issue #402, change
+  3a's R3: `blockCheck.js revealFault`, `narrator.js noteRevealFaults`): one
+  that names no one, more than one person, or someone the story has not met is
+  reported to the GM on a GM-only ◈ Narrative Review card (kind `plan`,
+  `consistencyCheck.js postPlanRevealNote`), once a plan; the narration tells
+  the plan as written (D3).
 - A new name is shown in play before the truth is revealed.
 - A decided plan whose truth names someone not yet met is told "Not yet in play:
   X …" (`skeletons.strangerNamedIn`, `extras.strangers`). A pending draft is met
-  only by its whole name (`exact`, from `pendingPeopleOf`); a recorded person by
+  only by its whole name (`exact`, `storyPeople`'s `drafts`); a recorded person by
   a word of their name that is no filler (`skeletons.personMetIn`, which
   `truthNamesSomeone` shares). The line rides with the plan both where it is
   written out and where the world snapshot holds it (IN PLAY FOR THIS

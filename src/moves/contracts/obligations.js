@@ -77,6 +77,7 @@ import { MOVES } from "../../schemas.js";
 import { stakesShown, stakesLine } from "../stakes.js";
 import { findThresholdCard } from "../combatThreshold.js";
 import { contractFor } from "./table.js";
+import { instructionFaults, SPEND_EFFECTS, WEAK_HIT_COST_CLAUSE } from "./blockCheck.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -303,7 +304,10 @@ export const OBLIGATION_KINDS = Object.freeze({
     // and leaves the cost ([cost]); an Enter the Fray whose fight is still
     // only offered, or declined, delivers its hit as the opening the roll
     // won, never a blow struck ([fight]).
-    text: ({ resolution }) => {
+    // `noCost`, `spend`: the block check's mends (blockCheck.js; issue #402,
+    // change 3a) — R1, a weak hit whose outcome names no cost; R2, a hit whose
+    // effect waits on the player's spend.
+    text: ({ resolution, noCost = false, spend = null }) => {
       const shown = stakesShown(resolution?.stakes ?? null);
       const outcome = resolution?.outcome ?? null;
       const lines = shown.map(s => (s.kind === "hit" ? `On a hit: ${s.text}` : `On a miss: ${s.text}${s.cost ? ` (${s.cost})` : ""}`));
@@ -311,12 +315,16 @@ export const OBLIGATION_KINDS = Object.freeze({
       const miss = shown.some(s => s.kind === "miss");
       const priceChoice = resolution?.priceChoice ?? null;
       let deliver = "";
-      if (isHit(outcome) && hit && fightNotBegun(resolution?.fightOffer)) {
+      if (isHit(outcome) && hit && spend) {
+        deliver = `This is a ${outcome === "strong_hit" ? "strong" : "weak"} hit: it gives ${spend.gives}, and the player has not spent them. `
+          + "The hit as stated is what that spend may buy, not what is done — the [spend] line says how far the narration goes.";
+      } else if (isHit(outcome) && hit && fightNotBegun(resolution?.fightOffer)) {
         deliver = `This is a ${outcome === "strong_hit" ? "strong" : "weak"} hit: the hit as stated is the opening this roll has won — ` +
           "where it puts them — not a blow already struck. The [fight] line says how far the narration goes.";
       } else if (outcome === "strong_hit" && hit) deliver = "This is a strong hit: deliver the hit as stated.";
       else if (outcome === "weak_hit" && hit && resolution?.openChoice) deliver = "This is a weak hit: deliver the hit as stated. Its cost is the player's choice, and is not chosen yet — the [cost] line says how to leave it.";
-      else if (outcome === "weak_hit" && hit) deliver = "This is a weak hit: deliver the hit as stated, with the cost or complication the move outcome names.";
+      else if (outcome === "weak_hit" && hit && noCost) deliver = "This is a weak hit: deliver the hit as stated. The move outcome names no cost or complication, and none is added.";
+      else if (outcome === "weak_hit" && hit) deliver = `This is a weak hit: deliver the hit as stated, ${WEAK_HIT_COST_CLAUSE}.`;
       else if (outcome === "miss" && miss && priceChoiceOpen(priceChoice)) deliver = `This is ${priceAlternative(priceChoice).miss}: the stated miss is the price it offers, not a price paid — the [price] line says where it stands.`;
       else if (outcome === "miss" && miss) deliver = "This is a miss: deliver the miss as stated — it is what this miss costs.";
       else if (outcome === "miss") deliver = "This is a miss: the hit did not come. Its cost is the move outcome's, not a stated one.";
@@ -347,6 +355,17 @@ export const OBLIGATION_KINDS = Object.freeze({
       return `The narration tells as paid the price this miss offers${price ? ` (${price})` : ""}, though the player has not chosen yet whether `
         + "to pay it. That price shown arriving, the hardship or threat it brings about to cost them, breaks nothing.";
     },
+  }),
+  // R2 of the block check (blockCheck.js; issue #402, change 3a): a hit whose
+  // effect waits on the player's spend — Repair's points, spent on the card
+  // after its roll. Four rounds told the mending done, and a cost besides,
+  // with the sheet unchanged (round 10's a57: "your supplies run thinner").
+  spend: Object.freeze({
+    list: "NOT YET", check: "logged",
+    text: ({ spend }) => `${String(spend?.gives ?? "WHAT THIS MOVE GIVES").toUpperCase()} ARE NOT SPENT YET. `
+      + `This move gives ${spend?.gives ?? "what it gives"}, and the player spends them on the card that follows. `
+      + `Until then ${spend?.decides ?? "what they buy"} is not decided, and nothing more is used up: tell the work begun — `
+      + "the effort, the hands on it — not what it fixes, and no supply or other cost it takes.",
   }),
   cost: Object.freeze({
     list: "NOT YET", check: "judge",
@@ -950,6 +969,30 @@ function resultObligations(resolution, { speaker = null, entry = false } = {}) {
   }
   if (obliges.has("recommit") && r.outcome === "miss") out.push(line("recommit", { resolution: r }));
   if (r.gateNote) out.push(line("overridden", { note: r.gateNote }));
+  return mendResultLines(out, r);
+}
+
+/**
+ * The result's lines, checked against the move's own data before they are
+ * sent and mended where the fault is certain (blockCheck.js; issue #402,
+ * change 3a, D3): R1 — a weak hit whose outcome names no cost is not asked for
+ * one; R2 — a hit whose effect waits on the player's spend tells the work
+ * begun, and its spend NOT YET. Pure.
+ *
+ * @param {Array<Object>} lines — the result's lines, as resultObligations built them
+ * @param {Object} r — the resolution
+ * @returns {Array<Object>}
+ */
+function mendResultLines(lines, r) {
+  const faults = instructionFaults({ lines, moveId: r?.moveId ?? null, outcome: r?.outcome ?? null, consequences: r?.consequences ?? null });
+  if (!faults.length) return lines;
+  const spend = faults.some(f => f.rule === "R2") ? SPEND_EFFECTS[r.moveId] : null;
+  const noCost = faults.some(f => f.rule === "R1");
+  const out = lines.map(o => (o.kind === "stakes" ? line("stakes", { resolution: r, noCost, spend }) : o));
+  if (spend) {
+    const at = out.findIndex(o => o.kind === "stakes");
+    out.splice(at >= 0 ? at + 1 : out.length, 0, line("spend", { spend }));
+  }
   return out;
 }
 

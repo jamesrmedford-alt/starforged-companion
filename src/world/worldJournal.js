@@ -2948,6 +2948,8 @@ async function postContradictionNotification(transition) {
     retraction: "Re-asserting a retracted fact is already blocked at the ledger — no correction needed. Use Replace in the correction dialog if the fact should genuinely change.",
     // Overhaul 4: the narration broke a line of what its result obliged it to tell.
     obligation: "The narration told what its result did not allow (the line above): nothing on a sheet changed — say the correction at the table.",
+    // Issue #402, change 3a (R3): a plan this beat reveals, checked before the narration is sent.
+    plan:       "The plan is yours, in the Secrets panel: name there the one person behind it, someone the story has met — or say at the table who it was.",
   };
   const dialogApplies = isFactContinuity && !(kind in REMEDY_HINTS);
 
@@ -2961,7 +2963,7 @@ async function postContradictionNotification(transition) {
 
   const html =
     `<div class="sf-wj-contradiction"><div class="sf-wj-contradiction-label">◈ Narrative Review</div>` +
-    `<p>The narrator may have contradicted an established fact.</p>` +
+    `<p>${kind === "plan" ? "This beat reveals a plan that does not name one person the story has met." : "The narrator may have contradicted an established fact."}</p>` +
     `<p><strong>${name}</strong>${detail ? ` — ${detail}` : ""}</p>` +
     said +
     remedy +

@@ -47,7 +47,8 @@ import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock 
 import { inferShipPosition, formatShipPositionLine }  from '../factContinuity/shipPosition.js';
 import { startScene, turnSceneIfDue, persistSceneLedgerFields, mergeSceneLedgers, framedAtThePlace } from '../factContinuity/sceneLifecycle.js';
 import { formatNameChangesBlock, NAME_CHANGES_HEADING } from '../factContinuity/nameChanges.js';
-import { runConsistencyCheck, postStillBrokenNote } from '../factContinuity/consistencyCheck.js';
+import { runConsistencyCheck, postStillBrokenNote, postPlanRevealNote } from '../factContinuity/consistencyCheck.js';
+import { revealFault } from '../moves/contracts/blockCheck.js';
 import { groundOf, normaliseGround, playersQuestion, touchesLetGo, letGoEntry, withLetGo, QUESTION_MODES, factBasis, decidedOfMove, rolledMove, binds as factBinds, COLOUR_BEATS } from '../factContinuity/provenance.js';
 import { refusalNote, unansweredCardsFor, obligationsFor, formatObligationsBlock, choicesChosenSince, markChosenCostsTold } from '../moves/contracts/obligations.js';
 import { contractFor } from '../moves/contracts/table.js';
@@ -98,10 +99,11 @@ import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest, withHiddenRoll
 import { priceChoiceStatus } from '../moves/resultUpgrade.js';
 import { withoutUntoldTruths } from '../world/secrets.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, planClock, fileRequestedPlan, rollReroll, rearmUnplayedPlanClock, requestPlansInPlay } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, quietestPlan } from '../world/skeletons.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings, planFiledFor, seedsWithPlannedEnemy, PLANS_PER_SIDECAR, PLAN_REQUESTS_PER_NARRATION, strangerNamedIn, peopleNamedIn, quietestPlan } from '../world/skeletons.js';
 import { resolveWorldSnapshot, noteWorldSnapshotSent } from './worldSnapshotStore.js';
 import { readRecord } from '../record/read.js';
 import { elsewhereOf, elsewhereWords, lastSeenWith, hereOf, pendingPeopleOf, placeAtTime } from '../factContinuity/whereabouts.js';
+import { storyPeople } from '../world/storyPeople.js';
 import { withoutMeterClaims } from '../factContinuity/sheetClaims.js';
 import { withoutPlaceClaims } from '../factContinuity/placeClaims.js';
 import { entityUnitKey, planUnitKey } from './worldSnapshot.js';
@@ -837,9 +839,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // Who a who-vow's culprit may be (VOW-WON-BY-A-STRANGER, round 8: the vow
   // was won by "Dalen Voss", whom the player never met): the people the story
   // has met, for DECIDE NOW to prefer — and each decided who-plan whose truth
-  // names only a stranger, to be shown in play before it is revealed.
-  extras.storyPeople = storyPeopleOf(campaignState);
-  extras.strangers = strangersOfWhoPlans(extras.unrevealed, extras.storyPeople, campaignState);
+  // names only a stranger, to be shown in play before it is revealed. One
+  // reader says who that is (world/storyPeople.js; issue #402, change 3b).
+  const story = storyPeople(campaignState);
+  extras.storyPeople = [...story.people, ...story.drafts].slice(0, STORY_PEOPLE_LISTED);
+  extras.strangers = strangersOfWhoPlans(extras.unrevealed, story);
+  // A who-vow's plan this beat reveals, checked before it is handed over
+  // (issue #402, change 3a's R3): one culprit, someone the story has met —
+  // else the GM is told, once a plan (D3: reported; the check cannot choose).
+  noteRevealFaults(extras.unrevealed, extras.endingTrackIds, story, campaignState);
 
   // Established lore, picked for what this turn is about (issue #286 C2):
   // the player's text, the scene frame and the entities now in play. It was
@@ -4933,28 +4941,46 @@ function pendingPeopleTold(campaignState) {
   }
 }
 
+
+/** The plans whose reveal has been reported to the GM, by id: each told once (noteRevealFaults). */
+const revealFaultsNoted = new Set();
+
 /**
- * The people the story has met, by name — its connection cards (people
- * recorded by Confirm or Make a Connection), then the people a narration
- * drafted that the table has neither confirmed nor dismissed (tracked as
- * real until it does — whereabouts.js pendingPeopleOf), the player
- * characters apart — for a who-vow's DECIDE NOW to choose from
- * (VOW-WON-BY-A-STRANGER). Never throws.
+ * The block check's R3 (issue #402, change 3a; blockCheck.js revealFault):
+ * each decided plan of a vow that asks who, which this beat's move fulfils
+ * (`endingTrackIds`), is read before its truth is handed over — it names one
+ * culprit, someone the story has met (world/storyPeople.js). One that names
+ * no one, more than one, or a stranger is reported to the GM on a GM-only ◈
+ * Narrative Review card (consistencyCheck.js postPlanRevealNote), once a plan;
+ * the narration tells the plan as written (D3). On the canonical GM. Never
+ * throws.
  *
+ * @param {Object[]} plans — the plans in play
+ * @param {string[]} endingTrackIds — the tracks this beat's move ends
+ * @param {{ people: string[], drafts: string[], notNames: string[] }} story
  * @param {Object|null} campaignState
- * @returns {string[]}
+ * @returns {Array<{ id: string, fault: Object }>} what was found, posted or not
  */
-function storyPeopleOf(campaignState) {
+function noteRevealFaults(plans, endingTrackIds, story, campaignState) {
+  const found = [];
   try {
-    const entities = collectAllEntities(campaignState ?? {});
-    const names = entities.filter(e => e?.entityType === 'connection' && typeof e.name === 'string' && e.name.trim())
-      .map(e => e.name.trim());
-    names.push(...pendingPeopleOf(campaignState ?? {}, { entities }).map(p => p.name));
-    return [...new Set(names)].slice(0, STORY_PEOPLE_LISTED);
+    const ending = new Set(Array.isArray(endingTrackIds) ? endingTrackIds : []);
+    if (!ending.size) return found;
+    for (const r of Array.isArray(plans) ? plans : []) {
+      if (r?.kind !== 'vow' || !r.subject?.id || !ending.has(r.subject.id) || !vowAsksWho(r.subject?.name)) continue;
+      if (typeof r.truth !== 'string' || !r.truth.trim() || r.truthRevealed) continue;
+      const fault = revealFault(peopleNamedIn(r.truth, { people: story?.people ?? [], exact: story?.drafts ?? [],
+        notNames: [...(story?.notNames ?? []), String(r.subject.name ?? '')] }));
+      if (!fault) continue;
+      found.push({ id: r.id, fault });
+      if (revealFaultsNoted.has(r.id) || !isCanonicalGM()) continue;
+      revealFaultsNoted.add(r.id);
+      void postPlanRevealNote(fault, r, campaignState);
+    }
   } catch (err) {
-    console.debug?.(`${MODULE_ID} | the story's people were not read for a who-vow's plan:`, err?.message ?? err);
-    return [];
+    console.debug?.(`${MODULE_ID} | a revealed plan was not checked:`, err?.message ?? err);
   }
+  return found;
 }
 
 /**
@@ -4963,21 +4989,19 @@ function storyPeopleOf(campaignState) {
  * play before its truth is revealed (formatUnrevealedBlock). Places, ships and
  * the PCs are no names. A pending draft's name — often a description, "The
  * Man From the Berth" — is matched whole, as everywhere a draft is (issue
- * #397, Code fix 1). Never throws.
+ * #397, Code fix 1). Who the story has met is world/storyPeople.js's, the one
+ * reader every caller asks (issue #402, change 3b). Never throws.
  *
  * @param {Object[]} plans — the plans in play
- * @param {string[]} people — storyPeopleOf
- * @param {Object|null} campaignState
+ * @param {{ people: string[], drafts: string[], notNames: string[] }} story — storyPeople
  * @returns {Object<string, string>}
  */
-function strangersOfWhoPlans(plans, people, campaignState) {
+function strangersOfWhoPlans(plans, story) {
   const out = {};
   try {
-    const notNames = storyNamesOf(campaignState);
-    const exact = pendingPeopleOf(campaignState ?? {}).map(p => p.name);
     for (const r of Array.isArray(plans) ? plans : []) {
       if (r?.kind !== 'vow' || !vowAsksWho(r.subject?.name) || typeof r.truth !== 'string' || !r.truth.trim()) continue;
-      const stranger = strangerNamedIn(r.truth, { people, exact, notNames: notNames.filter(n => !(people ?? []).includes(n)) });
+      const stranger = strangerNamedIn(r.truth, { people: story?.people ?? [], exact: story?.drafts ?? [], notNames: story?.notNames ?? [] });
       if (stranger) out[r.id] = stranger;
     }
   } catch (err) {
@@ -7190,6 +7214,7 @@ function applyOwedPlanSideData(rawText, campaignState, ctx = {}) {
         moveId:           ctx.moveId ?? null,
         planRequests,
         endingSubjectIds: Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : [],
+        story:            storyPeople(campaignState),
       });
     } else {
       relayNarratorSidecar(sidecar, campaignState, ctx);
@@ -7413,7 +7438,7 @@ function fileUnansweredPlanRequests(planRequests, campaignState, { moveId = null
   if (!Array.isArray(planRequests) || !planRequests.length || !campaignState) return;
   try {
     const sidecar = normaliseSidecar({});
-    if (isCanonicalGM()) void applyPlanSideData(sidecar, { campaignState, narrationId: null, moveId, planRequests });
+    if (isCanonicalGM()) void applyPlanSideData(sidecar, { campaignState, narrationId: null, moveId, planRequests, story: storyPeople(campaignState) });
     else relayNarratorSidecar(sidecar, campaignState, { moveId, planRequests });
   } catch (err) {
     console.warn(`${MODULE_ID} | narrator: the plans this narration was asked to decide were not filed:`, err?.message ?? err);
@@ -7487,7 +7512,7 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
   if (!factContinuityEnabled()) {
     const reveals = await standingForcedReveals(payload.forced, campaignState);
     await applyPlanSideData({ ...normaliseSidecar({}), reveals }, {
-      campaignState, narrationId, moveId: payload.moveId ?? null, planRequests,
+      campaignState, narrationId, moveId: payload.moveId ?? null, planRequests, story: storyPeople(campaignState),
     });
     return;
   }
@@ -7905,6 +7930,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       endingSubjectIds,
       // A relayed block names no plan by id (applyRelayedNarratorSidecar).
       relayed:      ctx.relayed === true,
+      story:        storyPeople(campaignState),
     });
   }
   return persisted;

@@ -38,8 +38,6 @@ import {
   truthNamesSomeone, truthWithWho,
 } from "./skeletons.js";
 import { vowAsksWho } from "./tellingWords.js";
-import { collectAllEntities } from "../context/relevanceResolver.js";
-import { getPlayerActors } from "../character/actorBridge.js";
 import { rollOracle } from "../oracles/roller.js";
 import { GM_RELAY_SOCKET, hasActiveGM } from "../multiplayer/gmRelay.js";
 
@@ -949,35 +947,6 @@ export function revealedTruthsOf(sidecar, { endingSubjectIds = [] } = {}) {
   return out;
 }
 
-/** The kinds of entity that are people, for a plan's truth (VOW-FULFILLED-UNANSWERED). */
-const PERSON_TYPES = new Set(["connection", "npc"]);
-
-/**
- * The story's names, for whether a plan's truth names a person
- * (skeletons.js truthNamesSomeone): its people — the roster's NPC cards — and
- * the names that are no person's: its places, ships and factions, the player
- * characters (never the one behind a vow they swore), and the vow's own
- * words. Never throws.
- *
- * @param {Object|null} campaignState
- * @param {Object} record — the plan
- * @returns {{ people: string[], notNames: string[] }}
- */
-function namesOfTheStory(campaignState, record) {
-  const people = [];
-  const notNames = [String(record?.subject?.name ?? "")];
-  try {
-    for (const e of collectAllEntities(campaignState ?? {})) {
-      const name = String(e?.name ?? "").trim();
-      if (!name) continue;
-      (PERSON_TYPES.has(e?.entityType) ? people : notNames).push(name);
-    }
-  } catch (err) { console.debug?.(`${MODULE_ID} | secrets: the story's names were not read:`, err?.message ?? err); }
-  try { for (const actor of getPlayerActors() ?? []) if (actor?.name) notNames.push(actor.name); }
-  catch (err) { console.debug?.(`${MODULE_ID} | secrets: the player characters were not read:`, err?.message ?? err); }
-  return { people, notNames };
-}
-
 /** A name drawn from the name oracle — Given Name and Family Name — or null when it draws none. */
 function drawPersonName() {
   try {
@@ -998,16 +967,19 @@ function drawPersonName() {
  * vow was fulfilled with "No name is written yet" — the plan's truth held
  * none, and the fulfilment may tell nothing more than its truth). The same
  * narration's version (`narrationId`). Any other plan, or one that names
- * someone, as it is. Never throws.
+ * someone, as it is — someone the story has met, by the one reader of that
+ * (world/storyPeople.js; issue #402, change 3b), which its caller hands in as
+ * `story`. Never throws.
  *
  * @param {Object|null} record — the plan as written
- * @param {{ narrationId?: string|null, campaignState?: Object|null }} [opts]
+ * @param {{ narrationId?: string|null, story?: { people: string[], drafts: string[], notNames: string[] }|null }} [opts]
  * @returns {Promise<Object|null>} the plan as it now stands
  */
-async function namedIfAWhoVow(record, { narrationId = null, campaignState = null } = {}) {
+async function namedIfAWhoVow(record, { narrationId = null, story = null } = {}) {
   try {
     if (!record?.id || record.kind !== "vow" || !vowAsksWho(record.subject?.name) || !String(record.truth ?? "").trim()) return record;
-    if (truthNamesSomeone(record.truth, namesOfTheStory(campaignState, record))) return record;
+    const met = { people: story?.people ?? [], exact: story?.drafts ?? [], notNames: [...(story?.notNames ?? []), String(record.subject?.name ?? "")] };
+    if (truthNamesSomeone(record.truth, met)) return record;
     const name = drawPersonName();
     if (!name) return record;
     const named = await updateSkeleton(record.id, r => ({ ...r, truth: truthWithWho(r.truth, name) }), { narrationId });
@@ -1049,13 +1021,14 @@ async function namedIfAWhoVow(record, { narrationId = null, campaignState = null
  *
  * @param {Object} sidecar — normaliseSidecar's
  * @param {{ campaignState: Object, narrationId?: string|null, moveId?: string|null, planRequests?: Object[],
- *           endingSubjectIds?: string[], relayed?: boolean }} ctx — `relayed`: the side-data crossed the
+ *           endingSubjectIds?: string[], relayed?: boolean, story?: Object|null }} ctx — `story`: who the story
+ *   has met (world/storyPeople.js — the caller's, so this module imports none of the scene's readers); `relayed`: the side-data crossed the
  *   relay from another client (narrator.js applyRelayedNarratorSidecar, which has already dropped its
  *   `reveals` and the `plans` it may not write — issue #362 D2): its `countdown` names no plan by id
  *   (applyCountdown, issue #364 RELAYED-COUNTDOWN-ABOUT-BY-ID)
  * @returns {Promise<{ filed: number, decided: number, questions: number, revealed: number }>}
  */
-export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [], endingSubjectIds = [], relayed = false } = {}) {
+export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [], endingSubjectIds = [], relayed = false, story = null } = {}) {
   const out = { filed: 0, decided: 0, questions: 0, revealed: 0 };
   if (!skeletonsEnabled() || !isCanonicalGM()) return out;
   const ending = new Set(Array.isArray(endingSubjectIds) ? endingSubjectIds : []);
@@ -1087,7 +1060,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
         : (plannedAs(plan?.sameAs, req.kind) ?? (plan?.subject ? activePlanAbout(plan.subject, req.kind) : null));
       if (planned) {
         const merged = await namedIfAWhoVow(await updateSkeleton(planned.id, r => withAlias(mergePlanInto(r, plan), plan.subject), { narrationId }),
-          { narrationId, campaignState });
+          { narrationId, story });
         if (merged) {
           out.decided += 1;
           reportSnapshotEvent("plan_decided");
@@ -1108,7 +1081,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
           const joined = await namedIfAWhoVow(await updateSkeleton(known.id, r => {
             const next = plan ? mergePlanInto(r, plan) : r;
             return link ? { ...next, subject: link } : next;
-          }, { narrationId }), { narrationId, campaignState });
+          }, { narrationId }), { narrationId, story });
           if (joined && plan) {
             out.decided += 1;
             reportSnapshotEvent("plan_decided");
@@ -1131,7 +1104,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       };
       const decided = plan ? applyPlanToSkeleton(normaliseSkeleton({ ...base, id: "pending" }), plan) : base;
       const record = req.subject && plan ? { ...decided, subject: { ...req.subject } } : decided;
-      const filed = await namedIfAWhoVow(await createSkeleton(record, { narrationId }), { narrationId, campaignState });
+      const filed = await namedIfAWhoVow(await createSkeleton(record, { narrationId }), { narrationId, story });
       if (filed) {
         out.filed += 1;
         await showRollsIfSet(filed);
@@ -1155,7 +1128,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
         continue;
       }
       const decided = await namedIfAWhoVow(await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId }),
-        { narrationId, campaignState });
+        { narrationId, story });
       if (decided) {
         out.decided += 1;
         reportSnapshotEvent("plan_decided");

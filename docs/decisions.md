@@ -28,6 +28,19 @@ rejected.
 
 Pinned by `tests/unit/judgeOnlyLogs.test.js` (round 10's a77 and a49, round 8's a17, every kept narration).
 
+### Change 3 — the instruction block is checked before it is sent; one reader says who the story has met (D3)
+
+- **The check** (`moves/contracts/blockCheck.js`) reads the TELL / NOT YET / NOT SO block against the module's own data where it is put together (`obligations.js mendResultLines`, at the end of `resultObligations`, for a move and for a Batch Mode round's entry):
+  - **R1:** a weak hit's [stakes] line asks for "the cost or complication the move outcome names" only when the outcome names one (`outcomeNamesACost`: a suffer move, a price, a meter taken, or words that say one — pinned over every move's weak hit). With no outcome data the line stands.
+  - **R2:** a hit whose effect waits on the player's spend (`SPEND_EFFECTS`: Repair's points) tells the work begun. [stakes] says the hit as stated is what the spend may buy, and a NOT YET [spend] line follows it.
+  - **R3:** a who-vow's plan handed over for its reveal names one culprit, someone the story has met (`revealFault`, over `skeletons.js peopleNamedIn`). One that names no one, more than one person, or a stranger is reported to the GM on a GM-only ◈ Narrative Review card (kind `plan`), once a plan; the narration tells the plan as written.
+- **D3:** R1 and R2 are mended in the block — what they need is in the move's data. R3 is reported: the check cannot choose the culprit.
+- **What it flags.** Over the kept instruction blocks of rounds 5 to 10, R1 and R2 flag five steps, each a Repair told as mended with the sheet unchanged, and nothing else: round 5's a60, round 6's a62, round 7's a56, round 9's a58, round 10's a57 (the scope knew four; round 5's is the same fault — "Your supply of sealant runs lower than it should"). R3 flags round 10's a75 (the foreman and the appended Talia Tolari) and round 8's (Dalen Voss, whom the story had not met).
+- **One reader of "met"** (`world/storyPeople.js storyPeople`): the recorded connections, the pending drafts (each matched only whole) and the names that are no one's. The oath's DECIDE NOW, `strangersOfWhoPlans`, `namedIfAWhoVow` and R3 all read it; `narrator.js storyPeopleOf` and `secrets.js namesOfTheStory` are deleted. `secrets.js` is handed the story by `applyPlanSideData`'s `story` rather than importing the reader: its import would close a cycle (whereabouts → sceneLifecycle → entityExtractor → secrets). `truthNamesSomeone` now takes the drafts as `strangerNamedIn` does. On round 10's truth with the draft "Foreman" the three now agree: the culprit is met, so no name is appended and no stranger line is owed.
+- **Rejected:** fixing the Repair stakes alone. The fault was a clause that asks for a cost whatever the outcome says; a check over the data finds every move it fits.
+
+Pinned by `tests/unit/instructionBlockChecked.test.js` (the kept blocks of rounds 5–10, the mend, the cost table, R3, the readers) and `tests/unit/planRevealNoted.test.js` (R3's note through the real build of a narration's extras).
+
 ---
 
 ## Issue #399: the judge, reworked (2026-11-27)

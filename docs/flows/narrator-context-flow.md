@@ -1389,6 +1389,10 @@ measure — [cost], [fight], [offer], [premise], [price], [state]
 with it (`applyNarratorSidecar` ctx `obligations` → `runConsistencyCheck`,
 kind `obligation`), each in its judge sentence, and no other line (issue
 #399 D10); a finding on one is logged and posts no card (issue #402, change 5).
+**Issue #402, change 3 — the block checked before it is sent** (`moves/contracts/blockCheck.js`; `obligations.js mendResultLines`, run where `resultObligations` puts a move's or a round entry's lines together). Every other check reads the narrator's output; this one reads its instructions against the module's own data, and mends what is certain (D3):
+- **R1:** a weak hit's [stakes] line asks for "the cost or complication the move outcome names" only when the outcome names one (`outcomeNamesACost`: a suffer move, a price, a meter taken, or words that say one). Otherwise it says the outcome names none, and none is added.
+- **R2:** a hit whose effect waits on the player's spend (`SPEND_EFFECTS`: Repair's points, spent on the card after its roll) tells the work begun: [stakes] says the hit as stated is what the spend may buy, and a NOT YET [spend] line follows it. Over the kept rounds 5 to 10, R1 and R2 flag five Repair steps, all told as mended with the sheet unchanged, and nothing else.
+- **R3** (reported, not mended): a who-vow's plan handed over for its reveal names one culprit the story has met (`revealFault`; vow-flow.md).
 **After round 8** (issue #396; decisions.md → "After the eighth live round"):
 - **certain [quote]:** a quoted sentence of six words or more that an earlier
   narration of the session gave. `proseVariety.js linesAlreadySaid` reads every

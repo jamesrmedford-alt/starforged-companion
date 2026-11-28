@@ -525,6 +525,33 @@ function normaliseKind(v) {
 }
 
 /**
+ * The GM's note on a plan this beat reveals that does not name one person the
+ * story has met (issue #402, change 3a's R3; D3: reported, not mended — the
+ * block check cannot choose the culprit): a ◈ Narrative Review card naming the
+ * vow and who its plan names, with the remedy — the plan is the GM's, in the
+ * Secrets panel. The narration tells the plan as it is written. Posted by the
+ * narrator as it builds the beat's instructions (narrator.js
+ * noteRevealFaults), on the canonical GM. The Contradiction Notifications
+ * setting governs it, as every review card.
+ *
+ * @param {{ why: string, named: Array<{ name: string, met: boolean }> }} fault — blockCheck.js revealFault
+ * @param {Object} plan — the plan (skeletons.js normaliseSkeleton)
+ * @param {Object} campaignState
+ * @returns {Promise<number>} the cards posted
+ */
+export async function postPlanRevealNote(fault, plan, campaignState) {
+  if (!fault || !plan?.subject || !campaignState) return 0;
+  const named = (fault.named ?? []).map(n => (n.met ? n.name : `${n.name}, whom the story has not met`)).join('; ');
+  const out = await applyStateTransition({
+    entryType: 'factContinuity', change: 'contradicted', kind: 'plan',
+    name: plan.subject.name ?? 'a vow', subjectLabel: plan.subject.name ?? 'a vow',
+    summary: `this beat fulfils the vow, and its plan ${fault.why}${named ? ` (${named})` : ''}. The narration tells the plan as it is written.`,
+    recorded: '', evidence: '', truthId: null, matchedEntityIds: [], narrationId: null,
+  }, campaignState).catch(err => { console.warn(`${MODULE_ID} | consistencyCheck: a plan's reveal note failed:`, err?.message ?? err); return null; });
+  return out && out.posted !== false ? 1 : 0;
+}
+
+/**
  * The GM's note on a narration that still breaks a line after its one re-ask
  * (issue #399's audit N16: `stillBroken` reached only telemetry): a ◈
  * Narrative Review card a line, naming it and quoting the narration, with the
