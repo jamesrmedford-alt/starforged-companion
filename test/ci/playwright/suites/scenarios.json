@@ -8,7 +8,7 @@
     "usd": 1.5
   },
   "total": {
-    "usd": 9
+    "usd": 12
   },
   "scenarios": [
     "scenario-fight",
@@ -16,7 +16,9 @@
     "scenario-vow",
     "scenario-recovery",
     "scenario-expedition",
-    "scenario-scene-answer"
+    "scenario-scene-answer",
+    "scenario-repair",
+    "scenario-break"
   ],
   "toAdd": [
     {

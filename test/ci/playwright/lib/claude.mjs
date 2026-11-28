@@ -119,6 +119,47 @@ export function parseRequest(bodyText) {
   return { model: body.model ?? null, maxTokens: body.max_tokens ?? null, system, user };
 }
 
+/**
+ * A prompt's text as its sections — what comes before its first `## `
+ * heading, then each heading with the lines under it — for a recording to
+ * keep each once (issue #402, change 6: a kept run keeps its requests'
+ * system prompts; a replay kept a call's user turn alone, so round 10's
+ * review could not read back what a prompt said). Joined with "\n" they are
+ * the text again. Pure.
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function splitSections(text) {
+  const out = [];
+  let section = [];
+  for (const line of String(text ?? "").split("\n")) {
+    if (/^##\s+\S/.test(line) && section.length) { out.push(section.join("\n")); section = []; }
+    section.push(line);
+  }
+  if (section.length) out.push(section.join("\n"));
+  return out.filter((t, i) => i > 0 || t !== "");
+}
+
+/** A section's id in a recording's store of system-prompt text: its own hash. */
+export function sectionId(text) {
+  return createHash("sha256").update(String(text ?? "")).digest("hex").slice(0, 16);
+}
+
+/**
+ * A recorded exchange's system prompt, put back together from its
+ * recording's store (`systemSections`, by the exchange's `system` ids) — ''
+ * for one recorded before prompts were kept. Pure.
+ *
+ * @param {{ systemSections?: Object<string, string> }|null} recording
+ * @param {{ system?: string[] }|null} exchange
+ * @returns {string}
+ */
+export function systemPromptOf(recording, exchange) {
+  const store = recording?.systemSections ?? {};
+  return Array.isArray(exchange?.system) ? exchange.system.map(id => store[id] ?? "").join("\n") : "";
+}
+
 /** The headings of a prompt's `## ` sections, in order (the !narrator debug split). */
 export function sectionHeadings(text) {
   return String(text ?? "")
@@ -347,6 +388,8 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
   const exchanges = Array.isArray(recording?.exchanges) ? recording.exchanges : [];
   const used      = new Set();
   const recorded  = [];
+  // Each system-prompt section once, by its id (issue #402, change 6).
+  const systemSections = new Map();
   const requests  = [];
   const warnings  = [];
   let step         = SETUP_STEP;
@@ -437,12 +480,19 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
         settle(data.usage ?? null);
         const ids = idNames(`${live.system}\n${live.user}`);
         const sections = sectionHeadings(live.system);
+        // The prompt it was sent, each section's text kept once (change 6).
+        const system = splitSections(live.system).map((text) => {
+          const id = sectionId(text);
+          systemSections.set(id, text);
+          return id;
+        });
         recorded.push({
           step:        entry.step,
           kind:        entry.kind,
           model:       live.model,
           sections,
           fingerprint: promptFingerprint(sections),
+          system,
           user:        live.user,
           response: {
             model:       data.model ?? live.model,
@@ -615,6 +665,8 @@ export function createClaudeHarness({ mode, recording = null, apiKey = null, str
           runner,
         },
         exchanges:  recorded,
+        // The system prompts' text, each section once (issue #402, change 6): systemPromptOf.
+        systemSections: Object.fromEntries(systemSections),
       };
     },
   };

@@ -160,6 +160,25 @@ describe('on the table: the milestone shows the clue; a missed fulfilment plays 
     expect(planNow(filed.id).clues[1]).toMatchObject({ id: 'c2', revealed: true });
   }, 60_000);
 
+  it('a milestone pressed from a card names no vow: beside an open background vow, the one vow with a plan is the one it serves', async () => {
+    // The vow scenario's rehearsal (and round 10's a72): Mira's background vow is open too, and the card's milestone names none.
+    const background = { id: 'vow-bg', type: 'progress', name: 'Find the lost colony ship Verity\'s Hope', flags: { [MODULE_ID]: { vowId: 'vid-bg' } },
+      system: { subtype: 'vow', rank: 'epic', current: 0, completed: false } };
+    table.actors.get('pc-kira').items.contents.push(background);
+    const filed = await filePlan();
+    const { narrateResolution } = await gmOf(table).import('../../src/narration/narrator.js');
+    const pressed = () => onGm(table, () => narrateResolution({ _id: `res-${Math.random().toString(36).slice(2, 8)}`, moveId: 'reach_a_milestone',
+      moveName: 'Reach a Milestone', outcome: null, outcomeLabel: null, playerNarration: '', loremasterContext: '[MOVE: Reach a Milestone]', oracleSeeds: null },
+    foundry.utils.deepClone(game.settings.get(MODULE_ID, 'campaignState')), { speakerActorId: 'pc-kira' }));
+    await pressed();
+    expect(narrationCallsOf(table).at(-1).userText).toContain(`"${A3.clues[0]}"`);
+    expect(planNow(filed.id).clues[0].revealed).toBe(true);
+    // Both vows planned, and none named: which one the headway serves is the picker's, after — no clue is told.
+    await filePlan({ subject: { type: 'vow', id: 'vid-bg', name: background.name } });
+    await pressed();
+    expect(narrationCallsOf(table).at(-1).userText).not.toContain('[clue]');
+  }, 60_000);
+
   it('the X-Card on the milestone\'s narration takes its clue back', async () => {
     const filed = await filePlan();
     await milestone();

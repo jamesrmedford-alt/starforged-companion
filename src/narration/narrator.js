@@ -7724,17 +7724,24 @@ function vowPlanOwedFor(resolution, { actorId = null, moveTarget = null, campaig
     const missed = moveId === 'fulfill_your_vow' && resolution?.outcome === 'miss';
     if ((moveId !== 'reach_a_milestone' && !missed) || !skeletonsEnabled() || !isCanonicalGM()) return none;
     const target = moveTarget ?? resolution?.moveTarget ?? null;
+    const plans = listSkeletons().filter(r => r?.kind === 'vow' && r.status === 'active');
+    const planOf = (v) => plans.find(r => (v.vowId && r.subject?.id === v.vowId) || sameSubjectName(r.subject?.name, v.name)) ?? null;
     let vow = null;
     if (moveId === 'reach_a_milestone') {
       const actor = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
-      vow = actor ? selectMilestoneVow(readVows(actor), target) : null;
+      const vows = actor ? readVows(actor) : [];
+      // A milestone pressed from a card names no vow, and with a background
+      // vow open beside the quest's the move's picker asks after this
+      // narration (round 10's a72; the vow scenario's rehearsal): the one open
+      // vow with a plan is the one it serves.
+      const planned = vows.filter(v => !v.completed && planOf(v));
+      vow = selectMilestoneVow(vows, target) ?? (planned.length === 1 ? planned[0] : null);
     } else {
       const vows = (getPlayerActors() ?? []).flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
       vow = selectFulfilVow(vows, target, { rollerActorId: actorId }).vow ?? null;
     }
     if (!vow) return none;
-    const plan = listSkeletons().find(r => r?.kind === 'vow' && r.status === 'active'
-      && ((vow.vowId && r.subject?.id === vow.vowId) || sameSubjectName(r.subject?.name, vow.name))) ?? null;
+    const plan = planOf(vow);
     if (!plan) return none;
     const stranger = strangersOfWhoPlans([plan], storyPeople(campaignState))[plan.id] ?? null;
     return { plan, ...vowPlanOwed(plan, { moveId, outcome: resolution?.outcome ?? null, stranger }) };

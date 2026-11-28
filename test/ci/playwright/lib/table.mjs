@@ -415,6 +415,8 @@ export function readCards(gm) {
       if (f.forgeABondCard) card.forged = pick(f, ["connectionName", "legacyTicks"]);
       if (f.reachMilestoneCard) card.milestone = true;
       if (f.oracleCommandCard) card.oracle = { answer: f.oracleMemory?.answer ?? null, question: f.oracleMemory?.question ?? null };
+      // A Repair card's points, and whether they are spent (issue #402, change 6: scenario-repair's spend).
+      if (f.repairPoints) card.repair = { spent: f.repairSpent === true };
       if (f.recapCard) card.recap = pick(f, ["recapType", "sessionNumber", "recapEmpty"]);
       if (f.draftEntityCard) card.drafts = (f.drafts ?? []).map(d => pick(d, ["name", "type", "status", "index"]));
       if (f.xcardCard || f.type === "xcard") card.xcard = true;

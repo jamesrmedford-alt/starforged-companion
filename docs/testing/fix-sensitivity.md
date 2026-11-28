@@ -1,4 +1,4 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) #342 (with its open items), #345, #347, #362, #344, #364 and the three rounds of open items found while fixing #364, #373 (slice 0)
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) #342 (with its open items), #345, #347, #362, #344, #364 and the three rounds of open items found while fixing #364, #373 (slice 0), #402 (issue #402's six changes)
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
@@ -371,6 +371,9 @@ node scripts/fix-sensitivity.mjs d87125d --md details.md
 node scripts/fix-sensitivity.mjs 5ee20522 8c6f1a11 \
   --inject scripts/defects/seq-vow-deepen-bonded-marks-track.patch \
   --inject scripts/defects/seq-bonded-develop-rolls-without-rank.patch --md details.md
+
+# issue #402 — the six changes, in their five commits
+node scripts/fix-sensitivity.mjs fef7d370 c4424152 7f126d97 8ffa6929 22347f3b --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -1803,11 +1806,23 @@ SITE-LADDER-WHOLE-WORD-FIRST-MATCH and SHIP-SEED-SENTENCE-INITIAL-CAPITAL.
 | the name note in a call's user message (#377 item 1) | c5d804e2 | revert | 1 — `nameChangeNotedInUserMessage.test.js` (the player names her by the old surname a session after the rename) |
 | FIGHT-COMMIT-CARD-AFTER-THE-ROLL, SHEET-MOVE-OFFERED-NOTHING, NAMED-MOVE-READ-AS-ANOTHER, NAME-CHANGE-TOLD-AS-A-STORY | a8699c8f | revert | 6 — the card after its roll and its label (`fightThresholdCardFollowsItsRoll`), the pacing reader's two rules (`classifierOffersSheetMovesAndNamedMoves`), the interpreter's connections line (`interpreterContext`), the note's table-not-story sentence (`nameChangesReachThePrompt`) |
 
+### Issue #402 — what the narrator is given and what the record keeps
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| JUDGE-WRONG-IN-ROUND-9, JUDGE-UNSAID-ON-AN-NPC-LINE, REDRAFT-NARRATES-ITS-FIX, REVIEW-CARD-ON-A-RECALLED-PLACE (change 5: the judge only logs) | fef7d370 | revert | 15 — round 10's a77 posts its first draft and a49 no card (`judgeOnlyLogs.test.js`), the drafting check, the verdict rows by line |
+| EFFECT-TOLD-BEFORE-APPLIED, VOW-WON-BY-A-STRANGER (change 3: the block checked, one reader of who was met) | c4424152 | revert | 1 — R3 reports round 10's plan once (`planRevealNoted.test.js`); `instructionBlockChecked.test.js` fails to load without its module (`blockCheck.js`, R1–R3 and the one reader), so its 11 tests depend on the fix's code |
+| ORACLE-YES-LEFT-BEHIND, REVEALED-PLAN-TRUTH-AS-COLOUR, NPC-PRONOUN-NOT-KEPT, UNNAMED-FIGURE-PRONOUN-DRIFT (changes 1a, 1b, 2) | 7f126d97 | revert | 31 — a43's answer bound and in a47's block (`oracleAnswerFiledAsDice`), a75's reveal filing what it told (`revealFilesWhatWasTold` and the reveal tests re-pinned), the clerk's pronouns through the stop (`pronounsCarriedWithTheFrame`), the measured check (`pronounCheckMeasured`) |
+| RESULT-FLOOR-BY-SHARED-WORD (D1: a `result` tag binds nothing; the code files the delivered stakes line) | 8ffa6929 | revert | 11 — the delivered stakes line filed on the table, a round's and a reply with no block (`rolledMoveResultBinds.test.js`), the parser's tag, the ground's shape, the ship fixtures re-based on the line |
+| PLANS-NOT-PLAYED-TOWARD, VOW-WON-BY-A-STRANGER (change 4: a milestone's clue, a missed fulfilment's step, the oath asked again, no drawn name) | 22347f3b | revert | 12 — a72's [clue] and its mark, the X-Card taking it back, the [culprit], the [escalation] (`plansPlayedToward.test.js`), no name drawn (`whoVowNamesSomeone`) and the retried narration's dice facts |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
 pass either way by design. The script lists every new test that passed both
 ways; each was read and is a control:
+
+*Issue #402:* 23 new tests pass both ways. Four read a kept run as setup (round 10's a26 and a53 prose, its a75 reply, its oath's plan, its a49 answer); two pin the labelled tag read's data, which no `src/` change touches (`tagReadCounts`); nine are named `control: …` or keep a case that must keep working (a met culprit is handed over with no note, a beat that fulfils no vow reads no plan, the next session's first scene at another place is given no one, the X-Card's undo of a reveal, a revealed truth filed once and a GM's confirm making it canon, another move telling no clue, a plan that names someone asked once, a named truth filed as it is, colour staying colour on the ship). The other eight are D1's rules that held before it in another form — a `line` tag binding by its words, `rolledMove`, a hit's stakes line, a Repair hit and a move with no roll deciding nothing — and two that passed only because their grounds claimed no roll: those two were strengthened after the run to the rolled ground #388 #5 built (`rolledMoveResultBinds` a71/a37/a11, `provenanceFloor`'s Compel), and fail on the old code.
 
 *Issue #373 slice 0:* 9 new tests pass both ways. For the bonded-vow fix,
 two are named `control: …` (a connection not yet bonded is deepened as
@@ -19334,3 +19349,170 @@ Test files: `tests/unit/classifierOffersSheetMovesAndNamedMoves.test.js`, `tests
 - New test passing with and without the fix (a control?): tests/unit/exploreLongHaul.test.js › each beat's check on the world a recovery beat is done by any recover move's hit, not the first roll's (the second live run: Heal missed, Resupply hit)
 - New test passing with and without the fix (a control?): tests/unit/exploreLongHaul.test.js › the player's two new actions a kept run's press of a button the module has since renamed finds it by its new name (LABEL_RENAMES)
 - New test passing with and without the fix (a control?): tests/unit/interpreterContext.test.js › buildContextSummary — the roller's connections and their relationship tracks control: a roller with no connections adds no line
+
+### fef7d370 — feat: the judge only logs (issue #402, change 5)
+
+Test files: `tests/unit/auditObligationKind.test.js`, `tests/unit/judgeMeasure.test.js`, `tests/unit/judgeOnlyLogs.test.js`, `tests/unit/judgeShownTheJudgedView.test.js`, `tests/unit/judgeVerdictsByLine.test.js`, `tests/unit/narrationChecks.test.js`, `tests/unit/roundAndOracleNarrationsChecked.test.js`, `tests/unit/stillBrokenNote.test.js`. Source restored: 5 file(s).
+
+- With the fix: 95 passed, 0 failed.
+- Without it: 21 failed (19 new; 6 only for a missing export); 74 still pass (1 new).
+- Verdict: **sensitive** — 15 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/auditObligationKind.test.js › the audit reads a narration's obligations a line of a kind the audit's measure passed is sent in its judge sentence, and a high-confidence breach of it is logged and posts no card (issue #402, change 5) | AssertionError: expected true to be false // Object.is equality |
+| (API) tests/unit/judgeMeasure.test.js › the kept measure (judges-live-20261127-162743) the replay asks exactly what the kept run answered, and scores as it did | TypeError: (0 , judgeIsAsked) is not a function |
+| (new) (API) tests/unit/judgeMeasure.test.js › the kept measure (judges-live-20261127-162743) a pass is asked about a kind only where the pooled runs pass it there (D7, D10) — and no kind acts (issue #402, change 5) | TypeError: judgeIsAsked is not a function |
+| (new) (API) tests/unit/judgeMeasure.test.js › the kept measure (judges-live-20261127-162743) a pass is asked about no other kind (D10): the kept run asked the judge and the audit only those | TypeError: judgeIsAsked is not a function |
+| (new) (API) tests/unit/judgeOnlyLogs.test.js › no judge verdict acts (D5): each pass is asked about the measure's kinds, and logs no kind acts in either pass; the kinds asked are the measure's, and the judge-class kinds are the judge's | TypeError: judgeIsAsked is not a function |
+| (new) tests/unit/judgeOnlyLogs.test.js › no judge verdict acts (D5): each pass is asked about the measure's kinds, and logs round 10's a77: the verdict on Okoro's line is logged, and the first draft — which was right — posts | AssertionError: expected "spy" to be called 1 times, but got 2 times |
+| (new) tests/unit/judgeOnlyLogs.test.js › the narration speaking of its own drafting is a certain [apparatus] breach round 10's a77 redraft — "The draft says nothing in your voice. The break is…" — would not post: it adds a certain breach | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/judgeOnlyLogs.test.js › the narration speaking of its own drafting is a certain [apparatus] breach round 8's a17 opening, which began with the model's notes on its material, is flagged too | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/judgeOnlyLogs.test.js › the narration speaking of its own drafting is a certain [apparatus] breach of every narration the kept runs and recordings hold, it flags those two alone | AssertionError: expected [] to deeply equal [ …(2) ] |
+| (new) tests/unit/judgeOnlyLogs.test.js › the narration speaking of its own drafting is a certain [apparatus] breach the re-ask block ends by asking for the narration alone | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/judgeOnlyLogs.test.js › a scene question's answer is not held to the characters' place — round 10's a49 its audit is sent no place, and the recorded place finding posts no card — dropped, as no place was given | AssertionError: expected 'You are auditing an Ironsworn: Starfo…' not to contain 'Place:    Bleakhold Station — where t…' |
+| (new) tests/unit/judgeOnlyLogs.test.js › a scene question's answer is not held to the characters' place — round 10's a49 the narrator tells the audit an @scene answer is a scene answer | AssertionError: expected undefined to be 'scene-answer' // Object.is equality |
+| (new) tests/unit/judgeShownTheJudgedView.test.js › D1 — the one judged view is the narration without its fact block and its closing offer line, and nothing else; and says whether it is held to the place | AssertionError: expected { …(2) } to deeply equal { …(2) } |
+| (new) (API) tests/unit/judgeShownTheJudgedView.test.js › the audit is sent the judged view, and no line the code already held the narration to (D1, D2) built for each narration round 9 gave lines: no closing offer line, no certain-class line, no line of a kind the audit is not asked about (D10) | TypeError: judgeIsAsked is not a function |
+| tests/unit/judgeVerdictsByLine.test.js › the rows a narration's check writes one row a verdict, each with the draft it describes; the judge's summary row holds no copy of its verdicts | AssertionError: expected [ …(2) ] to deeply equal [ …(2) ] |
+| (new) tests/unit/judgeVerdictsByLine.test.js › the audit's N9 and N10: which draft posts, and the one judge call on it N10: a narration the code re-asked has the draft that posts judged — once, its verdict logged, with no second re-ask | AssertionError: expected [ { tag: 'apparatus', …(4) }, …(1) ] to deep equally contain ObjectContaining{…} |
+| (new) tests/unit/judgeVerdictsByLine.test.js › the audit's N9 and N10: which draft posts, and the one judge call on it D9: one judge call a narration — a draft the code passed is judged once, and its verdict re-asks nothing | AssertionError: expected { …(4) } to match object { …(2) } |
+| (new) (API) tests/unit/judgeVerdictsByLine.test.js › D4 — the class a row declares is the class the code holds it to D10: a pass is asked about a kind only where the measure passed it — and every such kind has a judge sentence; none acts | TypeError: judgeIsAsked is not a function |
+| (new) tests/unit/narrationChecks.test.js › narrateKeepingObligations a violating draft, judged on a kind that passed the measure: its verdict is logged, and the draft posts (issue #402, change 5) | AssertionError: expected "spy" to be called 1 times, but got 2 times |
+| (new) tests/unit/roundAndOracleNarrationsChecked.test.js › the oracle follow-up's narration is checked a NO told as a yes: the judge says so, and it is logged — the narration posts as written (issue #402, change 5) | AssertionError: expected [ …(3) ] to deeply equal [ …(2) ] |
+| (new) tests/unit/stillBrokenNote.test.js › N16 — the GM is told of a narration still broken after its re-ask the audit posts no second card for a kind the note names — nor a first: an obligation finding is logged alone (issue #402, change 5) | AssertionError: expected { subject: '[cost]', …(7) } to match object { obligationKind: 'cost', …(1) } |
+
+- New test passing with and without the fix (a control?): tests/unit/judgeOnlyLogs.test.js › a scene question's answer is not held to the characters' place — round 10's a49 the recorded answer and the audit's finding on it, as round 10 posted them
+
+### c4424152 — feat: check the instruction block before it is sent; one reader of who was met (issue #402, change 3)
+
+Test files: `tests/unit/instructionBlockChecked.test.js`, `tests/unit/planRevealNoted.test.js`. Source restored: 9 file(s).
+
+- With the fix: 14 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export), 1 file(s) failed to load; 2 still pass (2 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/planRevealNoted.test.js › a fulfilment's plan, checked before it is handed over (R3) round 10's plan — the foreman, and an appended stranger — is reported to the GM, once | AssertionError: expected [] to have a length of 1 but got +0 |
+
+- Failed to load: `tests/unit/instructionBlockChecked.test.js` — Cannot find module '../../src/moves/contracts/blockCheck.js' imported from '<tmp>/fix-sensitivity-c442415
+- New test passing with and without the fix (a control?): tests/unit/planRevealNoted.test.js › a fulfilment's plan, checked before it is handed over (R3) the plan as the oath decided it — the foreman alone, met — is handed over with no note
+- New test passing with and without the fix (a control?): tests/unit/planRevealNoted.test.js › a fulfilment's plan, checked before it is handed over (R3) a beat that fulfils no vow reads no plan
+
+### 7f126d97 — feat: the code files what the dice decided; a reveal files what was told; pronouns ride on the frame (issue #402, changes 1 and 2)
+
+Test files: `tests/unit/chatCommandRouting.test.js`, `tests/unit/narrationCachedStoreWrites.test.js`, `tests/unit/narrativeSkeletonReveals.test.js`, `tests/unit/narratorDetailPersistence.test.js`, `tests/unit/oracleAnswerFiledAsDice.test.js`, `tests/unit/planClueAndTruthTakenBackUnderLaterRewrite.test.js`, `tests/unit/plansCloseWithTheirSubject.test.js`, `tests/unit/pronounCheckMeasured.test.js`, `tests/unit/pronounsCarriedWithTheFrame.test.js`, `tests/unit/provenanceFloor.test.js`, `tests/unit/revealFilesWhatWasTold.test.js`, `tests/unit/revealedTruthLedgerFollowsCorrection.test.js`, `tests/unit/revealedTruthLoreOnce.test.js`, `tests/unit/supersededRevealLoreFollowsTruth.test.js`, `tests/unit/tagReadCounts.test.js`, `tests/unit/vowFulfilmentTellsItsTruth.test.js`, `tests/unit/xcardBeforeRevealWriteWithholdsTruth.test.js`, `tests/unit/xcardOnUpgradeWithholdsSupersededReveal.test.js`, `tests/unit/xcardWithholdsRevealedTruth.test.js`. Source restored: 16 file(s).
+
+- With the fix: 176 passed, 0 failed.
+- Without it: 33 failed (24 new; 2 only for a missing export), 1 file(s) failed to load; 141 still pass (9 new).
+- Verdict: **sensitive** — 31 assertion(s) fail without the fix; 9 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/chatCommandRouting.test.js › AUTHOR policy — runs once, on the client that typed it !oracle yes: one card and one oracle memory, narrated once — by the keyed GM, on its key | AssertionError: expected [ [ 'gm-1', 'sk-ant-gina', …(1) ] ] to deeply equal [ …(2) ] |
+| tests/unit/narrationCachedStoreWrites.test.js › issue #329 X09 — a narration never applies its facts onto the cached setting control: without a refusal the oracle follow-up's facts land in the world | AssertionError: expected [] to deeply equal [ [ …(2) ] ] |
+| (new) tests/unit/narrativeSkeletonReveals.test.js › issue #353 Phase 2 — what a beat shows of a plan is recorded the truth revealed is filed as Lore pending the GM — no scene fact of its own — and the oracle rolls behind it are shown | AssertionError: the ledger holds no fact the prose did not give: expected { id: 'tr-69d866ba', …(19) } to be falsy |
+| tests/unit/narratorDetailPersistence.test.js › a keyless-GM table keeps what a player's narration records (D2) an oracle follow-up on the player's own key: the truth it records reaches the ledger through the GM | AssertionError: expected [] to match object [ { subject: { …(2) }, …(2) } ] |
+| (new) (API) tests/unit/oracleAnswerFiledAsDice.test.js › round 10's a43: an answered oracle question is filed as the dice decided it (issue #402, change 1a) reads the kept run (setup): the reply's own fact was the survivor, tagged result | TypeError: yesNoAnswerOfCard is not a function |
+| (new) tests/unit/oracleAnswerFiledAsDice.test.js › round 10's a43: an answered oracle question is filed as the dice decided it (issue #402, change 1a) the question and its answer bind, in those words, stamped with the narration that told them | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/oracleAnswerFiledAsDice.test.js › round 10's a43: an answered oracle question is filed as the dice decided it (issue #402, change 1a) a47: the next session's opening is given it in what binds | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/oracleAnswerFiledAsDice.test.js › round 10's a43: an answered oracle question is filed as the dice decided it (issue #402, change 1a) the X-Card on the follow-up takes it with the narration | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) (API) tests/unit/oracleAnswerFiledAsDice.test.js › round 10's a43: an answered oracle question is filed as the dice decided it (issue #402, change 1a) control: a table oracle and a yes/no asked with no question file nothing | TypeError: yesNoAnswerOfCard is not a function |
+| (new) tests/unit/planClueAndTruthTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-CLUE-TRUTH-NO-MARK — a clue and a truth go back with the narration that showed them, whatever was written since a truth revealed by a superseded narration, under a later narration's version: unrevealed, its rolls unshown, its Lore gone | AssertionError: no scene fact of its own: expected { id: 'tr-43bf1e79', …(19) } to be undefined |
+| tests/unit/planClueAndTruthTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-CLUE-TRUTH-NO-MARK — a clue and a truth go back with the narration that showed them, whatever was written since the X-Card on a revealing narration after a GM edited the plan: the reveal is undone as it is without the edit, and the edit stands | AssertionError: expected { id: 'tr-cd5db5eb', …(19) } to be undefined |
+| tests/unit/planClueAndTruthTakenBackUnderLaterRewrite.test.js › issue #364 PLAN-CLUE-TRUTH-NO-MARK — a clue and a truth go back with the narration that showed them, whatever was written since …and with the edit: the same, under the GM's version | AssertionError: and it stated no scene fact: expected { id: 'tr-8b9853f9', …(19) } to be undefined |
+| tests/unit/plansCloseWithTheirSubject.test.js › issue #362 D4 — an expedition's plan closes with its track the track completed: the plan is resolved — and the Finish an Expedition narration still reveals its end | AssertionError: no scene fact the prose did not give: expected [ Array(1) ] to not include 'A drowned Precursor vault waits at th…' |
+| (new) tests/unit/pronounsCarriedWithTheFrame.test.js › round 10: a person's pronouns are carried with the frame (issue #402, change 2) an entry's mark is kept apart from its name, and the first set given stands for the scene | AssertionError: expected [ 'Mira Kestrel', …(1) ] to deeply equal [ 'Mira Kestrel', 'customs clerk' ] |
+| (new) tests/unit/pronounsCarriedWithTheFrame.test.js › round 10: a person's pronouns are carried with the frame (issue #402, change 2) a47: the opening's stop reads "customs clerk (she/her)", and its scene is given her | AssertionError: expected 'OPENING VIGNETTE — begin-session.\n\n…' to contain '  With them at the end: customs clerk…' |
+| (new) tests/unit/pronounsCarriedWithTheFrame.test.js › round 10: a person's pronouns are carried with the frame (issue #402, change 2) a53: the next session's first scene, at that place, holds her — and a53's request says so | TypeError: Cannot read properties of null (reading 'present') |
+| (new) tests/unit/pronounsCarriedWithTheFrame.test.js › round 10: a person's pronouns are carried with the frame (issue #402, change 2) the audit's recorded identities hold her; a recorded person's card wins over the frame's set | AssertionError: expected '  Tamsin Okoro — she/her' to contain '  customs clerk — she/her' |
+| (new) tests/unit/provenanceFloor.test.js › overhaul 2 §5.2 — the tag, through the parser and the ledger a reveal adds no fact of its own: a truth marked with a plan rests on its words, like any other (issue #402, change 1b) | AssertionError: expected [ [ …(3) ], [ …(3) ] ] to deeply equal [ [ …(3) ], [ …(3) ] ] |
+| (new) tests/unit/revealFilesWhatWasTold.test.js › round 10's a75: the reveal files what the narration told (issue #402, change 1b) the beat files its own fact block; the plan is revealed, and no sentence the prose did not tell is filed as established | AssertionError: no scene fact the prose did not tell: expected [ Array(1) ] to deeply equal [] |
+| (new) tests/unit/revealedTruthLedgerFollowsCorrection.test.js › issue #362 AC13 / #402 1b — a truth corrected or decided and revealed in one beat control: a reveal with no correction files the plan's truth as Lore pending the GM, and no scene fact | AssertionError: expected [ Array(1) ] to not include 'The escort is a Keeper drone collecti…' |
+| (new) tests/unit/revealedTruthLedgerFollowsCorrection.test.js › issue #362 AC13 / #402 1b — a truth corrected or decided and revealed in one beat the lore holds the corrected truth; the scene holds only what the narration's block gave | AssertionError: expected [] to include 'The escort is a human pilot wearing a…' |
+| (new) tests/unit/revealedTruthLedgerFollowsCorrection.test.js › issue #362 AC13 / #402 1b — a truth corrected or decided and revealed in one beat a plan decided and revealed in the same beat is Lore pending the GM, and no scene fact | AssertionError: expected [] to include 'The escort is a human pilot wearing a…' |
+| (new) tests/unit/revealedTruthLedgerFollowsCorrection.test.js › issue #362 AC13 / #402 1b — a truth corrected or decided and revealed in one beat the lore carries the name the correction gave the subject, as the plan does | AssertionError: expected undefined to match object { title: 'Threat: Pilot Ossa', …(2) } |
+| (new) tests/unit/revealedTruthLoreOnce.test.js › issue #362 AC37 / #402 1b — a revealed truth is filed once, pending the GM the reveal files it as Lore pending the GM, marked with its plan — and as no ledger truth | AssertionError: no scene fact the prose did not give: expected [ { id: 'tr-f0c2d053', …(19) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/revealedTruthLoreOnce.test.js › issue #362 AC37 / #402 1b — a revealed truth is filed once, pending the GM after the scene ends, the lore still states it once — and still pending | AssertionError: expected true to be false // Object.is equality |
+| tests/unit/supersededRevealLoreFollowsTruth.test.js › issue #364 SUPERSEDED-REVEAL-LORE-STANDS — the real pipeline: the miss that revealed the truth is burned to a weak hit the burn un-reveals the truth, and the Lore entry its reveal filed goes with it — a later reveal files it once | AssertionError: pending the GM: not canon: expected [ { …(19) } ] to deeply equal [] |
+| (new) tests/unit/supersededRevealLoreFollowsTruth.test.js › issue #364 SUPERSEDED-REVEAL-LORE-STANDS — the real pipeline: the miss that revealed the truth is burned to a weak hit the burn's own re-narration reveals the truth again: one entry, the re-narration's | AssertionError: expected { title: 'Threat: the escort', …(18) } to match object { confirmed: false, …(2) } |
+| tests/unit/supersededRevealLoreFollowsTruth.test.js › issue #364 SUPERSEDED-REVEAL-LORE-STANDS — what the supersede takes, and what it leaves an entry of the same title from before the reveal is put back as it was | AssertionError: expected { title: 'Threat: the escort', …(18) } to match object { confirmed: false, …(2) } |
+| (new) tests/unit/supersededRevealLoreFollowsTruth.test.js › issue #364 SUPERSEDED-REVEAL-LORE-STANDS — what the supersede takes, and what it leaves a GM's rumour of the same title stands through the reveal: the narration's word does not overturn the GM's ruling (issue #330 D9) | AssertionError: expected { title: 'Threat: the escort', …(18) } to match object { confirmed: false, …(3) } |
+| (new) tests/unit/vowFulfilmentTellsItsTruth.test.js › VOW-FULFILLED-WITH-NOBODY-NAMED — a plan is not marked revealed by a narration that did not tell it (simulated table) a fulfilment that tells the truth reveals it: the plan, and Lore pending the GM — no scene fact of its own | AssertionError: expected [ Array(1) ] to not include 'The raiders are a coordinated crew wo…' |
+| tests/unit/xcardBeforeRevealWriteWithholdsTruth.test.js › issue #364 XCARD-BEFORE-REVEAL-WRITE — controls with no X-Card the same beat reveals the truth as before | AssertionError: expected [ { …(19) } ] to deeply equal [] |
+| (new) tests/unit/xcardWithholdsRevealedTruth.test.js › issue #364 XCARD-REVEAL-REREVEAL-NO-LORE — controls a truth never X-carded is revealed as before: the plan reads revealed, one Lore entry pending the GM, no scene fact of its own | AssertionError: pending the GM: expected [ { …(19) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/xcardWithholdsRevealedTruth.test.js › issue #364 XCARD-REVEAL-REREVEAL-NO-LORE — controls a GM's edit of the truth lifts the withholding: the next narration is given the new truth, and its reveal is recorded with one Lore entry | AssertionError: expected [ { id: 'tr-feb67bca', …(19) } ] to have a length of +0 but got 1 |
+
+- Failed to load: `tests/unit/pronounCheckMeasured.test.js` — Cannot find module '../../src/factContinuity/pronouns.js' imported from '<tmp>/fix-sensitivity-7f126d97-L
+- New test passing with and without the fix (a control?): tests/unit/narrativeSkeletonReveals.test.js › issue #353 Phase 2 — what a beat shows of a plan is recorded the X-Card on the revealing narration undoes the reveal and its lore
+- New test passing with and without the fix (a control?): tests/unit/pronounsCarriedWithTheFrame.test.js › round 10: a person's pronouns are carried with the frame (issue #402, change 2) reads the kept run (setup): a26's prose gives the clerk "she"; a53's gives "he"
+- New test passing with and without the fix (a control?): tests/unit/pronounsCarriedWithTheFrame.test.js › round 10: a person's pronouns are carried with the frame (issue #402, change 2) the next session's first scene at another place is given no one
+- New test passing with and without the fix (a control?): tests/unit/revealFilesWhatWasTold.test.js › round 10's a75: the reveal files what the narration told (issue #402, change 1b) reads the kept run (setup)
+- New test passing with and without the fix (a control?): tests/unit/revealedTruthLoreOnce.test.js › issue #362 AC37 / #402 1b — a revealed truth is filed once, pending the GM once too when the narration also states the revealed truth as a truth of its own
+- New test passing with and without the fix (a control?): tests/unit/revealedTruthLoreOnce.test.js › issue #362 AC37 / #402 1b — a revealed truth is filed once, pending the GM a GM's confirm from the review queue makes it canon
+- New test passing with and without the fix (a control?): tests/unit/revealedTruthLoreOnce.test.js › issue #362 AC37 / #402 1b — a revealed truth is filed once, pending the GM control: the beat's other truths are archived at the scene's end as before — a marker the model writes is ignored
+- New test passing with and without the fix (a control?): tests/unit/tagReadCounts.test.js › the tag read of rounds 5 to 10 (issue #402, change 1c) holds one labelled row for every tagged fact the kept runs recorded — 355
+- New test passing with and without the fix (a control?): tests/unit/tagReadCounts.test.js › the tag read of rounds 5 to 10 (issue #402, change 1c) gives the counts the decision quotes
+
+### 8ffa6929 — feat: what a rolled move decided is filed by the code; a result tag binds nothing
+
+Test files: `tests/unit/provenanceFloor.test.js`, `tests/unit/rolledMoveResultBinds.test.js`, `tests/unit/sceneQuestionIsThePlayers.test.js`, `tests/unit/shipPositionFlagMerge.test.js`, `tests/unit/shipRecordKeptAgainstTheNarration.test.js`, `tests/unit/shipSeedNamePartWithNoCapitalForm.test.js`, `tests/unit/shipSeedReadsAMultiWordNameWhole.test.js`, `tests/unit/shipSeedReadsOnToThePlace.test.js`, `tests/unit/xcardShipPosition.test.js`, `tests/unit/xcardShipTokenRestore.test.js`. Source restored: 6 file(s).
+
+- With the fix: 96 passed, 0 failed.
+- Without it: 11 failed (10 new; 0 only for a missing export); 85 still pass (7 new).
+- Verdict: **sensitive** — 11 assertion(s) fail without the fix; 7 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/provenanceFloor.test.js › overhaul 2 §5.2 — the tag, through the parser and the ledger "from" is "line", case and spaces aside; anything else — "result" too (issue #402, D1) — is colour | AssertionError: expected [ 'line', 'result', undefined, …(3) ] to deeply equal [ 'line', undefined, undefined, …(3) ] |
+| (new) tests/unit/rolledMoveResultBinds.test.js › a `result` tag binds nothing (issue #402, D1) the parser keeps no `result` tag: such a fact reads as untagged | AssertionError: expected [ 'result', 'line' ] to deeply equal [ undefined, 'line' ] |
+| (new) tests/unit/rolledMoveResultBinds.test.js › what a rolled move decided: the stakes line its outcome delivered (decidedOfMove) a miss delivers the miss only where the stated miss is the price paid | AssertionError: expected [ 'The crews clam up' ] to deeply equal [] |
+| (new) tests/unit/rolledMoveResultBinds.test.js › what a rolled move decided: the stakes line its outcome delivered (decidedOfMove) a move with no roll, or no stakes line, decided nothing — a64's Develop, a71's progress roll | AssertionError: expected [ 'Tamsin Okoro' ] to deeply equal [] |
+| (new) tests/unit/rolledMoveResultBinds.test.js › what a rolled move decided: the stakes line its outcome delivered (decidedOfMove) a ground is the beat's player words alone — a relayed one keeps nothing else | AssertionError: expected { line: 'x', decided: 'y', …(1) } to deeply equal { line: 'x' } |
+| (new) tests/unit/rolledMoveResultBinds.test.js › on the table: a narration files what its dice decided (narrator.js moveDiceFacts) a11: the hit's stakes line is the dice's, stamped with the narration; its own `result` fact is colour | AssertionError: expected [ { id: 'tr-40a218b1', …(18) } ] to deeply equal [ ObjectContaining{…} ] |
+| (new) tests/unit/rolledMoveResultBinds.test.js › on the table: a narration files what its dice decided (narrator.js moveDiceFacts) about the move's target when it has one | AssertionError: expected [] to deeply equal [ ObjectContaining{…} ] |
+| (new) tests/unit/rolledMoveResultBinds.test.js › on the table: a narration files what its dice decided (narrator.js moveDiceFacts) a miss files its stated price only where the miss is the price paid | AssertionError: expected [] to deeply equal [ Array(1) ] |
+| (new) tests/unit/rolledMoveResultBinds.test.js › on the table: a narration files what its dice decided (narrator.js moveDiceFacts) a reply with no fact block still files it; told twice, it is filed once | AssertionError: expected [] to deeply equal [ Array(1) ] |
+| (new) tests/unit/rolledMoveResultBinds.test.js › on the table: a narration files what its dice decided (narrator.js moveDiceFacts) a Batch Mode round files each entry's, with the entry's move | AssertionError: expected [] to deeply equal [ ObjectContaining{…} ] |
+| tests/unit/sceneQuestionIsThePlayers.test.js › overhaul 2 §7.2 — the scene's question is the player's the ground is the beat's player words, bounded | AssertionError: expected { …(3) } to deeply equal { Object (line) } |
+
+- New test passing with and without the fix (a control?): tests/unit/provenanceFloor.test.js › overhaul 2 §5.2 — the floor over the beat's own words a Compel hit's "agreed to hold the manifest", tagged result, is colour — the code files the stakes the hit delivered (issue #402, D1)
+- New test passing with and without the fix (a control?): tests/unit/rolledMoveResultBinds.test.js › a `result` tag binds nothing (issue #402, D1) a71's bond, a37's decisive action, a11's report and a44's answer are the narrator's colour
+- New test passing with and without the fix (a control?): tests/unit/rolledMoveResultBinds.test.js › a `result` tag binds nothing (issue #402, D1) a `line` tag still binds by the line's own words
+- New test passing with and without the fix (a control?): tests/unit/rolledMoveResultBinds.test.js › what a rolled move decided: the stakes line its outcome delivered (decidedOfMove) a strong or a weak hit delivers the hit stated before the roll
+- New test passing with and without the fix (a control?): tests/unit/rolledMoveResultBinds.test.js › what a rolled move decided: the stakes line its outcome delivered (decidedOfMove) rolledMove: an action or progress roll's outcome — strong, weak or miss — and nothing else
+- New test passing with and without the fix (a control?): tests/unit/rolledMoveResultBinds.test.js › on the table: a narration files what its dice decided (narrator.js moveDiceFacts) a Repair hit decides nothing until its points are spent; a move with no roll decides nothing
+- New test passing with and without the fix (a control?): tests/unit/shipRecordKeptAgainstTheNarration.test.js › the ship's record against her narration (issue #388 #2) a result tag — a rolled move's too (issue #402, D1) — or a line tag the line does not bear out, is colour too
+
+### 22347f3b — feat: a vow's plan is played toward; no name is drawn for a who-vow (issue #402, change 4)
+
+Test files: `tests/unit/instructionBlockChecked.test.js`, `tests/unit/judgeVerdictsByLine.test.js`, `tests/unit/plansPlayedToward.test.js`, `tests/unit/rolledMoveResultBinds.test.js`, `tests/unit/whoVowNamesSomeone.test.js`. Source restored: 8 file(s).
+
+- With the fix: 80 passed, 0 failed.
+- Without it: 16 failed (15 new; 4 only for a missing export); 64 still pass (4 new).
+- Verdict: **sensitive** — 12 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/judgeVerdictsByLine.test.js › D4 — the class a row declares is the class the code holds it to every certain-class kind has a check, and every floor-class kind a floor | AssertionError: expected [ 'chosen', 'chosen-since', …(2) ] to deeply equal [ 'chosen', 'chosen-since', …(5) ] |
+| (new) (API) tests/unit/plansPlayedToward.test.js › what a vow's plan owes a beat (skeletons.js vowPlanOwed) a72's milestone: the plan's first clue not yet shown, marked shown by the beat | TypeError: (0 , vowPlanOwed) is not a function |
+| (new) (API) tests/unit/plansPlayedToward.test.js › what a vow's plan owes a beat (skeletons.js vowPlanOwed) a culprit the story has not met enters by name on the milestone — not once the truth is out | TypeError: (0 , vowPlanOwed) is not a function |
+| (new) (API) tests/unit/plansPlayedToward.test.js › what a vow's plan owes a beat (skeletons.js vowPlanOwed) a missed fulfilment plays the next escalation step; a hit and any other move owe nothing | TypeError: (0 , vowPlanOwed) is not a function |
+| (new) (API) tests/unit/plansPlayedToward.test.js › what a vow's plan owes a beat (skeletons.js vowPlanOwed) nothing from a plan undecided, closed, withheld by the X-Card, or no vow's | TypeError: (0 , vowPlanOwed) is not a function |
+| (new) tests/unit/plansPlayedToward.test.js › the lines a narration must tell, and their floors a milestone's block: the headway, then the clue and the culprit, under TELL | AssertionError: expected [ 'milestone' ] to deeply equal [ 'milestone', 'clue', 'culprit' ] |
+| (new) tests/unit/plansPlayedToward.test.js › the lines a narration must tell, and their floors a missed fulfilment's block: the recommit stays the player's, and the step is told | AssertionError: expected [ Array(4) ] to deeply equal ArrayContaining{…} |
+| (new) tests/unit/plansPlayedToward.test.js › the lines a narration must tell, and their floors a beat that shows none of it is logged, never asked again | AssertionError: expected { reask: [], logged: [] } to deeply equal { reask: [], …(1) } |
+| (new) tests/unit/plansPlayedToward.test.js › on the table: the milestone shows the clue; a missed fulfilment plays the step; the oath asks for a name a72: the milestone's request tells the first clue; the clue is shown by that narration, and the next milestone tells the next | AssertionError: expected '## MOVE OUTCOME\n\n[MOVE: Reach a Mil…' to contain '- [clue] THE HEADWAY TURNS SOMETHING …' |
+| (new) tests/unit/plansPlayedToward.test.js › on the table: the milestone shows the clue; a missed fulfilment plays the step; the oath asks for a name the X-Card on the milestone's narration takes its clue back | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/plansPlayedToward.test.js › on the table: the milestone shows the clue; a missed fulfilment plays the step; the oath asks for a name a stranger culprit is named in the milestone's request; a plan whose truth names no stranger asks no one in | AssertionError: expected '## MOVE OUTCOME\n\n[MOVE: Reach a Mil…' to contain '- [culprit] Talia Tolari enters the s…' |
+| (new) tests/unit/plansPlayedToward.test.js › on the table: the milestone shows the clue; a missed fulfilment plays the step; the oath asks for a name a Fulfill Your Vow that misses plays the plan's next escalation step, marked played by its narration | AssertionError: expected '## MOVE OUTCOME\n\n[MOVE: Fulfill You…' to contain '- [escalation] WHAT THE VOW IS UP AGA…' |
+| (new) tests/unit/plansPlayedToward.test.js › on the table: the milestone shows the clue; a missed fulfilment plays the step; the oath asks for a name the oath: a who-vow's plan that names no one is asked for once more named on the second asking: that reply stands, and its plan is filed with the name — none is drawn | AssertionError: expected [ { client: 'gm-1', …(7) } ] to have a length of 2 but got 1 |
+| (new) tests/unit/plansPlayedToward.test.js › on the table: the milestone shows the clue; a missed fulfilment plays the step; the oath asks for a name the oath: a who-vow's plan that names no one is asked for once more still no one: the first reply stands as decided, with no name drawn for it | AssertionError: expected [ { client: 'gm-1', …(7) } ] to have a length of 2 but got 1 |
+| (new) tests/unit/rolledMoveResultBinds.test.js › on the table: a narration files what its dice decided (narrator.js moveDiceFacts) a narration retried after a rate limit files it too | AssertionError: expected [] to deeply equal [ [ …(2) ] ] |
+| (new) tests/unit/whoVowNamesSomeone.test.js › filed: a who-vow's plan is filed as decided — no name is drawn (issue #402, change 4) round 7's truth, filed: as it was decided, with no name drawn for it | AssertionError: expected 'The raids are staged by a faction ins…' to be 'The raids are staged by a faction ins…' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/plansPlayedToward.test.js › what a vow's plan owes a beat (skeletons.js vowPlanOwed) reads round 10's oath (setup): four clues, three escalation steps
+- New test passing with and without the fix (a control?): tests/unit/plansPlayedToward.test.js › on the table: the milestone shows the clue; a missed fulfilment plays the step; the oath asks for a name control: another move by Kira tells no clue and marks nothing
+- New test passing with and without the fix (a control?): tests/unit/plansPlayedToward.test.js › on the table: the milestone shows the clue; a missed fulfilment plays the step; the oath asks for a name the oath: a who-vow's plan that names no one is asked for once more control: a plan that names someone, and a vow that asks no who, are asked once
+- New test passing with and without the fix (a control?): tests/unit/whoVowNamesSomeone.test.js › filed: a who-vow's plan is filed as decided — no name is drawn (issue #402, change 4) a truth that names someone is filed as it is; so is a vow that asks no who

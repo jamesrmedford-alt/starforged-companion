@@ -35,6 +35,9 @@ export function charterProblem(charter) {
   // A charter with beats: each one named, numbered and checked by something the observer knows.
   const bad = beats.find(b => !b.id || !Number.isInteger(b.n) || !b.title || !BEAT_CHECKS[b.check?.type]);
   if (bad) return `beat ${bad.n ?? bad.id ?? "?"} needs an id, a number, a title and a check the observer knows (${bad.check?.type ?? "none"})`;
+  // A beat the charter forces says why, in words (issue #402, change 6).
+  const forced = beats.find(b => b.forced !== undefined && !(typeof b.forced === "string" && b.forced.trim()));
+  if (forced) return `beat ${forced.n ?? forced.id} is forced, and must say why in words`;
   const unknown = beats.flatMap(b => (b.needs ?? []).filter(id => !beats.some(x => x.id === id)).map(id => `${b.id} needs ${id}`));
   if (unknown.length) return `a beat needs one that is not in the charter (${unknown[0]})`;
   const unseen = beats.flatMap(b => (b.requires ?? []).filter(r => !BEAT_CHECKS[r?.type]).map(r => `${b.id} requires what a "${r?.type ?? "?"}" check would see`));

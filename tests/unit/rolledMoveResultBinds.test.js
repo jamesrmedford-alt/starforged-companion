@@ -37,14 +37,16 @@ const DEVELOP = { moveId: 'develop_your_relationship', outcome: null, moveTarget
 
 describe('a `result` tag binds nothing (issue #402, D1)', () => {
   it('a71\'s bond, a37\'s decisive action, a11\'s report and a44\'s answer are the narrator\'s colour', () => {
+    // The grounds as #388 #5 built them — a rolled move's, with what the dice decided — bound these as the dice's.
+    const rolled = (line, decided = '') => ({ line, decided, rolled: true });
     expect(factBasis('result', 'agreed to stand with Mira past the raids; the bond between them is formed',
-      groundOf({ line: 'Tamsin, will you stand with me?' }), { about: about('Tamsin Okoro') })).toBe('narrator');
+      rolled('Tamsin, will you stand with me?'), { about: about('Tamsin Okoro') })).toBe('narrator');
     expect(factBasis('result', 'her gun port is wrecked and a hatch on her ring is jammed half-open; her crew has not come out',
-      groundOf({ line: 'I put a burst into her gun port.' }), { about: about('Ashen Wake') })).toBe('narrator');
+      rolled('I put a burst into her gun port.'), { about: about('Ashen Wake') })).toBe('narrator');
     expect(factBasis('result', 'saw two dark-running hulls haul a tanker out of the lane at Lyra\'s debris field three shifts ago',
-      groundOf({ line: 'I ask the dock crews who saw the raiders.' }), { about: about('dock hand') })).toBe('narrator');
+      rolled('I ask the dock crews who saw the raiders.', GATHER.stakes.hit), { about: about('dock hand') })).toBe('narrator');
     expect(factBasis('result', 'has at least one crew member alive aboard, trapped behind the jammed hatch',
-      groundOf({ line: 'Is anyone left alive aboard the wreck?' }), { about: about('Cinder Wren') })).toBe('narrator');
+      { line: 'Is anyone left alive aboard the wreck?', decided: 'Is anyone left alive aboard the wreck? YES' }, { about: about('Cinder Wren') })).toBe('narrator');
   });
 
   it('the parser keeps no `result` tag: such a fact reads as untagged', () => {

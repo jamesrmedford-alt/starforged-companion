@@ -798,6 +798,7 @@
       "n": 23,
       "session": 3,
       "title": "Develop the relationship to a full track; Forge a Bond",
+      "forced": "the charter asks for Develop lines one after another until the relationship track is full — six or more in one scene, at the charter's pace, not the story's",
       "requires": [
         {
           "type": "connectionMade",
@@ -846,6 +847,7 @@
       "n": 25,
       "session": 3,
       "title": "Reach milestones; Fulfill Your Vow",
+      "forced": "the charter fulfils the vow once it holds three boxes, its roll scripted to a strong hit — at the charter's pace, not the story's",
       "needs": [
         "b1"
       ],

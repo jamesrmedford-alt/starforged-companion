@@ -65,7 +65,9 @@ describe('overhaul 2 §5.2 — the floor over the beat\'s own words', () => {
   });
 
   it('a Compel hit\'s "agreed to hold the manifest", tagged result, is colour — the code files the stakes the hit delivered (issue #402, D1)', () => {
-    expect(factBasis('result', COMPEL.fact, groundOf({ line: 'I ask Tamsin to keep the manifest safe.' }), { about: about('Tamsin Vey') })).toBe('narrator');
+    // Even against the ground #388 #5 gave it — the stakes the hit delivered, a rolled move's — which bound it as the dice's.
+    expect(factBasis('result', COMPEL.fact, { line: 'I ask Tamsin to keep the manifest safe.', decided: COMPEL.resolution.stakes.hit, rolled: true },
+      { about: about('Tamsin Vey') })).toBe('narrator');
     expect(decidedOfMove(COMPEL.resolution)).toEqual([COMPEL.resolution.stakes.hit]);
     // On a miss the miss is what the dice decided where it is the price paid — not the hit.
     expect(decidedOfMove({ ...COMPEL.resolution, outcome: 'miss', stakes: { ...COMPEL.resolution.stakes, priceStated: true } }))

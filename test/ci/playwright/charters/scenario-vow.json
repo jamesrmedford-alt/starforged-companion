@@ -168,7 +168,8 @@
   "rehearsalPlan": {
     "subject": "the harbour clerk",
     "truth": "Odile Marr, a clerk of the Hollow Spire harbour office, copied the convoy routes and sold them to the raiders to clear her brother's debt.",
-    "tellsVowTruth": true
+    "tellsVowTruth": true,
+    "tellsWhatIsOwed": true
   },
   "rehearsal": [
     {

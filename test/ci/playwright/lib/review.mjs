@@ -1491,7 +1491,7 @@ export function annotatedTranscript({ charter, run, actions = [], messages = [],
     const nowPhase = said[0]?.phase ?? act?.phase ?? phase;
     if (nowPhase !== phase) { phase = nowPhase; out.push(`## ${phase ?? "?"}`, ""); }
     const beat = beatAt(step);
-    out.push(`### ${step}${beat ? ` · beat ${beat.n ?? beat.id}: ${beat.title}` : ""}`, "");
+    out.push(`### ${step}${beat ? ` · beat ${beat.n ?? beat.id}: ${beat.title}${beat.forced ? " — forced by the charter" : ""}` : ""}`, "");
     if (act?.action) {
       out.push(`- **Player:** ${cell(act.summary ?? act.action.action)}${act.action.reason ? ` — _${cell(act.action.reason)}_` : ""}`);
       if (act.action.note) out.push(`- **Notebook:** ${cell(act.action.note)}`);
@@ -1565,8 +1565,12 @@ export function scorecard({ charter, run, goal = null, beats = [], mechanics = n
       ["Cost", cost ? `${usd(cost.total)} — the module ${usd(cost.module.usd)} (${pct(cost.module.share)}), the test's own models ${usd(cost.test.usd)} (${pct(cost.test.share)})` : "not recorded", "the budget's tally by role and the price table", "high for tokens; prices are entered by hand"],
     ]), ""];
 
-  if (beats.length) out.push("## Beats", "", table(["#", "Beat", "Status", "Actions", "At", "Detail"],
-    beats.map(b => [b.n ?? b.id, b.title, b.status, b.actions ?? 0, b.doneAt ?? "", b.detail ?? ""])), "");
+  if (beats.length) {
+    out.push("## Beats", "", table(["#", "Beat", "Status", "Actions", "At", "Detail", "Forced by the charter"],
+      beats.map(b => [b.n ?? b.id, b.title, b.status, b.actions ?? 0, b.doneAt ?? "", b.detail ?? "", b.forced ?? ""])), "");
+    // Issue #402, change 6: what a forced beat brings about is the charter's pace, not the module's fault.
+    if (beats.some(b => b.forced)) out.push("A beat forced by the charter is played at the charter's pace: what follows from it — a vow won early, a run of the same move — is filed as the charter's, not as the module's fault.", "");
+  }
   if (goal?.milestones) out.push("## The goal, layer by layer", "", table(["Milestone", "Reached"],
     Object.entries(goal.milestones).map(([k, v]) => [k, v === true ? "yes" : v === false ? "no" : String(v ?? "")])), "");
 

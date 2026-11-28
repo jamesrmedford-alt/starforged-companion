@@ -1,0 +1,235 @@
+{
+  "name": "scenario-repair",
+  "flow": "a Repair hit whose points are spent late: the work told begun, and nothing told mended until it is spent",
+  "description": "A scenario of the suite (suites/scenarios.json) for issue #402, change 3 (EFFECT-TOLD-BEFORE-APPLIED, five rounds): the ship comes to the table battered. A Repair is rolled to a weak hit, whose outcome names no cost; its narration is to tell the work begun — what is mended waits on the points, and no cost is made up (R1, R2). A line of play follows before the points are spent, and its narration tells nothing mended either; then the points are spent from the Repair card. The roll is scripted. Read in the run's requests: the Repair's block holds the [spend] line and no cost clause; and in its narrations: nothing mended before the spend.",
+  "caps": {
+    "actions": 15,
+    "calls": 60,
+    "minutes": 10,
+    "usd": 1.5
+  },
+  "persona": "You play Mira Kestrel (she/her), a courier-hunter who flies her own ship, the Kobayashi IV, alone. You are a careful, plain-spoken player: short first-person lines, one or two sentences, and you read what the narrator says before you act again.",
+  "goal": "Play one short scene by walking the beats below, in order, one at a time. Each turn you are told which beat is current and what the observer sees of it. Do what that beat asks; an observer decides when it is done and moves you on.",
+  "playerNotes": [
+    "Where a beat gives words to type, use exactly those words.",
+    "What you type is in the fiction: what Mira does or says, and nothing else. Never write a move's name, a stat or a rule word in it — no \"Face Danger\", no \"roll\", no \"milestone\", no \"mark progress\" — and never say what move a line is. The table reads your line and decides.",
+    "A beat that needs a roll gets it from a plain line. If the narrator answers without a roll and a card offers a \"Roll …\" button for what you were doing, press it — buttons may name moves. If nothing is offered, say what Mira does once more, in other words, still in the fiction.",
+    "Only when the observer's note for the beat says LAST RESORT may you name the move, in the words the note gives, in one line.",
+    "When a roll goes badly and a card asks how you pay, choose one of its buttons before anything else — and answer any card that follows from it.",
+    "If a card offers \"Keep the result\", press it, unless the current beat tells you to burn momentum.",
+    "Mira has her background vow on her sheet, to find the lost colony ship Verity's Hope, which no beat touches. Wherever a card or a dropdown asks which vow, choose the one this scene is about, not that one.",
+    "A roll does not end a beat, and neither does an answer: each turn the observer's note says what it sees of the beat. When it says the beat is NOT done, do not wait for it to move you on — do what the beat asks again, in other words.",
+    "Do not press buttons no beat calls for (rewards, portraits, \"Play\" and \"Stop\") unless a card is in the way of play.",
+    "If the narrator has not answered yet, wait rather than repeat yourself."
+  ],
+  "cast": {},
+  "facts": [],
+  "beats": [
+    {
+      "id": "p1",
+      "n": 1,
+      "session": 1,
+      "title": "Begin a Session",
+      "tell": "Type !begin-session. In the window that opens leave vignette unticked and press Begin.",
+      "check": {
+        "type": "sessionBegun",
+        "n": 1
+      }
+    },
+    {
+      "id": "p2",
+      "n": 2,
+      "session": 1,
+      "title": "Repair the ship",
+      "tell": "The Kobayashi IV took a beating on the last job: her drive feeds are cracked. In a line of play, get under the drive housing with the ship's kit and start on them. If the narrator answers without a roll and a card offers one for it, press it. Do not spend what the Repair gives yet.",
+      "check": {
+        "type": "moveRolled",
+        "moves": [
+          "repair"
+        ]
+      },
+      "needs": [
+        "p1"
+      ],
+      "dice": {
+        "moves": [
+          "repair"
+        ],
+        "roll": "weak_hit"
+      },
+      "playerTitle": "Start on the cracked drive feeds",
+      "lastResort": "say that you Repair the drive feeds",
+      "wants": [
+        "repair"
+      ]
+    },
+    {
+      "id": "p3",
+      "n": 3,
+      "session": 1,
+      "title": "A line of play before the points are spent",
+      "tell": "In a line of play, check the cargo straps while the sealant cures. Do not spend the Repair's points yet.",
+      "check": {
+        "type": "moveOffered",
+        "moves": [],
+        "offered": false
+      },
+      "needs": [
+        "p2"
+      ],
+      "playerTitle": "Check the cargo straps"
+    },
+    {
+      "id": "p4",
+      "n": 4,
+      "session": 1,
+      "title": "Spend the Repair's points",
+      "tell": "On the Repair's card press \"🔧 Spend repair points\". In the window that opens set the situation to \"At a facility\" — the Kobayashi IV is docked at Hollow Spire — put 1 on \"Clear battered impact on the command vehicle\", and press Apply.",
+      "check": {
+        "type": "repairSpent"
+      },
+      "needs": [
+        "p2"
+      ],
+      "playerTitle": "Spend the repair points"
+    }
+  ],
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": true,
+    "sessionLogAutoWrite": true,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "factContinuity.shipPositioning": true,
+    "factContinuity.shipAutoMoveOnCourse": true,
+    "factContinuity.shipTokenEnabled": true,
+    "factContinuity.shipTokenSnapRadius": 1,
+    "recapGmOnly": false
+  },
+  "seed": {
+    "pc": {
+      "name": "Mira Kestrel",
+      "pronouns": "she/her",
+      "stats": {
+        "edge": 2,
+        "heart": 2,
+        "iron": 1,
+        "shadow": 1,
+        "wits": 3
+      },
+      "vows": [
+        {
+          "name": "Find the lost colony ship Verity's Hope",
+          "rank": "epic"
+        }
+      ],
+      "impacts": [
+        "battered"
+      ]
+    },
+    "sector": {
+      "name": "Cinder Expanse",
+      "region": "terminus",
+      "regionLabel": "Terminus",
+      "trouble": "Pirates raid the lanes",
+      "mapData": {
+        "settlements": [],
+        "discoveries": []
+      }
+    },
+    "ship": {
+      "name": "Kobayashi IV"
+    },
+    "settlements": [
+      {
+        "name": "Hollow Spire",
+        "authority": "None / lawless",
+        "trouble": "Water rationing",
+        "pin": [
+          500,
+          500
+        ]
+      },
+      {
+        "name": "Bleakhold Station",
+        "authority": "Corporate",
+        "trouble": "Smuggling",
+        "pin": [
+          1500,
+          500
+        ]
+      }
+    ],
+    "at": "Hollow Spire",
+    "map": {
+      "shipAt": "Hollow Spire"
+    }
+  },
+  "rehearsalDice": [
+    {
+      "moves": [
+        "repair"
+      ],
+      "roll": "weak_hit"
+    }
+  ],
+  "rehearsalPlan": null,
+  "rehearsal": [
+    {
+      "beat": 1,
+      "action": "say",
+      "text": "!begin-session"
+    },
+    {
+      "beat": 1,
+      "action": "dialog",
+      "title": "Begin a Session",
+      "fields": [
+        {
+          "name": "vignette",
+          "value": "false"
+        }
+      ],
+      "press": "Begin"
+    },
+    {
+      "beat": 2,
+      "action": "say",
+      "text": "I get under the drive housing with the ship's kit and start on the cracked feed lines.",
+      "move": {
+        "id": "repair",
+        "stat": "wits"
+      }
+    },
+    {
+      "beat": 3,
+      "action": "say",
+      "text": "I check the cargo straps while the sealant cures."
+    },
+    {
+      "beat": 4,
+      "action": "click",
+      "label": "Spend repair points"
+    },
+    {
+      "beat": 4,
+      "action": "dialog",
+      "title": "Vehicle Repair — Allocate Points",
+      "fields": [
+        {
+          "name": "situation",
+          "value": "facility"
+        },
+        {
+          "name": "clear_battered",
+          "value": "1"
+        }
+      ],
+      "press": "Apply"
+    }
+  ]
+}

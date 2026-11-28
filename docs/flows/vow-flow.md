@@ -608,7 +608,9 @@ Since round 8, the name is someone the story has met where one fits
   its next escalation step not yet played ([escalation], beside [recommit]).
   `narrator.js vowPlanOwedFor` finds the vow as the move's handler does
   (`selectMilestoneVow` over the roller's vows, `selectFulfilVow` over every
-  PC's) and its plan by the vow's stable id or name; the plan is pinned in play
+  PC's; a milestone that names no vow, with a background vow open beside the
+  quest's, takes the one open vow with a plan) and its plan by the vow's
+  stable id or name; the plan is pinned in play
   (`planIds`), its lines ride on the resolution (`planOwed` →
   `obligations.js resultObligations`), and what they play is marked by the
   narration as a forced reveal (`ctx.reveals` → `applyPlanSideData`:
